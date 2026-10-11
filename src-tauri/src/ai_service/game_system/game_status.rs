@@ -110,7 +110,18 @@ impl GameStatus {
 
     pub async fn refresh_memories(&mut self, db: &DatabaseConnection) -> Result<()> {
         self.role_manager
-            .sync_memories(db, &self.line_list, None)
+            .sync_memories(db, &self.line_list, None, false)
+            .await
+    }
+
+    /// 当前流式回复与工具回填均已结束后刷新记忆。
+    /// 此时允许永久记忆把一个超长、但工具配对完整的回合整体写入摘要。
+    pub async fn refresh_memories_after_completed_turn(
+        &mut self,
+        db: &DatabaseConnection,
+    ) -> Result<()> {
+        self.role_manager
+            .sync_memories(db, &self.line_list, None, true)
             .await
     }
 

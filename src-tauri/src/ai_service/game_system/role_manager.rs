@@ -263,6 +263,7 @@ impl GameRoleManager {
         db: &DatabaseConnection,
         lines: &[GameLine],
         recent_n: Option<usize>,
+        completed_turn: bool,
     ) -> Result<()> {
         let source_lines: &[GameLine] = match recent_n {
             Some(n) if n < lines.len() => &lines[lines.len() - n..],
@@ -316,9 +317,12 @@ impl GameRoleManager {
                         if let Some(role) = self.loaded_roles.get_mut(&rid) {
                             s.sync_to_role(role);
                         }
-                        s.check_and_trigger_auto_update(source_lines);
-                        let start = s.get_slice_start_index(source_lines).await;
-                        let context = s.get_memory_context_text().await;
+                        if completed_turn {
+                            s.check_and_trigger_completed_turn(source_lines);
+                        } else {
+                            s.check_and_trigger_auto_update(source_lines);
+                        }
+                        let (start, context) = s.get_context_snapshot(source_lines).await;
                         (true, start, context)
                     },
                     Some(_) => (true, 0, String::new()),

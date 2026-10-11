@@ -584,6 +584,7 @@ impl MessageGenerator {
 
         // 流已消费完毕，工具消息收集完整：回填到助手回复之前的位置
         let tool_msgs = std::mem::take(&mut *tool_messages.lock().await);
+        let completed_turn = published_final || (!output.sent_final && !tool_msgs.is_empty());
         if !tool_msgs.is_empty() {
             let mut gs = self.deps.game_status.lock().await;
             // 试玩代号守卫：试玩中止后丢弃迟到回填，与 add_assistant_line 行为一致
@@ -625,6 +626,14 @@ impl MessageGenerator {
                         .insert(insert_pos, GameLine::from_base(line, perceived.clone()));
                 }
                 gs.refresh_memories(&self.deps.db).await?;
+            }
+        }
+
+        if completed_turn {
+            let mut gs = self.deps.game_status.lock().await;
+            if gs.preview_generation == self.deps.generation {
+                gs.refresh_memories_after_completed_turn(&self.deps.db)
+                    .await?;
             }
         }
 
