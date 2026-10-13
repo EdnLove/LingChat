@@ -44,7 +44,7 @@
               </h3>
               <span
                 v-if="achievement.unlocked"
-                class="rounded-full border px-2 py-0.5 text-[10px] font-medium shadow-sm backdrop-blur-md"
+                class="rounded-full border px-2 py-0.5 text-[10px] font-medium shadow-sm"
                 :class="getBadgeClass(achievement)"
               >
                 {{
@@ -64,7 +64,7 @@
 
             <!-- Progress Bar -->
             <div
-              class="relative h-1.5 w-full overflow-hidden rounded-full border border-white/5 bg-white/30 backdrop-blur-sm"
+              class="relative h-1.5 w-full overflow-hidden rounded-full border border-white/5 bg-white/30"
             >
               <div
                 class="absolute top-0 left-0 h-full shadow-[0_0_8px_currentColor] transition-all duration-1000 ease-out"
@@ -126,10 +126,10 @@ const getCardClass = (ach: any) => {
   if (!ach.unlocked) {
     // 未解锁的隐藏成就：神秘紫色
     if (ach.hidden) {
-      return "bg-linear-to-br from-purple-900/30 to-black/60 border-purple-400/40 opacity-80 hover:bg-white/5 backdrop-blur-md";
+      return "bg-linear-to-br from-purple-900/30 to-black/60 border-purple-400/40 opacity-80 hover:bg-white/5";
     }
     // 未解锁：稍微亮一点的背景以提升对比度
-    return "bg-black/30 border-white/10 backdrop-blur-md opacity-90 hover:bg-white/5 transition-all";
+    return "bg-black/30 border-white/10 opacity-90 hover:bg-white/5 transition-all";
   }
   if (ach.type === "rare") {
     // 稀有：增强金色光晕和呼吸感

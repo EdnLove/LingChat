@@ -1,11 +1,15 @@
 <template>
   <router-view />
+  <!-- 全局路由切换黑屏遮罩（详细说明见 useRouteFade）。
+       需留在 #app 内：useZoom 会在此挂 transform scale，fixed inset-0 才精确铺满窗口 -->
+  <RouteFadeMask />
   <!-- macOS 无边框窗口：顶部拖拽区（配合 Overlay 红绿灯）。仅在 macOS 主窗口挂载，
        其余窗口 / Windows / Linux / 移动端不渲染，避免影响既有拖动与点击。 -->
   <div v-if="isMacOverlayWindow" class="mac-drag-region" data-tauri-drag-region></div>
-  <!-- 将光标特效 teleport 到 body，避免 #app 上的整体缩放（transform: scale）导致坐标偏移 -->
+  <!-- 内置光标特效：teleport 到 body，避免 #app 上的整体缩放（transform: scale）导致坐标偏移。
+       默认走 useCursorFx（ba-click-fx，覆盖层由库自己挂在 body 下），仅在选择内置实现时挂载 -->
   <Teleport to="body">
-    <CursorEffects />
+    <CursorEffects v-if="legacyCursorFxActive" />
   </Teleport>
 
   <!-- 全局通知组件（直接从 uiStore 读取状态） -->
@@ -15,41 +19,60 @@
   <AchievementToast v-if="isMainWindow" />
   <AdventureUnlockNotify v-if="isMainWindow" />
   <AppDialog v-if="isMainWindow" />
+
+  <!-- 全局背景音乐层：主窗口常驻，不随路由卸载，故 /chat ↔ /pet 切换时 BGM 不中断。
+       必须按窗口门控：设置窗与日志窗也复用 App.vue，且各自注册了 script:music 监听。 -->
+  <BgmLayer v-if="isMainWindow" />
 </template>
 
 <script setup lang="ts">
+import { computed } from "vue";
 import { useRoute } from "vue-router";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { useSettingsStore } from "./stores/modules/settings";
 import CursorEffects from "./components/effects/CursorEffects.vue";
+import RouteFadeMask from "./components/ui/RouteFadeMask.vue";
 import Notification from "./components/ui/Notification.vue";
 import AchievementToast from "./components/ui/AchievementToast.vue";
 import AdventureUnlockNotify from "./components/ui/AdventureUnlockNotify.vue";
 import AppDialog from "./components/ui/AppDialog.vue";
-import { useAsrInput } from "./composables/useAsrInput";
+import BgmLayer from "./components/ui/BgmLayer.vue";
+import { useAsrInput } from "./composables/asr";
 import { useCanDeliver } from "./composables/useCanDeliver";
 import { useZoom } from "./composables/useZoom";
 import { useSedentaryReminder } from "./composables/useSedentaryReminder";
 import { useAppBootstrap } from "./composables/app/useAppBootstrap";
 import { useCastMirror } from "./composables/app/useCastMirror";
 import { useCloseConfirm } from "./composables/app/useCloseConfirm";
+import { cursorFxBaAvailable, useCursorFx } from "./composables/app/useCursorFx";
 import { useDevToolsVisibility } from "./composables/app/useDevToolsVisibility";
 import { useFullscreenHotkey } from "./composables/app/useFullscreenHotkey";
 import { useGlobalFont } from "./composables/app/useGlobalFont";
 import { useMacTitlebar } from "./composables/app/useMacTitlebar";
 import { useMobileViewport } from "./composables/app/useMobileViewport";
-
 // ─── 路由 / 窗口标识 ────────────────────────────────────────
 const route = useRoute();
 // 仅主窗口挂载全局弹窗（通知/成就/对话确认），日志窗口等复用 App.vue 的窗口不弹
 const isMainWindow = getCurrentWindow().label === "main";
 
+const settingsStore = useSettingsStore();
+// 选到内置实现，或新版引擎初始化失败时，回退到内置的 Canvas2D 特效
+const legacyCursorFxActive = computed(
+  () => settingsStore.cursorEffectEngine === "legacy" || !cursorFxBaAvailable.value,
+);
+
 // ─── 全局单例 composables（仅在此处调用一次以激活）──────────
+// 光标特效（新版，库自带 body 覆盖层）
+useCursorFx();
 // 激活主动对话投放条件上报
 useCanDeliver();
 // 激活 Ctrl+滚轮 UI 全局缩放
 useZoom();
-// 久坐提醒
-useSedentaryReminder();
+// 久坐提醒（仅主窗口）：定时器内部没有窗口标签判断，不 gate 的话每个挂载 App.vue
+// 的窗口都会各起一份，重复播提醒音并重复弹系统通知
+if (isMainWindow) {
+  useSedentaryReminder();
+}
 // ASR 全局初始化（仅主窗口一次）：auto_listen 能量监测门控 + 事件监听。
 // useAsrInput 状态是模块级单例，GameDialog / ChatInput（桌宠）的 mic 按钮
 // 与这里共享同一会话。

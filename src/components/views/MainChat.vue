@@ -2,6 +2,7 @@
   <div class="main-box">
     <!-- 主界面始终渲染，加载动画期间在后台初始化 -->
     <FreeModeTools />
+    <StatusInfoBar />
     <FullAccessWarning />
     <GameBackground></GameBackground>
     <!-- <GameAvatar ref="gameAvatarRef" @audio-ended="handleAudioFinished" />  -->
@@ -51,6 +52,7 @@
 <script setup lang="ts">
 import { getEnvConfigByKey } from "@/api/services/config";
 import FreeModeTools from "@/components/tools/FreeModeTools.vue";
+import StatusInfoBar from "@/components/tools/StatusInfoBar.vue";
 import ToolActivityStatus from "@/components/tools/ToolActivityStatus.vue";
 import { eventQueue } from "@/core/events/event-queue";
 import { onMounted, ref } from "vue";

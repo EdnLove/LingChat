@@ -25,22 +25,10 @@
       :style="`z-index:${BACKGROUND_ZINDEX}`"
       @ready="onStarfieldReady"
     />
-    <Rain
-      v-if="uiStore.currentBackgroundEffect === 'Rain'"
-      :enabled="rainEnabled"
-      :intensity="rainIntensity"
-      :style="`z-index:${BACKGROUND_ZINDEX}`"
-    />
     <Sakura
       v-if="uiStore.currentBackgroundEffect === 'Sakura'"
       :enabled="true"
       :intensity="1.5"
-      :style="`z-index:${BACKGROUND_ZINDEX}`"
-    />
-    <Snow
-      v-if="uiStore.currentBackgroundEffect === 'Snow'"
-      :intensity="snowIntensity"
-      :enabled="true"
       :style="`z-index:${BACKGROUND_ZINDEX}`"
     />
     <Fireworks
@@ -57,6 +45,18 @@
       :speed="0.4"
       :style="`z-index:${BACKGROUND_ZINDEX}`"
     />
+    <Fireflies
+      v-if="uiStore.currentBackgroundEffect === 'Fireflies'"
+      :enabled="true"
+      :intensity="1"
+      :style="`z-index:${BACKGROUND_ZINDEX}`"
+    />
+    <MeteorShower
+      v-if="uiStore.currentBackgroundEffect === 'MeteorShower'"
+      :enabled="true"
+      :intensity="1"
+      :style="`z-index:${BACKGROUND_ZINDEX}`"
+    />
   </div>
 
   <!-- 背景光照叠加层（在背景上方、角色下方） -->
@@ -66,20 +66,50 @@
     :style="bgOverlayStyle as any"
   ></div>
 
+  <!-- 天气层：与上面的氛围特效相互独立，两者可同时存在。
+       刻意排在光照叠加层之后 —— 那层是带混合模式的暗角色罩，
+       闪电画在它下面会被压暗。仍在角色与对话框之下 -->
+  <div class="pointer-events-none absolute inset-0" style="isolation: isolate">
+    <Drizzle
+      v-if="uiStore.currentWeatherEffect === 'Drizzle'"
+      :enabled="weatherEnabled"
+      :intensity="drizzleIntensity"
+      :style="`z-index:${BACKGROUND_ZINDEX}`"
+    />
+    <Rain
+      v-if="uiStore.currentWeatherEffect === 'Rain'"
+      :enabled="weatherEnabled"
+      :intensity="rainIntensity"
+      :style="`z-index:${BACKGROUND_ZINDEX}`"
+    />
+    <Thunderstorm
+      v-if="uiStore.currentWeatherEffect === 'Thunderstorm'"
+      :enabled="weatherEnabled"
+      :intensity="thunderstormIntensity"
+      :style="`z-index:${BACKGROUND_ZINDEX}`"
+    />
+    <Snow
+      v-if="uiStore.currentWeatherEffect === 'Snow'"
+      :enabled="weatherEnabled"
+      :intensity="snowIntensity"
+      :style="`z-index:${BACKGROUND_ZINDEX}`"
+    />
+    <Blizzard
+      v-if="uiStore.currentWeatherEffect === 'Blizzard'"
+      :enabled="weatherEnabled"
+      :intensity="blizzardIntensity"
+      :style="`z-index:${BACKGROUND_ZINDEX}`"
+    />
+    <Fog
+      v-if="uiStore.currentWeatherEffect === 'Fog'"
+      :enabled="weatherEnabled"
+      :intensity="fogIntensity"
+      :style="`z-index:${BACKGROUND_ZINDEX}`"
+    />
+  </div>
+
   <!-- 短效音效保留默认实现即可，不需要淡入淡出 -->
   <audio ref="soundEffectPlayer"></audio>
-
-  <!-- 全新解耦出来的双轨交叉音乐淡入淡出组件 -->
-  <AudioAcrossFade
-    :src="backgroundMusicSrc"
-    :volume="uiStore.backgroundVolume"
-    :paused="uiStore.bgMusicPaused"
-    :stopped="uiStore.bgMusicStoped"
-    :rate="uiStore.bgMusicPlaybackRate"
-    :duration="800"
-    :loop="uiStore.bgMusicMode === 'loop-single'"
-    @ended="handleTrackEnd"
-  />
 
   <!-- 环境音多轨渲染（每轨独立交叉淡入淡出循环组件，最多8轨并行） -->
   <AmbientLoopPlayer
@@ -96,13 +126,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, computed } from "vue";
+import { ref, watch, computed, onMounted, onBeforeUnmount } from "vue";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { toPlayableMediaUrl } from "@/utils/mediaUrl";
 import { useUIStore } from "../../../stores/modules/ui/ui";
 import { useGameStore } from "../../../stores/modules/game";
 import ImageAcrossFade from "@/components/ui/ImageAcrossFade.vue";
-import AudioAcrossFade from "@/components/ui/AudioAcrossFade.vue";
 import AmbientLoopPlayer from "@/components/ui/AmbientLoopPlayer.vue";
 import StarField from "./particles/StarField.vue";
 import Rain from "./particles/Rain.vue";
@@ -110,6 +139,12 @@ import Sakura from "./particles/Sakura.vue";
 import Snow from "./particles/Snow.vue";
 import Fireworks from "./particles/Fireworks.vue";
 import BAParticles from "./particles/BAParticles.vue";
+import Fireflies from "./particles/Fireflies.vue";
+import MeteorShower from "./particles/MeteorShower.vue";
+import Thunderstorm from "./particles/Thunderstorm.vue";
+import Drizzle from "./particles/Drizzle.vue";
+import Blizzard from "./particles/Blizzard.vue";
+import Fog from "./particles/Fog.vue";
 
 const uiStore = useUIStore();
 const gameStore = useGameStore();
@@ -128,30 +163,10 @@ const backgroundSrc = computed(() => {
   return convertFileSrc(bg);
 });
 
-// 统一转换入口：currentBackgroundMusic 存原始路径，此处转可播放 URL（Android 走 blob，见 toPlayableMediaUrl）
-const backgroundMusicSrc = ref("None");
-let bgmLoadSeq = 0;
-watch(
-  () => uiStore.currentBackgroundMusic,
-  async (src) => {
-    const seq = ++bgmLoadSeq;
-    if (!src || src === "None") {
-      backgroundMusicSrc.value = "None";
-      return;
-    }
-    try {
-      const url = await toPlayableMediaUrl(src);
-      // 竞态守卫：期间已切换过歌曲则丢弃过期结果
-      if (seq !== bgmLoadSeq) return;
-      backgroundMusicSrc.value = url;
-    } catch (e) {
-      if (seq !== bgmLoadSeq) return;
-      console.warn("背景音乐加载失败:", src, e);
-      backgroundMusicSrc.value = "None";
-    }
-  },
-  { immediate: true },
-);
+// 向全局 BGM 层（BgmLayer）登记「游戏渲染层在场」：
+// /chat 与剧本编辑器试玩覆盖层都会挂载本组件，BgmLayer 据此决定是否允许出声
+onMounted(() => uiStore.retainGameLayer());
+onBeforeUnmount(() => uiStore.releaseGameLayer());
 
 // 背景光照滤镜
 const bgLightingFilter = computed(() => {
@@ -197,15 +212,15 @@ const starColors = ref<string[]>([
   "rgb(173, 230, 216)",
 ]);
 
-// 其他特效参数控制
-const rainEnabled = ref<boolean>(true);
+// 天气层的开关是共用的，各档只差强度
+const weatherEnabled = ref<boolean>(true);
 
+const drizzleIntensity = ref<number>(1);
 const rainIntensity = ref<number>(1);
+const thunderstormIntensity = ref<number>(0.8);
 const snowIntensity = ref<number>(1.5);
-
-const handleTrackEnd = (): void => {
-  uiStore.handleBackgroundMusicEnd();
-};
+const blizzardIntensity = ref<number>(1);
+const fogIntensity = ref<number>(1);
 
 // 星空就绪回调
 const onStarfieldReady = (instance: any): void => {
@@ -233,8 +248,6 @@ watch(
     }
   },
 );
-
-// !!! 在此处：因为把背景音乐交给了 AudioCrossFade 组件，所以原先的大段背景音乐逻辑全被彻底删除。
 
 // ========== 环境音多轨管理 ==========
 // 显示用轨道镜像：保留淡出期间的"离场"轨道，避免直接卸载造成点击

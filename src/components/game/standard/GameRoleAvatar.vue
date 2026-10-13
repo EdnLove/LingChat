@@ -1,6 +1,6 @@
 <template>
   <Live2DRolePresentation
-    v-if="role.live2d"
+    v-if="useLive2d"
     ref="presentationRef"
     :role-id="role.roleId"
     :src="targetAvatarUrl"
@@ -17,10 +17,20 @@
     :animation-classes="containerClasses"
     :object-fit="computedObjectFit"
     @animation-end="handleAnimationEnd"
-  />
+  >
+    <!-- 触摸区域只对静态立绘生效：Live2D 的可摸范围来自模型的 touch_motions，
+         与 body_part 无关，所以不渲染这层。 -->
+    <template #overlay>
+      <TouchAreas
+        v-if="gameStore.command === 'touch'"
+        :role="role"
+        :src="targetAvatarUrl"
+        :object-fit="computedObjectFit"
+      />
+    </template>
+  </StaticRolePresentation>
 
-  <!-- 原有气泡、触摸层和情绪音效位于共享 Pixi 舞台上方。 -->
-  <TouchAreas v-if="gameStore.command === 'touch'" :body-parts="role.bodyPart" />
+  <!-- 原有气泡与情绪音效位于共享 Pixi 舞台上方。 -->
   <div
     class="role-container-transition pointer-events-none absolute h-full w-full origin-[center_0%]"
     :style="effectsLayerStyle"
@@ -38,7 +48,9 @@ import type { GameRole } from "@/stores/modules/game/state";
 import Live2DRolePresentation from "./Live2DRolePresentation.vue";
 import StaticRolePresentation from "./StaticRolePresentation.vue";
 import TouchAreas from "./TouchAreas.vue";
-import { useRoleAvatar } from "@/composables/role/useRoleAvatar";
+import { avatarObjectFit, useRoleAvatar } from "@/composables/role/useRoleAvatar";
+import { standardAvatarStyle } from "@/utils/avatar-layout";
+import { prefersLive2d } from "@/types/live2d";
 import "@/assets/styles/avatar-animation.css";
 
 const props = defineProps<{
@@ -59,6 +71,9 @@ const presentationRef = ref<
   InstanceType<typeof Live2DRolePresentation> | InstanceType<typeof StaticRolePresentation> | null
 >(null);
 
+// 主对话用 Live2D 还是静态立绘：角色设定里可选，缺省沿袭「有模型就用模型」
+const useLive2d = computed(() => prefersLive2d(role.value, "standard"));
+
 // 头像解析 + 情绪演出（动画类 / 气泡 / 音效）—— 与桌宠共用同一实现
 const {
   targetAvatarUrl,
@@ -76,27 +91,7 @@ const {
 // --- 移动端适配：从 uiStore 读取视口尺寸（全局唯一 resize 监听） ---
 
 // 窄屏适配：宽高比 1.0→0.5 区间，高度 100%→80%（rate=40）
-const computedObjectFit = computed(() => {
-  const ratio = uiStore.aspectRatio;
-  if (ratio >= 1.0) return "contain";
-  const percent = Math.max(80, 100 - (1.0 - ratio) * 40);
-  return `auto ${Math.round(percent)}%`;
-});
-
-// 窄屏 Y 轴补偿：同步上述区间，0%→20% 视口高度上移（rate=40）
-const narrowScreenYCompensation = computed(() => {
-  const ratio = uiStore.aspectRatio;
-  if (ratio >= 1.0) return 0;
-  const percent = Math.min(20, (1.0 - ratio) * 40);
-  return Math.round((uiStore.viewportHeight * percent) / 100);
-});
-
-const wideScreenYCompensation = computed(() => {
-  const ratio = uiStore.aspectRatio;
-  if (ratio < 2.0) return 0;
-  const percent = Math.min(10, (ratio - 2.0) * 20);
-  return Math.round((uiStore.viewportHeight * percent) / 100);
-});
+const computedObjectFit = computed(() => avatarObjectFit(uiStore.aspectRatio));
 
 // --- 样式计算 ---
 const layoutPosition = computed(() => {
@@ -120,28 +115,14 @@ const lightingFilter = computed(() => {
 });
 
 const roleLayerStyle = computed(() => {
-  const autoLeft = layoutPosition.value;
-  // 投屏偏移折进位置（正值右移 / 下移），与 Live2D 同一套夹紧：立绘容器撑满视口、
-  // 图片 bottom 锚定在容器底沿，容器底沿（top + 视口高 × 缩放）不越出窗口，
-  // 避免 offsetY 下移时人物下方被窗口 overflow:hidden 截断；缩小才有下移空间。
-  const manualOffset = role.value.offsetX || 0;
-  const scaleTotal = (role.value.scale ?? 1) * (props.castScale ?? 1);
-  const defaultTop =
-    role.value.offsetY - narrowScreenYCompensation.value - wideScreenYCompensation.value;
-  // 投屏垂直偏移（castOffsetY，正值下移）折进顶部位置，但只夹紧「投屏自己下移的那段」：
-  // 角色自身配置的 role.offsetY 不参与夹紧，保持原语义。立绘容器撑满视口、图片 bottom
-  // 锚定在容器底沿，容器底沿（top + 视口高 × 缩放）不越出窗口，下移触底即止。
-  // 水平偏移由投屏窗口的 .cast-role-layer CSS translateX 整层平移（见 CastWindow.vue）。
-  const downLimit = uiStore.viewportHeight * (1 - scaleTotal) - defaultTop;
-  const castOffsetY = props.castOffsetY ?? 0;
-  const effectiveOffsetY =
-    castOffsetY > 0 ? Math.min(castOffsetY, Math.max(0, downLimit)) : castOffsetY;
-  const top = defaultTop + effectiveOffsetY;
-
   const style: Record<string, string> = {
-    left: `calc(${autoLeft}% + ${manualOffset}px)`,
-    top: `${top}px`,
-    transform: `translateX(-50%) scale(${scaleTotal})`,
+    ...standardAvatarStyle(
+      role.value,
+      { width: uiStore.viewportWidth, height: uiStore.viewportHeight },
+      layoutPosition.value,
+      props.castScale,
+      props.castOffsetY,
+    ),
     opacity: `${role.value.show ? 1 : 0}`,
     transition:
       "left 0.5s cubic-bezier(0.25, 0.8, 0.5, 1), top 0.3s ease, opacity 0.3s ease-in-out",
@@ -177,9 +158,3 @@ const bubbleStyles = computed(() => ({
   backgroundImage: `url(${currentBubbleImageUrl.value})`,
 }));
 </script>
-
-<style scoped>
-:deep(.touch-area) {
-  pointer-events: auto;
-}
-</style>

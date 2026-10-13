@@ -7,7 +7,7 @@
         @click="$emit('close')"
       >
         <div
-          class="relative flex max-h-[92dvh] w-full max-w-7xl overflow-hidden rounded-3xl border border-white/20 bg-slate-900/40 shadow-2xl backdrop-blur-2xl"
+          class="relative flex max-h-[92dvh] w-full max-w-7xl overflow-hidden rounded-3xl border border-white/20 bg-slate-900/40 shadow-2xl"
           @click.stop
         >
           <!-- ====== 左栏：表单 ====== -->

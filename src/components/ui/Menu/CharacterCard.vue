@@ -7,6 +7,16 @@
     >
       <Cat :size="20" />
     </div>
+    <button
+      class="absolute top-2 left-2 z-10 rounded-lg bg-black/5 p-1.5 opacity-0 transition-all group-hover:opacity-100 focus-visible:opacity-100"
+      @click.stop="handleToggleFavored"
+      :title="favored ? $t('ui.characterCard.unfav') : $t('ui.characterCard.fav')"
+    >
+      <Star
+        :size="16"
+        :class="favored ? 'fill-amber-400 text-amber-400' : 'text-white/60 hover:text-white'"
+      />
+    </button>
     <div class="absolute top-3 right-3 z-10 flex items-center gap-2">
       <RoleExportMenu :role-id="id" :role-name="name" />
       <button
@@ -25,10 +35,18 @@
         class="h-24 w-24 overflow-hidden rounded-full border-2 border-indigo-400/50 shadow-lg md:h-24 md:w-24"
       >
         <img
+          v-if="avatar && !avatarFailed"
           :src="avatar"
           :alt="name"
           class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
+          @error="avatarFailed = true"
         />
+        <span
+          v-else
+          class="flex h-full w-full items-center justify-center bg-indigo-500/20 text-3xl text-white/80"
+          aria-hidden="true"
+          >{{ Array.from(name || title || "")[0] || "?" }}</span
+        >
       </div>
       <span class="bg-brand mt-1 h-1 w-6 rounded-full"></span>
       <h4 class="text-md text-center font-bold tracking-wide text-white drop-shadow-md">
@@ -204,13 +222,14 @@
     :role-id="id"
     :title="name"
     :source="source"
+    :clothes="clothes"
     @close="closeSettingsModal"
     @saved="handleSettingsSaved"
   />
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { invoke } from "@tauri-apps/api/core";
 import { Icon } from "../../base";
@@ -225,7 +244,7 @@ import { useGameStore } from "@/stores/modules/game";
 import { applyWebInitData } from "@/stores/modules/game/actions";
 import { eventQueue } from "@/core/events/event-queue";
 import { useDialogStore } from "@/stores/modules/ui/dialog";
-import { Settings } from "lucide-vue-next";
+import { Settings, Star } from "lucide-vue-next";
 import { Cat, Check } from "lucide-vue-next";
 import type { Clothes } from "@/types";
 
@@ -240,6 +259,7 @@ interface CharacterProps {
   resourceFolder?: string;
   /** 来源："game" 或提供该角色的插件 id。 */
   source?: string | null;
+  favored?: boolean;
 }
 
 const props = withDefaults(defineProps<CharacterProps>(), {
@@ -248,13 +268,24 @@ const props = withDefaults(defineProps<CharacterProps>(), {
   info: "",
   clothes: () => [],
   resourceFolder: "",
+  favored: false,
 });
 
-const emit = defineEmits(["saved"]);
+const emit = defineEmits(["saved", "favoredChange"]);
 
 // 状态管理
 const isDetailVisible = ref(false);
+const avatarFailed = ref(false);
+watch(
+  () => props.avatar,
+  () => {
+    avatarFailed.value = false;
+  },
+);
 const isSettingsModalVisible = ref(false);
+function handleToggleFavored(): void {
+  emit("favoredChange", props.id);
+}
 
 const { t } = useI18n();
 const gameStore = useGameStore();

@@ -225,7 +225,7 @@
         </label>
         <select
           v-model="form.web_search.provider"
-          class="shadow-glass focus:border-brand focus:ring-brand/20 mt-2 w-full cursor-pointer rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white backdrop-blur-xl backdrop-saturate-150 transition-all duration-200 focus:ring-2 focus:outline-none"
+          class="shadow-glass focus:border-brand focus:ring-brand/20 mt-2 w-full cursor-pointer rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white transition-all duration-200 focus:ring-2 focus:outline-none"
         >
           <option value="kimi" class="bg-slate-800 text-white">Kimi /search</option>
           <option value="bocha" class="bg-slate-800 text-white">BoCha 博查</option>
@@ -266,7 +266,7 @@
                   ? $t('ui.toolCalls.kimiApiKeyPlaceholder')
                   : $t('ui.toolCalls.apiKeyPlaceholder')
             "
-            class="shadow-glass focus:border-brand focus:ring-brand/20 mt-2 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white backdrop-blur-xl backdrop-saturate-150 transition-all duration-200 focus:ring-2 focus:outline-none"
+            class="shadow-glass focus:border-brand focus:ring-brand/20 mt-2 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white transition-all duration-200 focus:ring-2 focus:outline-none"
           />
           <p v-if="form.web_search.provider === 'kimi'" class="mt-2 mb-2 text-sm text-gray-300">
             {{ $t("ui.toolCalls.kimiHint") }}
@@ -282,7 +282,7 @@
             type="text"
             v-model="form.web_search.model"
             placeholder="deepseek-flash"
-            class="shadow-glass focus:border-brand focus:ring-brand/20 mt-2 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white backdrop-blur-xl backdrop-saturate-150 transition-all duration-200 focus:ring-2 focus:outline-none"
+            class="shadow-glass focus:border-brand focus:ring-brand/20 mt-2 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white transition-all duration-200 focus:ring-2 focus:outline-none"
           />
           <p class="mt-2 mb-2 text-sm text-gray-300">
             {{ $t("ui.toolCalls.dsHint") }}
@@ -301,7 +301,7 @@
             type="text"
             v-model="form.web_search.base_url"
             placeholder="https://api.kimi.com/coding/v1/search"
-            class="shadow-glass focus:border-brand focus:ring-brand/20 mt-2 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white backdrop-blur-xl backdrop-saturate-150 transition-all duration-200 focus:ring-2 focus:outline-none"
+            class="shadow-glass focus:border-brand focus:ring-brand/20 mt-2 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white transition-all duration-200 focus:ring-2 focus:outline-none"
           />
         </template>
 
@@ -315,7 +315,7 @@
             min="1"
             max="20"
             step="1"
-            class="shadow-glass focus:border-brand focus:ring-brand/20 mt-2 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white backdrop-blur-xl backdrop-saturate-150 transition-all duration-200 focus:ring-2 focus:outline-none"
+            class="shadow-glass focus:border-brand focus:ring-brand/20 mt-2 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white transition-all duration-200 focus:ring-2 focus:outline-none"
           />
         </template>
 
@@ -342,7 +342,7 @@
           type="text"
           v-model="form.web_search.proxy_addr"
           placeholder="http://127.0.0.1:10808"
-          class="shadow-glass focus:border-brand focus:ring-brand/20 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white backdrop-blur-xl backdrop-saturate-150 transition-all duration-200 focus:ring-2 focus:outline-none"
+          class="shadow-glass focus:border-brand focus:ring-brand/20 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white transition-all duration-200 focus:ring-2 focus:outline-none"
         />
       </div>
 

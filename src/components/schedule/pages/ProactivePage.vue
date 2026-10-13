@@ -5,8 +5,30 @@
     class="grid grid-cols-1 p-1 sm:grid-cols-1 lg:grid-cols-1"
   >
     <div v-for="setting in settings" :key="setting.key" class="mb-6">
+      <!-- 提醒方式是二选一，SettingItem 只支持 bool/text/textarea/path/number，这里单独渲染 -->
+      <template v-if="setting.key === 'TODO_REMINDER_STYLE'">
+        <label class="text-brand inline-flex items-center font-medium">
+          {{ $t("ui.proactivePage.todoReminderStyle") }}
+        </label>
+        <p class="mt-1 mb-2 text-sm text-gray-300">{{ setting.key }}</p>
+        <div class="flex gap-2">
+          <div
+            v-for="option in reminderStyleOptions"
+            :key="option.value"
+            @click="setting.value = option.value"
+            class="cursor-pointer rounded-lg px-4 py-2.5 text-sm transition-colors duration-200"
+            :class="
+              setting.value === option.value
+                ? 'bg-brand text-white'
+                : 'border border-white/10 bg-white/10 text-white hover:bg-white/20'
+            "
+          >
+            {{ option.label }}
+          </div>
+        </div>
+      </template>
       <!-- 使用 SettingItem 组件渲染不同类型的输入控件 -->
-      <SettingItem :setting="setting" @update:value="(value) => (setting.value = value)" />
+      <SettingItem v-else :setting="setting" @update:value="(value) => (setting.value = value)" />
     </div>
 
     <div class="flex h-auto w-auto items-center gap-2 align-text-bottom">
@@ -24,7 +46,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, reactive } from "vue";
+import { ref, onMounted, reactive, computed } from "vue";
 import { useUIStore } from "@/stores/modules/ui/ui";
 import { getEnvConfigByKey, saveEnvConfigSettings } from "@/api/services/config";
 import { reloadProactiveSystem } from "@/api/services/schedule";
@@ -39,6 +61,11 @@ const saveStatus = reactive({
   message: "",
   color: "#4ade80",
 });
+
+const reminderStyleOptions = computed(() => [
+  { value: "role", label: t("ui.proactivePage.todoReminderStyleRole") },
+  { value: "toast", label: t("ui.proactivePage.todoReminderStyleToast") },
+]);
 
 const saveSettings = async () => {
   // 将 settings 转换为 Record<string, string> 格式
@@ -79,6 +106,9 @@ const loadConfig = async () => {
     "TODO_WEIGHT",
     "ENABLE_SCHEDULE_REMINDER",
     "ENABLE_IMPORTANT_DAY_REMINDER",
+    "FORCE_SCHEDULE_REMINDER",
+    "FORCE_TODO_REMINDER",
+    "TODO_REMINDER_STYLE",
   ];
 
   for (const key of configKeys) {

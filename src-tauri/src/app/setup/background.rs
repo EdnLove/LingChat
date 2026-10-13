@@ -5,8 +5,9 @@
 
 use std::sync::Arc;
 
-use crate::app::state::AppState;
-use crate::{ai_service, api, cast, config};
+use ling_chat_main::AppState;
+use ling_chat_main::{ai_service, api, cast, config};
+use ling_chat_plugins as plugins;
 use tauri::Manager;
 
 /// 启动后台任务与处理器。
@@ -49,12 +50,23 @@ pub(super) fn run(
     }
 
     // 插件携带资源收敛：把启用插件的人物/剧本/背景图同步进 DB / 剧本引擎 / 场景表。
-    rt.block_on(api::plugins::refresh_plugin_content(app.handle()));
+    rt.block_on(plugins::commands::refresh_plugin_content(app.handle()));
+
+    // 插件启动入口：每个启用插件跑一次自己的启动函数（先后由 depends_on 决定）。
+    // 必须 spawn 而非同步等待——插件脚本跑在 spawn_blocking 上，一个慢插件
+    // 会把应用启动拖死；启动失败时插件会自行禁用并推事件。
+    {
+        let plugin_manager = app.state::<Arc<plugins::PluginManager>>().inner().clone();
+        let app_handle = app.handle().clone();
+        tauri::async_runtime::spawn(async move {
+            plugin_manager.run_startup_hooks(&app_handle).await;
+        });
+    }
 
     // 延迟加载 DeBerta 直到应用主体挂载完成；
     // 如果在加载完成前有聊天请求到达，LocalTtsAdapter 的惰性引导仍然会运行，
     // 因此首次消息延迟是启动时加载的代价。
-    ai_service::tts::local::setup::spawn_preload(&app.handle(), &local_tts);
+    ai_service::tts::local::setup::spawn_preload(app.handle(), local_tts);
 
     // 启动鼠标轮询点击穿透循环
     let window = app
@@ -72,6 +84,12 @@ pub(super) fn run(
     tauri::async_runtime::spawn(async move {
         ai_service::game_system::auto_save::AutoSaveManager::run_periodic(auto_save_manager).await;
     });
+
+    // 天气缓存后台刷新：每 5 分钟检查一次，配置了手动城市且缓存过期才拉取
+    //（没有自动定位），供 generator 注入"用户所在地天气"提醒与 query_weather 工具复用
+    tauri::async_runtime::spawn(ai_service::tools::weather::run_refresh_loop(
+        app.handle().clone(),
+    ));
 
     // 桌宠点击穿透轮询与 pet:cursor 鼠标广播——具体实现在 api::pet，
     // 入口文件不堆业务逻辑。

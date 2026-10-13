@@ -58,12 +58,13 @@
       </nav>
 
       <div class="mt-auto mb-6 rounded-2xl border border-cyan-500/20 bg-cyan-50/10 p-4">
-        <div class="text-brand mb-2 flex items-center text-xs font-bold">
-          <span class="mr-2 h-2 w-2 animate-pulse rounded-full bg-cyan-500"></span>
-          Ling Clock
-        </div>
-        <p class="text-xs leading-relaxed text-white italic">
-          {{ $t("ui.scheduleContent.clockTip") }}
+        <Toggle :checked="widgetOpen" @change="toggleWidget">
+          <span class="text-brand text-xs font-bold">{{
+            $t("ui.scheduleContent.todoWidgetTitle")
+          }}</span>
+        </Toggle>
+        <p class="mt-2 text-xs leading-relaxed text-white/70">
+          {{ $t("ui.scheduleContent.todoWidgetTip") }}
         </p>
       </div>
     </aside>
@@ -152,7 +153,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useUIStore } from "@/stores/modules/ui/ui";
 import TodoPage from "@/components/schedule/pages/TodoPage.vue";
@@ -170,6 +171,14 @@ import {
   Sparkles,
   Wrench,
 } from "lucide-vue-next";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import Toggle from "@/components/base/widget/Toggle.vue";
+import {
+  TODO_WIDGET_STATE_EVENT,
+  closeTodoWidget,
+  isTodoWidgetOpen,
+  openTodoWidget,
+} from "@/utils/todoWidget";
 
 type Variant = "settings" | "popup";
 
@@ -263,5 +272,33 @@ const containerClass = computed(() => {
   }
   // popup：由父级 modal 控制尺寸和样式，此处填满容器
   return "w-full h-full";
+});
+
+// ─── TODO 小组件开关 ────────────────────────────────────────
+// 状态以「窗口是否真的开着」为准，而不是本地布尔值：小组件可以自己关掉自己
+const widgetOpen = ref(false);
+let unlistenWidgetState: UnlistenFn | null = null;
+
+const syncWidgetState = async () => {
+  widgetOpen.value = await isTodoWidgetOpen();
+};
+
+const toggleWidget = async (next: boolean) => {
+  widgetOpen.value = next;
+  if (next) {
+    await openTodoWidget();
+  } else {
+    await closeTodoWidget();
+  }
+};
+
+onMounted(async () => {
+  await syncWidgetState();
+  // 小组件自己关掉时会发这个事件；本组件未挂载期间漏掉的事件由上面的初始回读兜底
+  unlistenWidgetState = await listen(TODO_WIDGET_STATE_EVENT, () => void syncWidgetState());
+});
+
+onUnmounted(() => {
+  unlistenWidgetState?.();
 });
 </script>

@@ -46,7 +46,7 @@
             <div
               v-for="(save, index) in saves"
               :key="save.id"
-              class="flex flex-col rounded-xl border border-white/10 bg-[rgba(20,20,20,0.45)] p-4 shadow-[0_8px_32px_rgba(0,0,0,0.2)] backdrop-blur-[10px] transition-all duration-300 ease-[cubic-bezier(0.25,0.8,0.25,1)] hover:-translate-y-0.75 hover:border-[rgba(121,217,255,0.35)] hover:bg-[rgba(20,20,20,0.55)] hover:shadow-[0_12px_40px_rgba(121,217,255,0.08)]"
+              class="flex flex-col rounded-xl border border-white/10 bg-[rgba(20,20,20,0.45)] p-4 shadow-[0_8px_32px_rgba(0,0,0,0.2)] transition-all duration-300 ease-[cubic-bezier(0.25,0.8,0.25,1)] hover:-translate-y-0.75 hover:border-[rgba(121,217,255,0.35)] hover:bg-[rgba(20,20,20,0.55)] hover:shadow-[0_12px_40px_rgba(121,217,255,0.08)]"
             >
               <div class="flex gap-4">
                 <!-- Left: Screenshot Preview -->
@@ -166,9 +166,9 @@ import { MenuPage, MenuItem } from "../../ui";
 import { Input } from "../../base";
 import { useGameStore } from "../../../stores/modules/game";
 import { applyWebInitData } from "../../../stores/modules/game/actions";
+import { eventQueue } from "../../../core/events/event-queue";
 import { useUIStore } from "../../../stores/modules/ui/ui";
 import { useDialogStore } from "../../../stores/modules/ui/dialog";
-import { eventQueue } from "@/core/events/event-queue";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import type { SaveInfo } from "../../../types";
 import type { WebInitData } from "../../../api/services/game-info";

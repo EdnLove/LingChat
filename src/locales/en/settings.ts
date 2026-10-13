@@ -172,6 +172,12 @@ export default {
       reconnecting: "Reconnecting…",
       forceReconnect: "Force Reconnect TTS",
     },
+    affectionAnim: {
+      title: "Affection Animations",
+      desc: "Heartbeat and red liquid wave animation toggles for the affection heart, applied instantly; with heartbeat off, the top-bar heart stays still while the one inside the affection panel keeps beating",
+      heartbeat: "Enable heartbeat animation",
+      wave: "Enable wave animation",
+    },
     saveButton: "Save",
     loadFailed: "Load Failed",
     loadFailedDesc: "Unable to load the config, or the config is empty.",
@@ -224,30 +230,24 @@ export default {
     },
     fields: {
       llm: {
-        output_sec_lang:
-          "LLM_OUTPUT_SEC_LANG — Allow outputting a second language (when off, only Chinese is output)",
+        output_sec_lang: "Allow outputting a second language (when off, only Chinese is output)",
         consumers:
-          "COMSUMERS — Number of concurrent consumers (increase to speed up streaming output, default 3)",
+          "Number of concurrent consumers (increase to speed up streaming output, default 3)",
         timeout_secs:
           "LLM request idle timeout (seconds) — max wait for the first response and between adjacent stream events (10–3600)",
-        no_emotion_limit_prompt:
-          "NO_EMOTION_LIMIT_PROMPT — Lift the emotion count limit (may increase token usage)",
+        no_emotion_limit_prompt: "Lift the emotion count limit (may increase token usage)",
       },
       translate: {
-        enable:
-          "ENABLE_TRANSLATE — Enable AI translation (translates Chinese dialogue into the second language)",
+        enable: "Enable AI translation (translates Chinese dialogue into the second language)",
       },
       features: {
-        enable_time_sense:
-          "USE_TIME_SENSE — Enable time awareness (adds system reminders based on contextual time)",
+        enable_time_sense: "Enable time awareness (adds system reminders based on contextual time)",
         enable_emotion_classifier:
-          "ENABLE_EMOTION_CLASSIFIER — Enable the emotion classifier (ONNX model, auto-tags dialogue emotions)",
-        use_persistent_memory:
-          "USE_PERSISTENT_MEMORY — Auto-compress memory; restart after saving to apply",
-        memory_update_interval:
-          "MEMORY_UPDATE_INTERVAL — Visible lines that trigger a summary (1–10000; default 250)",
+          "Enable the emotion classifier (ONNX model, auto-tags dialogue emotions)",
+        use_persistent_memory: "Auto-compress memory; restart after saving to apply",
+        memory_update_interval: "Visible lines that trigger a summary (1–10000; default 250)",
         memory_recent_window:
-          "MEMORY_RECENT_WINDOW — Recent role-visible lines kept after compression (0–10000; default 30)",
+          "Recent role-visible lines kept after compression (0–10000; default 30)",
       },
       tts: {
         simple_vits_api_url: "Simple-Vits-API address (VITS adapter)",
@@ -271,33 +271,27 @@ export default {
           "Paste your GitHub Token (no permissions needed; only used to call the GraphQL API). Leave empty to use the REST API, which cannot fetch exact upvote counts (👍 reaction count will be used instead). Create a token at: https://github.com/settings/tokens",
       },
       log: {
-        enable:
-          "LOG_ENABLE — Whether to write runtime logs to files (in the data/log/app/ directory)",
+        enable: "Whether to write runtime logs to files (in the data/log/app/ directory)",
         retention_days:
-          "LOG_RETENTION_DAYS — Days to keep log files; older files are cleaned up automatically at startup",
+          "Days to keep log files; older files are cleaned up automatically at startup",
         llm_request_body:
-          "LOG_LLM_REQUEST_BODY — Log the full request body JSON of every LLM request to the data/log/llm/ directory (off by default)",
+          "Log the full request body JSON of every LLM request to the data/log/llm/ directory (off by default)",
         genai_debug:
-          "LOG_GENAI_DEBUG — Enable genai SDK debug logs (request/response details; takes effect immediately on save, off by default)",
+          "Enable genai SDK debug logs (request/response details; takes effect immediately on save, off by default)",
       },
-      ENABLE_PROACTIVE_SYSTEM:
-        "ENABLE_PROACTIVE_SYSTEM — Whether to enable the proactive chat system",
-      MAX_PROACTIVE_TIMES:
-        "MAX_PROACTIVE_TIMES — How many times the AI can chat proactively before the user responds",
+      ENABLE_PROACTIVE_SYSTEM: "Whether to enable the proactive chat system",
+      MAX_PROACTIVE_TIMES: "How many times the AI can chat proactively before the user responds",
       ENABLE_VISUAL_PRECEPTION:
-        "ENABLE_VISUAL_PRECEPTION — Allow proactive visual perception of the desktop (peeking at your screen)",
+        "Allow proactive visual perception of the desktop (peeking at your screen)",
       SCREEN_WEIGHT:
-        "SCREEN_WEIGHT — Trigger weight for visual mode (higher = more likely to peek at your screen and chat, default 30)",
-      ENABLE_TOPIC_CREATER:
-        "ENABLE_TOPIC_CREATER — Allow proactively finding and starting new topics",
-      TOPIC_WEIGHT: "TOPIC_WEIGHT — Trigger weight for random topics (default 60)",
+        "Trigger weight for visual mode (higher = more likely to peek at your screen and chat, default 30)",
+      ENABLE_TOPIC_CREATER: "Allow proactively finding and starting new topics",
+      TOPIC_WEIGHT: "Trigger weight for random topics (default 60)",
       ENABLE_TODO_PRECEPTION:
-        "ENABLE_TODO_PRECEPTION — Allow auto-reading unfinished TODOs when idle and gently reminding you",
-      TODO_WEIGHT: "TODO_WEIGHT — Trigger weight for TODO reminders (default 10)",
-      ENABLE_SCHEDULE_REMINDER:
-        "ENABLE_SCHEDULE_REMINDER — Enable schedule reminders with popup time announcements",
-      ENABLE_IMPORTANT_DAY_REMINDER:
-        "ENABLE_IMPORTANT_DAY_REMINDER — Enable heartwarming reminders for holidays and special days",
+        "Allow auto-reading unfinished TODOs when idle and gently reminding you",
+      TODO_WEIGHT: "Trigger weight for TODO reminders (default 10)",
+      ENABLE_SCHEDULE_REMINDER: "Enable schedule reminders with popup time announcements",
+      ENABLE_IMPORTANT_DAY_REMINDER: "Enable heartwarming reminders for holidays and special days",
     },
   },
   workshop: {
@@ -336,6 +330,22 @@ export default {
     empty: "No plugins found. Put a plugin folder in data/plugins/",
     delete: "Delete",
     deleteConfirm: 'Delete plugin "{name}"? This removes the plugin folder and cannot be undone.',
+    dependsOn: "Requires",
+    wsTitle: "WebSocket connections",
+    wsState: {
+      stopped: "Disconnected",
+      connecting: "Connecting",
+      connected: "Connected",
+      error: "Error",
+    },
+    enableFailedTitle: "Cannot enable plugin",
+    errors: {
+      PLUGIN_MISSING_DEPENDENCY: "Missing required plugin(s). Install them first",
+      PLUGIN_INACTIVE_DEPENDENCY: "Required plugin(s) are disabled. Enable them first",
+      PLUGIN_DEPENDENCY_CYCLE:
+        "Required plugins form a dependency cycle, so the startup order cannot be determined",
+      PLUGIN_STARTUP_FAILED: "The plugin's startup function failed",
+    },
   },
   adventurePanel: {
     header: {
@@ -375,6 +385,7 @@ export default {
       prompts: "Prompts",
       visuals: "Visuals",
       clothes: "Outfits",
+      touch: "Touch Areas",
       live2d: "Live2D",
       pet: "Desktop Pet",
       voice: "Voice Settings",
@@ -395,9 +406,14 @@ export default {
       bubbleTop: "Bubble Top Distance",
       bubbleLeft: "Bubble Left Distance",
       thinkingMessage: "Thinking Message Text",
+      avatarMode: "Stage Display",
       scaleP: "Desktop Pet Scale",
       offsetXP: "Desktop Pet Horizontal Offset",
       offsetYP: "Desktop Pet Vertical Offset",
+      avatarModeP: "Desktop Pet Display",
+      petFrameless: "Frameless Pet",
+      petFramelessHint:
+        "Hide the frame and background so only the character remains; particles are hidden too and the circular crop is removed",
       ttsType: "TTS Type",
       voiceLang: "Voice Language",
       localVoiceId: "Local Voice ID",
@@ -437,6 +453,10 @@ export default {
       ru: "Russian",
       pt: "Portuguese",
     },
+    avatarModeOptions: {
+      live2d: "Live2D Model",
+      image: "Static Portrait",
+    },
     dialectOptions: {
       mandarin: "Mandarin",
       cantonese: "Cantonese",
@@ -462,6 +482,27 @@ export default {
       item: "Outfit #{index}",
       empty: 'No outfits configured yet. Click "Add Outfit" to create one',
     },
+    touch: {
+      hint: "Draw the areas that can be touched on the artwork, and give each part a line to send to the AI. Every outfit keeps its own set. This applies to static artwork only — a Live2D model's touchable areas come from its own configuration.",
+      open: "Edit Touch Areas",
+      editorTitle: "Touch Area Editor",
+      editorHint:
+        "Click empty space to start, double-click or press Enter to close; drag a vertex to move it, Delete to remove it",
+      addRegion: "Add Area",
+      addPolygon: "+ Polygon",
+      polygon: "{count} pts",
+      newRegion: "New Area",
+      namePlaceholder: "Region name",
+      messagePlaceholder: "Message sent when touched here",
+      empty: "No areas yet — click a few points on the artwork to start",
+      missingAvatar: "This outfit has no artwork to draw on",
+      unreadableAvatar: "Could not read the artwork, so areas cannot be placed on it",
+      undo: "Undo",
+      cancel: "Cancel",
+      apply: "Save and Close",
+      discardTitle: "Discard Changes",
+      discardMessage: "There are unapplied changes. Close anyway?",
+    },
     live2d: {
       importDirectory: "Import Model Folder",
       importZip: "Import ZIP",
@@ -475,10 +516,18 @@ export default {
         "Used only as a fallback when the current emotion has no expression mapping; it is not the expression for the Normal emotion.",
       focusAnchorX: "Gaze Origin X (0-1)",
       focusAnchorY: "Gaze Origin Y (0-1)",
-      focusAnchorReset: "Use Model Canvas Center",
+      focusAnchorReset: "Use Model Bounds Center",
       noExpression: "Do Not Change Expression",
       noMotion: "Do Not Play Motion",
       clothesMapping: "Outfit to Model Variant Mapping",
+      touchReactions: "Touch Reactions",
+      touchHint:
+        "Tick a part to make it strokable in the touch mode of the main chat: the head leans with your hand, and the expression and motion bound here play once your hand stops. Leave either blank to just get the lean.",
+      touchPart_head: "Head",
+      touchPart_body: "Body",
+      touchPart_legs: "Legs",
+      touchPart_earLeft: "Left Ear",
+      touchPart_earRight: "Right Ear",
     },
     footer: {
       cancel: "Cancel",
@@ -659,10 +708,57 @@ export default {
       delete: "Delete",
       edit: "Edit Scene",
       noDescription: "No description (selecting it won't trigger narration)",
+      location: {
+        indoor: "Indoor",
+        outdoor: "Outdoor",
+        unknown: "Unknown",
+        editTitle: "Click to cycle indoor/outdoor tag",
+      },
       tip: "Tip",
       noDescriptionTip:
         'The scene "{name}" has no description; selecting it won\'t trigger scene narration',
       deleteConfirm: 'Are you sure you want to delete the scene "{name}"?',
+      fav: "Favorite (move to front)",
+      unfav: "Unfavorite",
+      categoryAll: "All",
+      categoryEmpty:
+        "No scenes in this category. Upload a background or move an existing scene here.",
+      categoryNameEmpty: "Please enter a category name",
+      categoryNamePlaceholder: "New category",
+      categoryAdd: "Add Category",
+      categoryCreated: "Category created",
+      categoryCreatedMsg: 'Category "{name}" created',
+      categoryCreateFail: "Failed to create category",
+      categoryDeleted: "Category deleted",
+      categoryDeletedMoved: 'Deleted category "{name}" and moved {count} background(s) to the root',
+      categoryDeleteFail: "Failed to delete category",
+      categoryDelete: "Delete Category",
+      categoryDeleteConfirmMove: 'Delete category "{name}" and move all its backgrounds to root?',
+      refresh: "Refresh Scenes",
+      refreshTip: "Rescan the background folder to sync the latest scenes (including subfolders)",
+      refreshDone: "Refreshed",
+      refreshDoneMsg: "Scenes synced",
+      refreshFail: "Refresh failed",
+      refreshConfirm:
+        "Refreshing will remove scenes whose background files are missing, then rescan the background folder. Continue?",
+      moveToTitle: "Move to subcategory",
+      moveToRoot: "Root",
+      moveNoCategory: "No subcategory yet, create one in the category bar above",
+      moveNoBackground: "This scene has no background image and cannot be moved",
+      movedTitle: "Moved",
+      movedMsg: 'Scene "{name}" moved to "{category}"',
+      moveFail: "Move failed",
+    },
+    sort: {
+      title: "Scene Sort",
+      button: "Scene Sort",
+      save: "Save Order",
+      cancel: "Cancel",
+      saved: "Order saved",
+      empty: "No scenes to sort",
+      favoredZone: "Favorites",
+      unfavoredZone: "Others",
+      onlyAll: 'Switch to the "All" category before adjusting scene order.',
     },
     pagination: {
       first: "← First",
@@ -672,11 +768,24 @@ export default {
       title: "Particle Selection",
       none: "None",
       starField: "Star Field",
-      rain: "Rain",
       sakura: "Sakura",
-      snow: "Snow",
       fireworks: "Fireworks",
       ba: "Starglow",
+      fireflies: "Fireflies",
+      meteorShower: "Meteor Shower",
+    },
+    weather: {
+      title: "Weather",
+      none: "None",
+      drizzle: "Drizzle",
+      rain: "Rain",
+      thunderstorm: "Thunderstorm",
+      snow: "Snow",
+      blizzard: "Blizzard",
+      fog: "Fog",
+      city: "City",
+      cityPlaceholder: "e.g. Chengdu",
+      autoSync: "Real-weather Sync",
     },
     animation: {
       switchTitle: "Animation Switches",
@@ -685,6 +794,10 @@ export default {
       mainMenuMeteors: "Enable meteor animation on the main menu",
       mouseTrail: "Enable global mouse trail animation",
       clickAnimation: "Enable click animation",
+      cursorEngine: {
+        ba: "Starglow FX (New)",
+        legacy: "Classic FX",
+      },
       sceneAwareness: "Enable scene awareness (triggers narration when switching scenes)",
       meteorFps: "Meteor FPS",
       starsFps: "Star FPS",
@@ -720,37 +833,6 @@ export default {
     folder: {
       errorTitle: "Error",
       openFailed: "Unable to open the folder",
-    },
-    dialog: {
-      title: "Dialog Appearance",
-      description:
-        "Customize the background, transparency, blur, corner radius, and more for the main interface dialog",
-      backgroundImage: "Custom Background Image",
-      noImage: "No image",
-      upload: "Upload Image",
-      change: "Change",
-      clear: "Clear",
-      sizeHint: "Recommended < 1MB (stored locally)",
-      opacity: "Background Opacity",
-      blur: "Background Blur",
-      borderRadius: "Corner Radius",
-      gradientColor: "Gradient Color",
-      textColor: "Text Color",
-      resetDefault: "Default",
-      resetGradientTitle: "Reset to default dark blue",
-      resetTextTitle: "Reset to white",
-      preview: "Live Preview",
-      previewName: "Lime Bilibili",
-      previewPlaceholder: "Type a message here…",
-      resetAll: "Reset all to default",
-      imageTooLarge: "Image too large, please select one under 2MB",
-      unsupportedFormat: "Please upload a supported image format: ",
-      readFailed: "Failed to read image, please try again",
-      interaction: "Dialog Interaction",
-      scrollHistory: "Enable scroll history (mouse wheel to view past messages)",
-      spacebarHide: "Press spacebar to quickly hide the dialog",
-      autoHideOnThink: "Auto-hide dialog when character is thinking",
-      noHistory: "No history messages",
     },
   },
   text: {
@@ -796,7 +878,7 @@ export default {
     },
     vueDevTools: {
       title: "Vue DevTools",
-      desc: "Dev mode only — controls the Vue DevTools floating panel across all windows (main / cast / log / pet)",
+      desc: "Dev mode only — controls the Vue DevTools floating panel in the main window (always hidden in secondary windows like log / cast / pet)",
     },
     memory: {
       title: "Enable Persistent Memory",
@@ -935,6 +1017,15 @@ export default {
       confirmDelete: 'Are you sure you want to delete "{name}"?',
       deleteFailed: "Failed to delete music",
       uploadFailed: "Some or all music failed to upload",
+      categoryAll: "All",
+      categoryNamePlaceholder: "New category",
+      categoryAdd: "Add Category",
+      categoryDelete: "Delete Category",
+      categoryDeleteConfirmMove: 'Delete category "{name}" and move all its music to root?',
+      refresh: "Refresh Music",
+      openFolder: "Open Folder",
+      fav: "Favorite (move to front)",
+      unfav: "Unfavorite",
     },
     ambient: {
       title: "Ambient Sound Management",
@@ -1249,6 +1340,17 @@ export default {
 
   asr: {
     title: "Speech Recognition",
+    pttKey: "Voice Hotkey",
+    pttKeyHint:
+      "Hold to talk, tap to toggle recording; toggles auto-listen when auto voice recognition is on. Single keys work (typing in chat will also trigger them — function keys or combos recommended)",
+    pttKeyCapture: "Press new hotkey… (Esc to cancel)",
+    pttKeyInvalid: "This key cannot be bound: Enter is used to send messages",
+    pttKeyReset: "Reset to default",
+    pttGlobal: "Hotkey works when unfocused",
+    pttGlobalHint:
+      "Hotkey stays active when the window is not in focus (global shortcut). Binding bare letter/digit keys will intercept that key in other apps — use at your own risk",
+    pttGlobalError: "Global hotkey registration failed: {reason}",
+    pttGlobalNotRegistered: "The key may be taken by another app — the global hotkey is not active",
     status: {
       ready: "Ready",
       notReady: "Not configured",
@@ -1270,6 +1372,9 @@ export default {
     energyWarmup: "Energy monitor warm-up (ms)",
     energyWarmupHint:
       "How long to wait after AI finishes speaking before voice trigger re-arms (default 100ms; set 0 to re-arm instantly. Increase if ambient sound right after AI speech causes false triggers)",
+    vadDebugLog: "Detailed VAD energy-detection log",
+    vadDebugLogHint:
+      "Write per-frame speech probability (frame/prob/len) to the log page, for diagnosing speech recognition that never triggers. Off by default; about 1 line per second while recording",
     sendMode: {
       title: "After recognition",
       fillOnly: "Fill input box (recommended)",
@@ -1281,8 +1386,8 @@ export default {
       "Uploads the recording after you finish speaking, then shows results progressively (llama-server result streaming)",
     streamNotSupported: "The selected model does not support streaming recognition",
     provider: {
-      title: "Speech Recognition Provider",
-      providerSelect: "Provider",
+      title: "Speech Recognition",
+      providerSelect: "Service",
       modelRefresh: "Refresh model list",
       modelListFailed: "Failed to load model list: {err}",
       test: "Test connection",

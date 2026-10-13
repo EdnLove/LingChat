@@ -411,6 +411,7 @@ import {
 import { useUIStore } from "../../../../stores/modules/ui/ui";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { PARTICLE_EFFECTS } from "@/components/game/standard/particles";
+import { selectBackgroundEffect } from "@/api/services/scene";
 import type { BubbleSide } from "@/stores/modules/settings";
 
 const props = defineProps<{
@@ -471,6 +472,8 @@ const selectParticle = async (value: string) => {
   uiStore.setBackgroundEffect(value);
   const appWindow = getCurrentWindow();
   await appWindow.emit("background-effect-changed", { effect: value });
+  // 通知后端同步特效状态并落下"手动优先"锁（失败仅记录，本地显示不受影响）
+  selectBackgroundEffect(value).catch((e) => console.warn("selectBackgroundEffect 失败:", e));
 };
 
 const percentLabel = computed(() => {
@@ -496,6 +499,8 @@ const bubbleSideOptions = computed(() => [
   { label: t("pet.petTab.bubbleSideAuto"), value: "auto" as const },
   { label: t("pet.petTab.bubbleSideAbove"), value: "above" as const },
   { label: t("pet.petTab.bubbleSideBelow"), value: "below" as const },
+  { label: t("pet.petTab.bubbleSideLeft"), value: "left" as const },
+  { label: t("pet.petTab.bubbleSideRight"), value: "right" as const },
 ]);
 
 // ===== Live2D 帧率 =====

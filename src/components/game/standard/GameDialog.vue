@@ -6,7 +6,6 @@
         isHidden,
       'max-h-[40dvh]': !uiStore.isNarrowScreen,
     }"
-    :style="dialogWrapperStyle"
     @wheel="handleWheelHistory"
   >
     <div :style="{ width: containerWidth + '%' }" class="relative">
@@ -25,7 +24,6 @@
                 :class="{
                   'min-w-0 overflow-hidden text-ellipsis whitespace-nowrap': uiStore.isNarrowScreen,
                 }"
-                :style="{ color: dialogTextColorValue }"
               >
                 <div id="character">{{ uiStore.showCharacterTitle }}</div>
               </div>
@@ -65,7 +63,6 @@
                     :title="$t('game.dialog.sceneSettings')"
                     @click="openSceneSettings"
                   ></Button>
-                  <!--
                   <Button
                     type="nav"
                     icon="hand"
@@ -73,7 +70,6 @@
                     @click="toggleTouchMode"
                     @contextmenu.prevent="exitTouchMode"
                   ></Button>
-                  -->
                   <Button
                     type="nav"
                     icon="history"
@@ -101,6 +97,26 @@
                     :title="$t('game.dialog.closeDialog')"
                     @click="removeDialog"
                   ></Button>
+                </div>
+
+                <!-- 附图指示：贴图/截图后常驻；读取中流动，完成后满格，× 移除附图 -->
+                <div
+                  v-if="pasteLoading || hasScreenshot"
+                  class="mt-1.5 flex items-center gap-2 rounded-md bg-white/8 px-2.5 py-1.5"
+                >
+                  <div class="h-1 flex-1 overflow-hidden rounded-full bg-white/10">
+                    <div
+                      v-if="pasteLoading"
+                      class="paste-progress-bar h-full w-1/3 rounded-full bg-cyan-400"
+                    ></div>
+                    <div v-else class="h-full w-full rounded-full bg-cyan-400/70"></div>
+                  </div>
+                  <button
+                    class="shrink-0 cursor-pointer border-none bg-transparent p-0.5 text-white/50 transition-colors hover:text-white"
+                    @click="clearScreenshot"
+                  >
+                    <X :size="14" />
+                  </button>
                 </div>
               </div>
             </template>
@@ -202,6 +218,7 @@
             :placeholder="placeholderText"
             v-model="inputMessage"
             @keydown.enter.exact.prevent="sendOrContinue"
+            @paste="onPasteImage"
             :readonly="!isInputEnabled"
           ></textarea>
         </div>
@@ -222,12 +239,13 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
+import { X } from "lucide-vue-next";
 import { useTypeWriter } from "../../../composables/ui/useTypeWriter";
-import { setMobileMenuOpen, useAsrInput } from "../../../composables/useAsrInput";
+import { setMobileMenuOpen, useAsrInput } from "../../../composables/asr";
 import { useChatInput } from "../../../composables/chat/useChatInput";
 import { useDialogAdvance } from "../../../composables/chat/useDialogAdvance";
 import { useDialogStatus } from "../../../composables/chat/useDialogStatus";
-import { useDialogAppearance } from "../../../composables/useDialogAppearance";
+import { useDialogInteraction } from "../../../composables/useDialogInteraction";
 import { useMicControl } from "../../../composables/useMicControl";
 import { useScreenshot } from "../../../composables/useScreenshot";
 import { dialogueMerge } from "../../../core/events/dialogue-merge";
@@ -251,14 +269,13 @@ const uiStore = useUIStore();
 const dialogStore = useDialogStore();
 const settingsStore = useSettingsStore();
 
-// Dialog appearance managed by composable: useDialogAppearance
-const { isHidden, hide, dialogWrapperStyle, dialogTextColorValue, handleWheelHistory } =
-  useDialogAppearance({
-    openHistory: () => {
-      uiStore.toggleSettings(true);
-      uiStore.setSettingsTab("history");
-    },
-  });
+// 隐藏状态与滚轮/空格交互由 composable 管理
+const { isHidden, hide, handleWheelHistory } = useDialogInteraction({
+  openHistory: () => {
+    uiStore.toggleSettings(true);
+    uiStore.setSettingsTab("history");
+  },
+});
 
 // 移动端按钮折叠状态（但是基于长宽比判断）
 const isMobile = ref(uiStore.aspectRatio <= 1);
@@ -285,11 +302,15 @@ const { micEnabled, micTitle, micIconName, toggleRecording } = useMicControl();
 // 失败提示由调用方提供：桌宠侧静默，主界面弹 alert。
 const {
   hasScreenshot,
+  screenshotBase64,
   init: initScreenshot,
   destroy: destroyScreenshot,
   start: startScreenshotRaw,
   clear: clearScreenshot,
 } = useScreenshot();
+
+// 粘贴图片读取中（进度条显隐）
+const pasteLoading = ref(false);
 
 const startScreenshot = () =>
   startScreenshotRaw({
@@ -663,6 +684,33 @@ onUnmounted(() => {
   destroyScreenshot();
 });
 
+// 粘贴图片：读取剪贴板中的图片，复用截图链路（预览、压缩与视觉路由和截图一致）。
+// 已有截图时直接覆盖，与"重新截取"行为对齐。
+function onPasteImage(event: ClipboardEvent) {
+  const items = event.clipboardData?.items;
+  if (!items) return;
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    if (!item.type.startsWith("image/")) continue;
+    const file = item.getAsFile();
+    if (!file) continue;
+    event.preventDefault();
+    pasteLoading.value = true;
+    const reader = new FileReader();
+    reader.onload = () => {
+      // 后端与预览均按裸 base64 处理，去掉 data URL 前缀
+      const dataUrl = String(reader.result ?? "");
+      screenshotBase64.value = dataUrl.slice(dataUrl.indexOf(",") + 1);
+      hasScreenshot.value = true;
+      // 至少展示 400ms，避免读取太快进度条一闪而过
+      setTimeout(() => (pasteLoading.value = false), 400);
+    };
+    reader.onerror = () => (pasteLoading.value = false);
+    reader.readAsDataURL(file);
+    return;
+  }
+}
+
 function sendOrContinue() {
   if (gameStore.currentStatus === "input") {
     send();
@@ -693,9 +741,6 @@ function removeDialog(_e: Event) {
   hide();
 }
 
-// ── 对话框外观（响应 settings store） ──
-// Dialog appearance logic extracted to composable: useDialogAppearance
-
 defineExpose({
   continueDialog,
   isTyping,
@@ -703,6 +748,19 @@ defineExpose({
 </script>
 
 <style scoped>
+/* 粘贴图片读取进度条：不定长亮段往复滑动 */
+.paste-progress-bar {
+  animation: paste-progress-slide 1.1s ease-in-out infinite;
+}
+@keyframes paste-progress-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
+}
+
 /* AI 回复显示区：标准/内联模式共用。颜色由两个子容器决定
      （台词区白、动作区灰），这里的灰色仅作 fallback */
 .response-display {
@@ -873,9 +931,13 @@ defineExpose({
 
 <style>
 /* 底部 Home 指示器安全区：对话框本体铺到屏幕底（其半透明底盖住背景条带），
-     仅内容底部让出 env() 高度，输入框不被 Home 指示器遮挡（桌面/Android 桌面 env=0） */
+     仅内容底部让出 env() 高度，输入框不被 Home 指示器遮挡（桌面/Android 桌面 env=0）。
+     外观（渐变底色 / 圆角 / 文字色）固定于此，投屏窗口另有 !important 覆盖。 */
 .game-dialog {
   padding-bottom: calc(15px + var(--safe-area-inset-bottom, 0px));
+  color: #ffffff;
+  border-radius: 16px;
+  background: linear-gradient(to top, rgba(0, 14, 39, 0.7), rgba(0, 14, 39, 0.6));
 }
 /* 逐字符淡入+上浮动画的 @keyframes 已移入 src/assets/styles/dialogue-text.css（全局引入） */
 </style>
