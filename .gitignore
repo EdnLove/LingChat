@@ -162,6 +162,8 @@ data/game_data/characters/**
 !data/game_data/characters/风雪/**
 !data/game_data/characters/DeepSeek/
 !data/game_data/characters/DeepSeek/**
+!data/game_data/characters/松子/
+!data/game_data/characters/松子/**
 data/game_data/characters/DeepSeek/live2d
 # 开发者本地角色配置（优先于 settings.yml，见 utils/yaml_file.rs）：
 data/game_data/characters/*/settings_local.yml
