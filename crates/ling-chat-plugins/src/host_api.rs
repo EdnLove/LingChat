@@ -38,6 +38,13 @@ static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 /// 需要异步能力（reqwest / 宿主 async 命令）时，用这个独立多线程 runtime 驱动。
 static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
 
+/// `ws_request` 默认等待时长。
+const WS_REQUEST_TIMEOUT_MS: u64 = 5000;
+/// 下限：再短本机回环也可能来不及。
+const WS_REQUEST_TIMEOUT_MIN_MS: u64 = 100;
+/// 上限：工具自身 `timeout_ms` 最高 120000，留出余量免得被外层超时先杀掉。
+const WS_REQUEST_TIMEOUT_MAX_MS: u64 = 115_000;
+
 fn client() -> &'static reqwest::Client {
     HTTP_CLIENT.get_or_init(|| {
         factory::build_http_client(30).expect("构建插件 HTTP client 失败（rustls/webpki 配置错误）")
@@ -810,6 +817,74 @@ mod plugin_host {
             .clone();
         let result = manager.ws_send(&plugin_id, &conn_id, cmd);
         Ok(super::result_to_py(vm, result))
+    }
+
+    /// 向已声明的 WS 连接发一条请求，并等它的响应帧。
+    ///
+    /// 用法：`ws_request("gateway", {"type": "get_status", "data": {}}, timeout_ms=5000)`
+    ///
+    /// `data` 必须是对象：宿主会在这层信封上补 `request_id` 再发出，对端原样带回后
+    /// 按同一个 id 兑现。**会阻塞到响应或超时**，所以 `timeout_ms` 要明显小于本工具
+    /// 自身的 `timeout_ms`，否则会被外层执行超时先杀掉。
+    ///
+    /// 返回 `{ "ok": true, "response": <响应帧完整对象> }`；失败一律
+    /// `{ "ok": false, "error": "..." }`（未连接 / 超时 / 连接断开三种已归一化）。
+    #[pyfunction]
+    fn ws_request(
+        conn_id: String,
+        data: PyObjectRef,
+        kwargs: KwArgs<PyObjectRef>,
+        vm: &VirtualMachine,
+    ) -> PyResult<PyObjectRef> {
+        let kwargs = super::kwargs_map(kwargs);
+        let timeout_ms = kwargs
+            .get("timeout_ms")
+            .and_then(|v| super::py_to_value(vm, v).as_u64())
+            .unwrap_or(super::WS_REQUEST_TIMEOUT_MS)
+            .clamp(
+                super::WS_REQUEST_TIMEOUT_MIN_MS,
+                super::WS_REQUEST_TIMEOUT_MAX_MS,
+            );
+
+        let mut payload = super::py_to_value(vm, &data);
+        let Some(map) = payload.as_object_mut() else {
+            return Ok(super::err_json(vm, "ws_request 的 data 必须是对象"));
+        };
+        let request_id = uuid::Uuid::new_v4().to_string();
+        map.insert(
+            "request_id".to_string(),
+            serde_json::Value::String(request_id.clone()),
+        );
+
+        let Some(app) = crate::app_handle() else {
+            return Ok(super::no_host(vm));
+        };
+        let Some(plugin_id) = super::current_plugin() else {
+            return Ok(super::err_json(vm, "无法确定当前插件"));
+        };
+        let manager = app
+            .state::<std::sync::Arc<crate::PluginManager>>()
+            .inner()
+            .clone();
+        let rx = match manager.ws_request(&plugin_id, &conn_id, request_id, payload.to_string()) {
+            Ok(rx) => rx,
+            Err(e) => return Ok(super::err_json(vm, &e)),
+        };
+
+        let waited = super::runtime().block_on(async move {
+            tokio::time::timeout(std::time::Duration::from_millis(timeout_ms), rx).await
+        });
+        let out = match waited {
+            Ok(Ok(response)) => serde_json::json!({ "ok": true, "response": response }),
+            // 通道被丢弃 = 连接断了（连接任务退出时清空等待表）。
+            Ok(Err(_)) => serde_json::json!({ "ok": false, "error": "连接已断开，请求未得到响应" }),
+            // 单人游戏按 Esc 暂停时游戏 tick 停止，模组不处理任何请求，表现就是全部超时。
+            Err(_) => serde_json::json!({
+                "ok": false,
+                "error": "请求超时，游戏可能处于暂停或未响应状态",
+            }),
+        };
+        Ok(super::value_to_pyobject(vm, &out))
     }
 
     /// 查询本插件 WS 连接的当前状态。

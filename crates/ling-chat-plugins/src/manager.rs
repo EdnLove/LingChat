@@ -8,7 +8,7 @@ use std::time::Duration;
 use futures_util::future::join_all;
 use serde_json::Value;
 use tauri::{AppHandle, Emitter, Manager};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, oneshot};
 use tokio_util::sync::CancellationToken;
 
 use ling_chat_main::ai_service::tools::registry::ToolRegistry;
@@ -851,6 +851,46 @@ impl PluginManager {
             .tx
             .send(cmd)
             .map_err(|_| format!("连接 '{conn_id}' 的发送通道已关闭"))
+    }
+
+    /// 向某连接发一条请求并登记等待（脚本 `ws_request` 用），返回应答通道。
+    ///
+    /// 只登记不等待：等待与超时归调用方（宿主函数）管，连接任务这边必须保持能收帧，
+    /// 否则响应回来时没人接。
+    pub(crate) fn ws_request(
+        &self,
+        plugin_id: &str,
+        conn_id: &str,
+        request_id: String,
+        payload: String,
+    ) -> Result<oneshot::Receiver<Value>, String> {
+        let table = self.ws.lock().unwrap_or_else(|e| e.into_inner());
+        let conns = table
+            .get(plugin_id)
+            .ok_or_else(|| format!("插件 '{plugin_id}' 没有活动连接"))?;
+        let handle = conns
+            .get(conn_id)
+            .ok_or_else(|| format!("连接 '{conn_id}' 未建立或已关闭"))?;
+        let (tx, rx) = oneshot::channel();
+        handle
+            .pending
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(request_id.clone(), tx);
+        let sent = handle.tx.send(WsCommand::Request {
+            payload,
+            request_id: request_id.clone(),
+        });
+        if sent.is_err() {
+            // 发送通道已关：撤掉刚登记的等待，免得留下永不兑现的条目。
+            handle
+                .pending
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .remove(&request_id);
+            return Err(format!("连接 '{conn_id}' 的发送通道已关闭"));
+        }
+        Ok(rx)
     }
 
     /// 查询某插件声明的 WS 连接及其当前状态（脚本 `ws_status` 用）。

@@ -1,0 +1,55 @@
+id = "mc_maid_bridge"
+name = "车万女仆桥接"
+description = "把《车万女仆》桥接模组接进对话：MC 里玩家说的话进对话，角色回的话变成游戏内女仆气泡"
+version = "0.1.0"
+author = "LingChat"
+
+# 顶层键必须写在第一个表之前，否则会被解析成那个表的字段。
+# MC 里玩家说的话要当成玩家发言送进对话。
+send_user_message = true
+
+# 桥接模组只在本机回环上监听，白名单也只放行回环，避免这个插件被指向任意外部地址。
+ws_allow = ["ws://127.0.0.1:", "ws://localhost:"]
+
+[[config]]
+key = "ws_url"
+label = "桥接模组地址"
+kind = "string"
+required = false
+default = "ws://127.0.0.1:48920"
+hint = "与模组默认一致，一般不用改；模组改过端口才需要动。"
+
+[[config]]
+key = "maid_id"
+label = "女仆 UUID"
+kind = "string"
+required = false
+hint = "留空则每次自动取第一只女仆（每句回复都要多问一次游戏）。养了多只、或想省掉这次往返，就从模组面板复制填上。"
+
+[[config]]
+key = "echo_to_game"
+label = "把角色的话同步成游戏内气泡"
+kind = "boolean"
+required = false
+default = true
+
+[[ws]]
+id = "tlm"
+mode = "client"
+url = "ws://127.0.0.1:48920"
+auto_reconnect = true
+script = "hooks.py"
+handler = "on_ws"
+
+[[subscribe]]
+signal = "ai_reply"
+script = "hooks.py"
+handler = "on_reply"
+
+# 连不上 MC 不该把整个插件自动禁用，只记原因。
+[startup]
+script = "hooks.py"
+handler = "on_start"
+required = false
+retries = 2
+retry_interval_ms = 5000

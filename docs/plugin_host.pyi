@@ -69,3 +69,12 @@ def ws_send(conn_id: str, data: Any) -> Dict[str, Any]:
 
 def ws_status(*, conn_id: Optional[str] = ...) -> Dict[str, Any]:
     """查询 WS 连接状态。返回 {ok, connections} 或单条 {ok, id, mode, state}。"""
+
+def ws_request(
+    conn_id: str, data: Dict[str, Any], *, timeout_ms: Optional[int] = ...
+) -> Dict[str, Any]:
+    """发一条请求并等它的响应帧（data 必须是对象，宿主补 request_id）。
+
+    会阻塞到响应或超时，timeout_ms 要明显小于工具自身的 timeout_ms。
+    返回 {ok, response} 或 {ok: False, error}（未连接 / 超时 / 连接断开已归一化）。
+    """

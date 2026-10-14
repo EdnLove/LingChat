@@ -83,6 +83,10 @@ src-tauri/binaries/
 ~/.tauri/
 frontend_vue/
 .tsbuildinfo
+# MC 桥接模组（Gradle 工程）：构建输出与 dev 运行目录
+mc-mod/.gradle/
+mc-mod/run/
+mc-mod/
 src-tauri/gen/android/app/src/main/assets/
 # Tauri 自动生成的图标
 src-tauri/icons/*.png
@@ -191,9 +195,13 @@ data/game_data/skills/**
 !data/game_data/skills/**/
 !data/game_data/skills/**/*
 
-# 插件，仅示例插件保留
+# 插件，仅随仓库分发的插件保留。
+# 父目录必须先取反：父目录被排除时，git 无法重新包含它下面的任何文件。
+!data/plugins/
 data/plugins/*
 !data/plugins/tavily/
+!data/plugins/mc_maid_bridge/
+!data/plugins/mc_maid_bridge/**
 
 # ============================================================
 #        文档和其他工具 (Documentation & Other Tools)
