@@ -1,6 +1,6 @@
 // download_embedding_model.mjs
 //
-// 下载 Tool RAG 用的文本嵌入模型（bge-small-zh-v1.5，int8 量化单文件 ONNX）。
+// 下载 Tool RAG 用的文本嵌入模型（bge-small-zh-v1.5，uint8 量化单文件 ONNX）。
 // 结构与 download_emotion_model.mjs 保持一致：幂等、并行下载、失败退出非 0。
 //
 // 模型与 tokenizer 都不进 git（.gitignore 的 `data/**` 排除整个 data 目录），
@@ -18,8 +18,12 @@ const TARGET_DIR = path.join(
 );
 
 // 远程路径 -> 本地文件名。统一落成扁平的 model.onnx，便于 Rust 侧按目录解析。
+//
+// 用 uint8 动态量化版（约 23MB）：同仓库还有 model_quantized / model_int8 / model_fp16 /
+// model.onnx（fp32 约 90MB）等变体，换用哪个只改这里的 remote。量化会略微损失精度，
+// 但工具检索是粗粒度匹配，实测区分度足够（见 tool_rag 的检索冒烟测试）。
 const FILES = [
-  { remote: "onnx/model_quantized.onnx", local: "model.onnx" },
+  { remote: "onnx/model_uint8.onnx", local: "model.onnx" },
   { remote: "tokenizer.json", local: "tokenizer.json" },
   { remote: "config.json", local: "config.json" },
 ];

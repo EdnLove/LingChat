@@ -1,13 +1,13 @@
 # 文本嵌入模型（Tool RAG）
 
-`bge-small-zh-v1.5` 的 int8 量化 ONNX 导出，供主聊天的 Tool RAG 做工具语义检索
+`bge-small-zh-v1.5` 的 uint8 量化 ONNX 导出，供主聊天的 Tool RAG 做工具语义检索
 （见 `docs/function_call/tool_rag.md`）。512 维，用于把工具描述与用户的自然语言
 意图做向量匹配，检索 top-5 候选工具。
 
 ## 来源
 
 - 模型：`BAAI/bge-small-zh-v1.5`（中文检索，512 维）
-- 导出：Xenova 的 ONNX 转换仓（`onnx/model_quantized.onnx`）
+- 导出：Xenova 的 ONNX 转换仓（`onnx/model_uint8.onnx`）
 - 下载源：ModelScope 镜像 `Xenova/bge-small-zh-v1.5`
 
 ## 获取方式
@@ -23,11 +23,11 @@ node scripts/download_embedding_model.mjs
 本目录下的模型文件**不进 git**（`.gitignore` 的 `data/**` 排除整个 `data` 目录，
 只有显式的 `!` 白名单路径会入库），仅 `.gitkeep` 与本文档受版本控制。
 
-| 文件             | 说明                                                                       |
-| ---------------- | -------------------------------------------------------------------------- |
-| `model.onnx`     | int8 量化模型，单文件（无外部 `.data` 边文件，否则会被整目录打包进安装包） |
-| `tokenizer.json` | HuggingFace 分词器（BERT WordPiece）                                       |
-| `config.json`    | 仅供下载脚本做版本比对                                                     |
+| 文件             | 说明                                                                            |
+| ---------------- | ------------------------------------------------------------------------------- |
+| `model.onnx`     | uint8 动态量化模型，单文件（无外部 `.data` 边文件，否则会被整目录打包进安装包） |
+| `tokenizer.json` | HuggingFace 分词器（BERT WordPiece）                                            |
+| `config.json`    | 仅供下载脚本做版本比对                                                          |
 
 ## 换模型
 

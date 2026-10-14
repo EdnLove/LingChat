@@ -29,7 +29,7 @@
 
 ### 检索方案
 
-ONNX 语义向量检索，模型 `bge-small-zh-v1.5`（512 维，int8 量化约 23MB，单文件）。
+ONNX 语义向量检索，模型 `bge-small-zh-v1.5`（512 维，uint8 量化约 23MB，单文件）。
 代码在 `crates/ling-chat-main/src/ai_service/embedding/`，API 只有
 `EmbeddingEngine::embed` 与 `cosine_similarity`，**将来记忆检索可直接复用挂在
 `AppState` 上的同一个实例**（`state.embedding`）。
@@ -55,8 +55,9 @@ ONNX 语义向量检索，模型 `bge-small-zh-v1.5`（512 维，int8 量化约 
 逗号处），再附上「用一句话描述你想做的事调用本工具取证具体参数」的引导。
 
 清单只到名字与用途，**参数不在其中** —— 具体用法依旧靠检索结果取得，token 收益不变。
-实测（`tool_rag_retrieval` 冒烟测试会打印这份描述）：35 个工具时清单约 1.5K 字符量级，
-而完整 schema 要上万字符。
+真实注册表（35 个工具）下清单约 1.5K 字符量级，而完整 schema 要上万字符；跑应用时开
+debug 日志可以看到实测的 `sent_chars` / `full_chars`（见 `tool_loop.rs` 的
+「Tool RAG 工具集已收窄」）。
 
 渲染逻辑在 `tool_rag.rs` 的 `search_description` / `apply_dynamic_search_description`，
 由 `tool_loop.rs` 在算出本轮 `allowed` 后调用（`base_allowed` 决定清单内容，因此清单
@@ -95,8 +96,7 @@ node scripts/download_embedding_model.mjs
 # 纯逻辑单测（不需要模型）：LRU、权限求交、语料排除、余弦相似度
 cargo test -p ling-chat-main --lib
 
-# 真实模型下的检索质量冒烟：固定意图 -> 期望工具，打印 top-5 与分数。
-# 单独运行（同一进程里 ort::init_from 只应初始化一次）
-cargo test -p ling-chat-main --lib tool_rag_retrieval -- --ignored --nocapture
+# 真实模型下的嵌入冒烟：维度、归一化与语义区分度。
+# 需先拉模型；单独运行（同一进程里 ort::init_from 只应初始化一次）
 cargo test -p ling-chat-main --lib embedding_smoke -- --ignored --nocapture
 ```
