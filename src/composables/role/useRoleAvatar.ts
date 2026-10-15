@@ -215,14 +215,9 @@ export function useRoleAvatar(options: UseRoleAvatarOptions): UseRoleAvatarApi {
     armBubbleHide();
   };
 
-  // 头像文件随角色、情绪、衣服任一变化重新解析
+  // 角色与衣服变化直接解析；情绪变化由下方演出流程统一解析。
   watch(
-    () => [
-      role.value.roleId,
-      role.value.emotion,
-      role.value.clothesName,
-      role.value.character_folder,
-    ],
+    () => [role.value.roleId, role.value.clothesName, role.value.character_folder],
     () => resolveAvatar(),
     { immediate: true },
   );
@@ -232,6 +227,23 @@ export function useRoleAvatar(options: UseRoleAvatarOptions): UseRoleAvatarApi {
     () => [role.value.emotion, role.value.emotionRevision] as const,
     async ([newEmotion]) => {
       const currentId = ++latestEmotionId;
+      resolveAvatarId++;
+      const config = EMOTION_CONFIG[newEmotion];
+
+      if (
+        config?.animation &&
+        config.animation !== "none" &&
+        activeAnimationClass.value === config.animation
+      ) {
+        // Restart a shared CSS motion before resolving the next portrait, so its
+        // first visible frame already has the new reaction. Keep the old image.
+        activeAnimationClass.value = "normal";
+        await nextTick();
+        await new Promise<void>((resolve) => {
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+        });
+        if (currentId !== latestEmotionId) return;
+      }
 
       // 依次等待：头像路径解析 → DOM 更新传给子组件 → 子组件图片加载完成
       await resolveAvatar();
@@ -241,20 +253,9 @@ export function useRoleAvatar(options: UseRoleAvatarOptions): UseRoleAvatarApi {
       // 陈旧性检查必须在注入的 await 之后：期间表情又变了就丢弃这次结果
       if (currentId !== latestEmotionId) return;
 
-      const config = EMOTION_CONFIG[newEmotion];
       if (!config) return;
 
       if (config.animation && config.animation !== "none") {
-        if (activeAnimationClass.value === config.animation) {
-          // A different emotion can share the same CSS animation (高兴/兴奋).
-          // Paint the idle class first to restart it without remounting the image.
-          activeAnimationClass.value = "normal";
-          await nextTick();
-          await new Promise<void>((resolve) => {
-            requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-          });
-          if (currentId !== latestEmotionId) return;
-        }
         activeAnimationClass.value = config.animation;
       }
 
