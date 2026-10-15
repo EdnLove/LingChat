@@ -1,132 +1,174 @@
 <template>
   <div class="relative h-full w-full">
-    <!-- 底层图片（当前显示的图片） -->
     <slot></slot>
-    <!-- 叠层插槽：两个背景层都是 absolute inset-0，放进来的东西也用 absolute inset-0 就与
-         立绘的绘制盒子结构上重合，不必去猜这一层的 relative 与外部传入的 absolute 谁生效 -->
     <slot name="overlay"></slot>
     <div
-      class="absolute inset-0 z-10 h-full w-full bg-no-repeat will-change-[opacity,background-image] backface-hidden"
+      v-for="(layer, index) in layers"
+      :key="index"
+      :ref="
+        (el) => {
+          layerElements[index] = el as HTMLElement | null;
+        }
+      "
+      class="image-fade-layer absolute inset-0 h-full w-full bg-no-repeat will-change-[opacity] backface-hidden"
       :style="{
-        backgroundImage: `url(${currentImageUrl})`,
+        backgroundImage: layer.url ? `url(${JSON.stringify(layer.url)})` : 'none',
         backgroundSize: objectFit,
         backgroundPosition: position,
+        opacity: layer.opacity,
+        zIndex: index === activeLayer ? 10 : 20,
       }"
-    ></div>
-
-    <!-- 顶层图片（准备淡入的新图片） -->
-    <!-- 新增 ref="topDivRef" 用于强制重排 -->
-    <div
-      ref="topDivRef"
-      class="absolute inset-0 z-20 h-full w-full bg-no-repeat transition-opacity ease-in-out will-change-[opacity,background-image] backface-hidden"
-      :class="isFadingIn ? 'opacity-100' : 'opacity-0'"
-      :style="{
-        backgroundImage: `url(${nextImageUrl})`,
-        backgroundSize: objectFit,
-        backgroundPosition: position,
-        transitionDuration: `${duration}ms`,
-      }"
-      @transitionend="onTransitionEnd"
     ></div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, watch, nextTick } from "vue";
+import { ref, watch, nextTick, onBeforeUnmount } from "vue";
+import { imageProfile, needsSequentialFade, type ImageProfile } from "@/utils/image-transition";
 
 const props = withDefaults(
-  defineProps<{
-    src: string;
-    duration?: number;
-    objectFit?: string;
-    position?: string;
-  }>(),
-  {
-    duration: 300,
-    objectFit: "contain",
-    position: "center bottom",
-  },
+  defineProps<{ src: string; duration?: number; objectFit?: string; position?: string }>(),
+  { duration: 300, objectFit: "contain", position: "center bottom" },
 );
 
-const topDivRef = ref<HTMLElement | null>(null); // 获取顶层 DOM 的引用
-const currentImageUrl = ref("");
-const nextImageUrl = ref("");
-const isFadingIn = ref(false);
+const layers = ref([
+  { url: "", opacity: 0 },
+  { url: "", opacity: 0 },
+]);
+const layerElements: (HTMLElement | null)[] = [];
+const activeLayer = ref(0);
+const masks: (ImageProfile | null)[] = [null, null];
+let animation: Animation | null = null;
+let generation = 0;
+let currentImageLoadPromise = Promise.resolve();
+let resolveLoad: (() => void) | undefined;
 
-let currentImageLoadPromise: Promise<void> | null = null;
-
-const updateImage = async (newUrl: string) => {
-  if (!newUrl || newUrl === "none") return;
-
-  let resolveLoad!: () => void;
-  const loadPromise = new Promise<void>((resolve) => {
-    resolveLoad = resolve;
-  });
-  currentImageLoadPromise = loadPromise;
-
-  // 1. 完善的图片预加载机制
-  const img = new Image();
-  const imgReadyPromise = new Promise<void>((resolve, reject) => {
-    img.onload = () => resolve();
-    img.onerror = (err) => reject(err);
-  });
-  img.src = newUrl;
-
-  try {
-    // 必须先等网络请求完全结束
-    await imgReadyPromise;
-    // 然后再等 CPU 解码完成 (忽略 decode 本身不支持时的报错)
-    await img.decode().catch(() => {});
-  } catch (err) {
-    console.error(`加载图片失败: ${newUrl}`, err);
+function settleLayers() {
+  const old = activeLayer.value;
+  const next = 1 - old;
+  const opacity = (index: number) => {
+    const element = layerElements[index];
+    return element ? Number(getComputedStyle(element).opacity) : layers.value[index].opacity;
+  };
+  const nextOpacity = opacity(next);
+  if (layers.value[next].url && (nextOpacity >= 0.5 || opacity(old) === 0)) {
+    activeLayer.value = next;
   }
-
-  // 确保只有最后一次触发的加载才会执行 DOM 更新
-  if (currentImageLoadPromise === loadPromise) {
-    // 如果上一个动画还没完就被打断，先整理状态
-    if (isFadingIn.value) {
-      currentImageUrl.value = nextImageUrl.value || currentImageUrl.value;
-      isFadingIn.value = false;
+  animation?.cancel();
+  animation = null;
+  for (let i = 0; i < layers.value.length; i++) {
+    if (i === activeLayer.value && layers.value[i].url) layers.value[i].opacity = 1;
+    else {
+      layers.value[i] = { url: "", opacity: 0 };
+      masks[i] = null;
     }
+  }
+}
 
-    // 2. 赋值新的背景图
-    nextImageUrl.value = newUrl;
-
-    // 3. 关键：等待 Vue 将 URL 更新到真实 DOM (style属性中)
-    await nextTick();
-
-    // 4. 关键：强制浏览器重排 (Reflow)
-    if (topDivRef.value) {
-      void topDivRef.value.offsetHeight;
-    }
-
-    // 5. 在下一帧安全地开启淡入动画
-    requestAnimationFrame(() => {
-      isFadingIn.value = true;
+async function loadImage(url: string): Promise<HTMLImageElement> {
+  const load = (crossOrigin: boolean) =>
+    new Promise<HTMLImageElement>((resolve, reject) => {
+      const image = new Image();
+      if (crossOrigin) image.crossOrigin = "anonymous";
+      image.onload = () => resolve(image);
+      image.onerror = reject;
+      image.src = url;
     });
+  // Readable alpha masks for asset URLs; retain support for external non-CORS images.
+  const image = await load(true).catch(() => load(false));
+  await image.decode().catch(() => {});
+  return image;
+}
+
+async function fade(index: number, to: number, duration: number) {
+  const layer = layers.value[index];
+  const from = layer.opacity;
+  layer.opacity = to;
+  const element = layerElements[index];
+  if (!element || duration <= 0) {
+    await nextTick();
+    return;
   }
-
-  resolveLoad();
-};
-
-const onTransitionEnd = () => {
-  if (isFadingIn.value) {
-    currentImageUrl.value = nextImageUrl.value;
-    isFadingIn.value = false;
+  const effect = element.animate([{ opacity: from }, { opacity: to }], {
+    duration,
+    easing: "ease-in-out",
+  });
+  animation = effect;
+  try {
+    await effect.finished;
+  } finally {
+    effect.cancel();
+    if (animation === effect) animation = null;
   }
-};
+}
 
-const waitForLoad = () => currentImageLoadPromise || Promise.resolve();
-
-defineExpose({
-  waitForLoad,
-});
+async function updateImage(url: string, run: number) {
+  if (!url || url.toLowerCase() === "none") {
+    for (let i = 0; i < layers.value.length; i++) {
+      layers.value[i] = { url: "", opacity: 0 };
+      masks[i] = null;
+    }
+    return;
+  }
+  if (layers.value[activeLayer.value].url === url) return;
+  const image = await loadImage(url);
+  if (run !== generation) return;
+  const profile = imageProfile(url, image);
+  const old = activeLayer.value;
+  const next = 1 - old;
+  const hasOld = !!layers.value[old].url;
+  const sequential = hasOld && needsSequentialFade(masks[old], profile);
+  const duration = matchMedia("(prefers-reduced-motion: reduce)").matches
+    ? 0
+    : Math.max(0, props.duration);
+  if (duration === 0) {
+    layers.value[old] = { url, opacity: 1 };
+    masks[old] = profile;
+    layers.value[next] = { url: "", opacity: 0 };
+    masks[next] = null;
+    await nextTick();
+    return;
+  }
+  const phaseDuration = sequential ? duration / 2 : duration;
+  if (sequential) {
+    await fade(old, 0, phaseDuration);
+    if (run !== generation) return;
+  }
+  layers.value[next] = { url, opacity: 0 };
+  masks[next] = profile;
+  await nextTick();
+  if (run !== generation) return;
+  await fade(next, 1, phaseDuration);
+  if (run !== generation) return;
+  activeLayer.value = next;
+  layers.value[old] = { url: "", opacity: 0 };
+  masks[old] = null;
+}
 
 watch(
   () => props.src,
-  (newUrl) => {
-    updateImage(newUrl);
+  (url) => {
+    const run = ++generation;
+    settleLayers();
+    resolveLoad?.();
+    currentImageLoadPromise = new Promise<void>((resolve) => {
+      resolveLoad = resolve;
+    });
+    const done = resolveLoad;
+    void updateImage(url, run)
+      .catch((error) => {
+        if (run === generation) console.warn(`加载图片失败: ${url}`, error);
+      })
+      .finally(done);
   },
   { immediate: true },
 );
+
+onBeforeUnmount(() => {
+  generation++;
+  animation?.cancel();
+  resolveLoad?.();
+});
+
+defineExpose({ waitForLoad: () => currentImageLoadPromise });
 </script>
