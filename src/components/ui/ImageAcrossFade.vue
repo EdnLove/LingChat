@@ -153,7 +153,7 @@ async function fade(index: number, to: number, duration: number) {
   }
 }
 
-async function updateImage(url: string, run: number) {
+async function updateImage(url: string, run: number, ready: () => void) {
   if (!url || url.toLowerCase() === "none") {
     for (let i = 0; i < layers.value.length; i++) {
       layers.value[i] = { url: "", opacity: 0, crossOrigin: true };
@@ -184,7 +184,11 @@ async function updateImage(url: string, run: number) {
     await nextTick();
     return;
   }
-  await fade(next, 1, duration);
+  const transition = fade(next, 1, duration);
+  // Loading is complete when the prepared image starts displaying. Avatar
+  // reactions should not wait for a crossfade while instant swaps react at once.
+  ready();
+  await transition;
   if (run !== generation) return;
   activeLayer.value = next;
   layers.value[old] = { url: "", opacity: 0, crossOrigin: true };
@@ -200,8 +204,8 @@ watch(
     currentImageLoadPromise = new Promise<void>((resolve) => {
       resolveLoad = resolve;
     });
-    const done = resolveLoad;
-    void updateImage(url, run)
+    const done = resolveLoad!;
+    void updateImage(url, run, done)
       .catch((error) => {
         if (run === generation) console.warn(`加载图片失败: ${url}`, error);
       })
