@@ -145,6 +145,7 @@ export function useRoleAvatar(options: UseRoleAvatarOptions): UseRoleAvatarApi {
     stopAvatarUpdates?.();
     stopCostumeUpdates?.();
     resolveAvatarId++;
+    latestEmotionId++;
   });
 
   async function resolveAvatar() {
@@ -228,8 +229,8 @@ export function useRoleAvatar(options: UseRoleAvatarOptions): UseRoleAvatarApi {
 
   // 监听表情，配合展示层的加载状态播放特效
   watch(
-    () => role.value.emotion,
-    async (newEmotion) => {
+    () => [role.value.emotion, role.value.emotionRevision] as const,
+    async ([newEmotion]) => {
       const currentId = ++latestEmotionId;
 
       // 依次等待：头像路径解析 → DOM 更新传给子组件 → 子组件图片加载完成
@@ -244,6 +245,16 @@ export function useRoleAvatar(options: UseRoleAvatarOptions): UseRoleAvatarApi {
       if (!config) return;
 
       if (config.animation && config.animation !== "none") {
+        if (activeAnimationClass.value === config.animation) {
+          // A different emotion can share the same CSS animation (高兴/兴奋).
+          // Paint the idle class first to restart it without remounting the image.
+          activeAnimationClass.value = "normal";
+          await nextTick();
+          await new Promise<void>((resolve) => {
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+          });
+          if (currentId !== latestEmotionId) return;
+        }
         activeAnimationClass.value = config.animation;
       }
 

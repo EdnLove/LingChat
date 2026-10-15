@@ -64,6 +64,8 @@ export interface GameRole {
   thinkMessage: string;
   emotion: string;
   originalEmotion: string;
+  /** 每句台词递增，让连续相同情绪也能重播动作与气泡。 */
+  emotionRevision?: number;
   scale: number;
   offsetY: number;
   offsetX: number;

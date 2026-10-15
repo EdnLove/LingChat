@@ -61,6 +61,7 @@ export default class DialogueProcessor implements IEventProcessor {
     uiStore.showCharacterLine = gameStore.currentLine; // TODO: 这部分逻辑之后整合
     role.emotion = event.emotion || "正常";
     role.originalEmotion = event.originalTag || "正常";
+    role.emotionRevision = (role.emotionRevision ?? 0) + 1;
     gameStore.currentInteractRoleId = role.roleId;
     uiStore.currentAvatarAudio = event.audioFile || "None";
     // 前端触发对话/播放回复音频时，把该句语音广播给投屏客户端（远端设备同步播放）。
