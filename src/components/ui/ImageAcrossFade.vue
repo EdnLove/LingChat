@@ -24,7 +24,7 @@
 
 <script setup lang="ts">
 import { ref, watch, nextTick, onBeforeUnmount } from "vue";
-import { imageProfile, needsSequentialFade, type ImageProfile } from "@/utils/image-transition";
+import { imageProfile, needsInstantSwap, type ImageProfile } from "@/utils/image-transition";
 
 const props = withDefaults(
   defineProps<{ src: string; duration?: number; objectFit?: string; position?: string }>(),
@@ -117,11 +117,11 @@ async function updateImage(url: string, run: number) {
   const old = activeLayer.value;
   const next = 1 - old;
   const hasOld = !!layers.value[old].url;
-  const sequential = hasOld && needsSequentialFade(masks[old], profile);
+  const instant = hasOld && needsInstantSwap(masks[old], profile);
   const duration = matchMedia("(prefers-reduced-motion: reduce)").matches
     ? 0
     : Math.max(0, props.duration);
-  if (duration === 0) {
+  if (duration === 0 || instant) {
     layers.value[old] = { url, opacity: 1 };
     masks[old] = profile;
     layers.value[next] = { url: "", opacity: 0 };
@@ -129,16 +129,11 @@ async function updateImage(url: string, run: number) {
     await nextTick();
     return;
   }
-  const phaseDuration = sequential ? duration / 2 : duration;
-  if (sequential) {
-    await fade(old, 0, phaseDuration);
-    if (run !== generation) return;
-  }
   layers.value[next] = { url, opacity: 0 };
   masks[next] = profile;
   await nextTick();
   if (run !== generation) return;
-  await fade(next, 1, phaseDuration);
+  await fade(next, 1, duration);
   if (run !== generation) return;
   activeLayer.value = next;
   layers.value[old] = { url: "", opacity: 0 };

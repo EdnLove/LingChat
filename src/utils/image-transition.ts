@@ -39,15 +39,12 @@ export function imageProfile(url: string, image: HTMLImageElement): ImageProfile
     if (profiles.size > CACHE_LIMIT) profiles.delete(profiles.keys().next().value!);
     return profile;
   } catch {
-    // Cross-origin images without readable pixels still render via an out/in fade.
+    // Cross-origin images without readable pixels still render via an instant swap.
     return null;
   }
 }
 
-export function needsSequentialFade(
-  before: ImageProfile | null,
-  after: ImageProfile | null,
-): boolean {
+export function needsInstantSwap(before: ImageProfile | null, after: ImageProfile | null): boolean {
   if (!before || !after) return true;
   if (before.opaque && after.opaque) return false;
   if (Math.abs(before.aspectRatio / after.aspectRatio - 1) > 0.02) return true;
