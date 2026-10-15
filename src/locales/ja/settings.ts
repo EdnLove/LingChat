@@ -268,6 +268,8 @@ export default {
       },
       ENABLE_PROACTIVE_SYSTEM: "自動会話システムを有効にするか",
       MAX_PROACTIVE_TIMES: "ユーザーが応答するまでの自動会話の最大回数",
+      PROACTIVE_EXPECTED_INTERVAL_MINUTES:
+        "自発的な会話の期待間隔（分、1–60）。小さいほど頻繁になり、1 サイクルあたりの興味増加の範囲はここから逆算されます",
       ENABLE_VISUAL_PRECEPTION: "デスクトップ画面の自動視覚認識を許可（画面をのぞき見）",
       SCREEN_WEIGHT: "視覚モード発動の重み（大きいほど画面を見て話しかけやすい、デフォルト 30）",
       ENABLE_TOPIC_CREATER: "新しい話題を自律的に探して開始することを許可",

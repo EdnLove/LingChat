@@ -264,6 +264,8 @@ export default {
       },
       ENABLE_PROACTIVE_SYSTEM: "使唔使啟用主動對話系統",
       MAX_PROACTIVE_TIMES: "喺用戶回應之前，可以主動對話嘅次數",
+      PROACTIVE_EXPECTED_INTERVAL_MINUTES:
+        "兩次主動搭話之間嘅期望間隔（分鐘，1–60）：數值越細越頻繁，程式據此反推每輪興趣值嘅增長隨機範圍",
       ENABLE_VISUAL_PRECEPTION: "畀唔畀主動視覺感知桌面畫面（偷睇屏幕）",
       SCREEN_WEIGHT: "視覺模式觸發權重（越大越容易偷睇屏幕傾偈，預設 30）",
       ENABLE_TOPIC_CREATER: "容許自己搵新話題主動開傾",

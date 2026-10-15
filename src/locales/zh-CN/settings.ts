@@ -415,6 +415,8 @@ export default {
       },
       ENABLE_PROACTIVE_SYSTEM: "是否启用主动对话系统",
       MAX_PROACTIVE_TIMES: "在用户响应之前，能主动对话的次数",
+      PROACTIVE_EXPECTED_INTERVAL_MINUTES:
+        "两次主动搭话之间的期望间隔（分钟，1–60）：数值越小越频繁，程序据此反推每轮兴趣值的增长随机范围",
       ENABLE_VISUAL_PRECEPTION: "是否允许主动视觉感知桌面画面（偷看屏幕）",
       SCREEN_WEIGHT: "视觉模式触发权重（越大越容易偷看屏幕聊天，默认 30）",
       ENABLE_TOPIC_CREATER: "允许自主寻找并开启新话题",

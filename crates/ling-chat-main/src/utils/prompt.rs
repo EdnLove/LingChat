@@ -294,6 +294,18 @@ impl PromptRole {
         };
         format!("{NARRATION_TAG} {inner}}}")
     }
+
+    /// 这条提示在台词表里的展示名。
+    ///
+    /// 只有「旁白」「系统」两个取值的理由：剧情提示在界面上同样显示为旁白，真正的
+    /// 区别在 [`Self::build_prompt`] 包出来的内容信封里。记忆构建对这两个名字不追加
+    /// 「名字: 」前缀，所以模型拿到的是一段干净的提示，而不是「谁说了什么」。
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            PromptRole::System => "系统",
+            PromptRole::Narrator | PromptRole::Plot => "旁白",
+        }
+    }
 }
 
 // ============================================================

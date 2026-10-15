@@ -285,6 +285,8 @@ export default {
       },
       ENABLE_PROACTIVE_SYSTEM: "Whether to enable the proactive chat system",
       MAX_PROACTIVE_TIMES: "How many times the AI can chat proactively before the user responds",
+      PROACTIVE_EXPECTED_INTERVAL_MINUTES:
+        "Expected interval between proactive chats in minutes, 1–60: smaller means more frequent. The per-cycle interest growth range is derived from it",
       ENABLE_VISUAL_PRECEPTION:
         "Allow proactive visual perception of the desktop (peeking at your screen)",
       SCREEN_WEIGHT:
