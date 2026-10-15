@@ -179,7 +179,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref, onMounted, onBeforeUnmount } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 import { MenuPage, MenuItem } from "../../ui";
@@ -190,6 +190,7 @@ import { eventQueue } from "../../../core/events/event-queue";
 import { useUIStore } from "../../../stores/modules/ui/ui";
 import { useDialogStore } from "../../../stores/modules/ui/dialog";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { SaveInfo } from "../../../types";
 import type { WebInitData } from "../../../api/services/game-info";
 import { Save as SaveIcon, PencilLine, LayoutList, Clock } from "lucide-vue-next";
@@ -214,6 +215,8 @@ const saves = ref<SaveInfo[]>([]);
 const newSaveTitle = ref("");
 const loading = ref(false);
 const error = ref<string | null>(null);
+/** 自动存档事件监听句柄，卸载时解绑 */
+let unlistenAutoSave: UnlistenFn | null = null;
 const actionLoading = ref<number | null>(null);
 
 // Title editing state
@@ -424,8 +427,16 @@ const handleDeleteSave = async (saveId: number) => {
   }
 };
 
-onMounted(() => {
+onMounted(async () => {
   fetchSaves();
+  // 自动存档不在本页触发，但它会换掉列表里那条自动存档的时间戳与截图：
+  // 不在这里补听一次，就得等重开程序才看得到更新。
+  unlistenAutoSave = await listen("save:auto-saved", () => void fetchSaves());
+});
+
+onBeforeUnmount(() => {
+  unlistenAutoSave?.();
+  unlistenAutoSave = null;
 });
 </script>
 

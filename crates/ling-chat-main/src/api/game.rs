@@ -358,6 +358,9 @@ pub async fn select_character(app: AppHandle, character_id: i32) -> Result<WebIn
             .map_err(|e| format!("初始化游戏状态失败: {}", e))?;
     }
 
+    // 3b. 换角色等于开新一局：起算自动存档冷却（此刻不持 ai_service 锁）
+    state.auto_save_manager.lock().await.arm_grace();
+
     // 4. 持久化上次游玩的角色 ID
     if let Ok(store) = app.store(config::STORE_FILE) {
         store.set(
@@ -397,6 +400,9 @@ pub async fn clear_conversation(app: AppHandle) -> Result<WebInitData, String> {
             .await
             .map_err(|e| format!("重置对话失败: {}", e))?;
     }
+
+    // 清空对话等于开新一局：起算自动存档冷却（此刻不持 ai_service 锁）
+    state.auto_save_manager.lock().await.arm_grace();
 
     let init = {
         let service = state.ai_service.lock().await;
@@ -886,6 +892,10 @@ pub async fn notify_player_entry(app: AppHandle) -> Result<(), String> {
 
         tracing::info!("[Entry] 已添加问候台词: {}", greeting);
     } // 释放锁
+
+    // 进入游戏等于开一局：起算自动存档冷却，让玩家有机会先读回上一局的自动存档，
+    // 而不是刚进门就被这轮问候的自动存档盖掉（此刻不持 ai_service 锁）
+    state.auto_save_manager.lock().await.arm_grace();
 
     // Phase 2: 触发 AI 响应（suppress_thinking=true，不显示思考指示器）
     let llm = crate::ai_service::llm::slot_snapshot(&state.chat.llm)

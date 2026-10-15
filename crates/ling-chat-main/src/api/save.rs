@@ -202,7 +202,7 @@ pub async fn create_save(
 
     // 2. 同步台词
     if !lines.is_empty() {
-        SaveRepo::sync_lines(db, save_id, &lines)
+        SaveRepo::sync_lines(db, save_id, &lines, false)
             .await
             .map_err(|e| format!("同步台词失败: {}", e))?;
     }
@@ -467,7 +467,7 @@ pub async fn update_save(
     let lines = service.game_status.lock().await.line_list.clone();
 
     // 2. 同步台词（智能 diff）
-    SaveRepo::sync_lines(db, save_id, &lines)
+    SaveRepo::sync_lines(db, save_id, &lines, false)
         .await
         .map_err(|e| format!("同步台词失败: {}", e))?;
 

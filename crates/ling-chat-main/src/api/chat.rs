@@ -458,7 +458,7 @@ pub async fn rollback_conversation(
 
         // 若存在活跃存档，同步截断到 DB
         if let Some(save_id) = gs.active_save_id {
-            SaveRepo::sync_lines(&db, save_id, &gs.line_list)
+            SaveRepo::sync_lines(&db, save_id, &gs.line_list, false)
                 .await
                 .map_err(|e| format!("同步存档失败: {}", e))?;
         }
@@ -653,7 +653,7 @@ pub async fn generate_line_voice(app: AppHandle, line_seq: u32) -> Result<String
 
         // 6. 存在活跃存档时同步到 DB，保证重启后仍可播放
         if let Some(save_id) = gs.active_save_id {
-            SaveRepo::sync_lines(&db, save_id, &gs.line_list)
+            SaveRepo::sync_lines(&db, save_id, &gs.line_list, false)
                 .await
                 .map_err(|e| format!("同步存档失败: {}", e))?;
         }
