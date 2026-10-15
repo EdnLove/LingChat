@@ -169,6 +169,10 @@ export default {
     },
   },
   adventure: {
+    lock: {
+      title: "无法开始剧本",
+      running: "已有剧本正在运行，请先结束当前剧本",
+    },
     standalone: {
       title: "独立剧本",
       empty: "暂无独立剧本",
@@ -532,6 +536,9 @@ export default {
       chatCount: "对话{count}次",
       prereqAdventure: "完成前置冒险",
       achievement: "解锁特定成就",
+    },
+    lock: {
+      scriptRunning: "当前有剧本进行中",
     },
   },
   characterInfo: {

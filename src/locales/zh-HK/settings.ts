@@ -36,6 +36,10 @@ export default {
     },
   },
   adventure: {
+    lock: {
+      title: "開唔到劇本",
+      running: "已經有個劇本行緊，請先結束咗佢先",
+    },
     standalone: {
       title: "獨立劇本",
       empty: "而家冇獨立劇本",
@@ -353,6 +357,9 @@ export default {
       chatCount: "傾偈{count}次",
       prereqAdventure: "搞掂前置冒險",
       achievement: "解鎖特定成就",
+    },
+    lock: {
+      scriptRunning: "而家有劇本行緊",
     },
   },
   characterInfo: {

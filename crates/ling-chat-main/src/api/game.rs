@@ -342,6 +342,9 @@ pub async fn select_character(app: AppHandle, character_id: i32) -> Result<WebIn
     // 1. 从 DB 加载角色设定
     let state = app.state::<AppState>();
 
+    // 1b. 换角色是会话边界：旧剧本必须真正停掉。否则它会一直阻塞在输入通道上，
+    super::script::abort_running_script(&app).await;
+
     // 2. 读取 AppConfig 构建 PromptOptions
     let app_config = AppConfig::load(&app).unwrap_or_default();
     let prompt_options = PromptOptions {
@@ -388,6 +391,9 @@ pub async fn select_character(app: AppHandle, character_id: i32) -> Result<WebIn
 #[tauri::command]
 pub async fn clear_conversation(app: AppHandle) -> Result<WebInitData, String> {
     let state = app.state::<AppState>();
+
+    // 清空对话同样是会话边界，先真正停掉在跑的剧本（与切换角色同款收尾）
+    super::script::abort_running_script(&app).await;
 
     // 串行化：等待正在进行的消息生成完成再重置
     let gen_lock = state.generation_lock.clone();

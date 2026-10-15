@@ -140,6 +140,7 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
         api::script::list_scripts,
         api::script::list_standalone_scripts,
         api::script::start_script,
+        api::script::stop_script,
         api::script::script_submit_input,
         api::script::script_submit_choice,
         // ── 剧本编辑器 ──

@@ -46,6 +46,10 @@ export default {
     },
   },
   adventure: {
+    lock: {
+      title: "Cannot Start Scenario",
+      running: "Another scenario is already running. Please finish it first.",
+    },
     standalone: {
       title: "Standalone Scenarios",
       empty: "No standalone scenarios yet",
@@ -379,6 +383,9 @@ export default {
       chatCount: "Chat {count} times",
       prereqAdventure: "Complete the prerequisite adventure",
       achievement: "Unlock a specific achievement",
+    },
+    lock: {
+      scriptRunning: "A scenario is currently running",
     },
   },
   characterInfo: {

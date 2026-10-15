@@ -35,6 +35,10 @@ export default {
     },
   },
   adventure: {
+    lock: {
+      title: "シナリオを開始できません",
+      running: "すでにシナリオが実行中です。先に現在のシナリオを終了してください",
+    },
     standalone: {
       title: "独立シナリオ",
       empty: "独立シナリオはまだありません",
@@ -360,6 +364,9 @@ export default {
       chatCount: "会話{count}回",
       prereqAdventure: "前置アドベンチャーを完了",
       achievement: "特定の実績を解放",
+    },
+    lock: {
+      scriptRunning: "現在シナリオが進行中です",
     },
   },
   characterInfo: {
