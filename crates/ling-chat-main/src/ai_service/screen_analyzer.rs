@@ -7,11 +7,13 @@ use reqwest::Client;
 use std::time::Instant;
 use tauri::AppHandle;
 
-use crate::ai_service::llm::provider_config::resolve_vision_provider;
+use crate::ai_service::llm::provider_config::{
+    native_vision_enabled, resolve_chat_provider, resolve_vision_provider,
+};
 use crate::ai_service::llm::vision::{self, VisionTarget};
 
 /// 截屏分析的输出上限（token）。
-const VISION_MAX_TOKENS: u32 = 512;
+const VISION_MAX_TOKENS: u32 = 4096;
 /// 视觉请求的 HTTP 读超时。
 const ANALYZER_HTTP_TIMEOUT_SECS: u64 = 120;
 
@@ -112,23 +114,14 @@ impl ScreenAnalyzer {
         &self.last_report
     }
 
-    /// 核心方法：截屏 → 发送给 VLM 分析 → 返回文本描述。
-    /// 这是策略分发器和主动对话系统的主要入口。
-    pub async fn analyze_screen(&mut self, prompt: &str) -> Option<String> {
-        if self.config.vd_model.is_empty() {
-            tracing::warn!(
-                "[ScreenAnalyzer] Vision provider model is not configured, skipping screenshot analysis."
-            );
-            return None;
-        }
-
-        let jpeg_bytes = capture_screen_as_jpeg()?;
-        self.run_vision(prompt, &jpeg_bytes, "image/jpeg").await
-    }
-
-    /// 分析任意图片字节（支持 JPEG / PNG / WebP 等格式）。
-    /// 供脚本事件、文件分析等外部调用方使用。
-    pub async fn analyze_image(&mut self, image_bytes: &[u8], prompt: &str) -> Option<String> {
+    /// 把一张图片发给视觉模型转述成文本（走「旁白转述」路径）。
+    /// `mime` 用于拼 data URL，由 [`sniff_image_mime`] 从字节头部推断。
+    pub async fn analyze_image(
+        &mut self,
+        image_bytes: &[u8],
+        prompt: &str,
+        mime: &str,
+    ) -> Option<String> {
         if self.config.vd_model.is_empty() {
             tracing::warn!(
                 "[ScreenAnalyzer] Vision provider model is not configured, skipping image analysis."
@@ -136,30 +129,7 @@ impl ScreenAnalyzer {
             return None;
         }
 
-        self.run_vision(prompt, image_bytes, "image/png").await
-    }
-
-    /// 分析本地图片文件路径。
-    pub async fn analyze_image_file(&mut self, image_path: &str, prompt: &str) -> Option<String> {
-        if self.config.vd_model.is_empty() {
-            tracing::warn!(
-                "[ScreenAnalyzer] Vision provider model is not configured, skipping image file analysis."
-            );
-            return None;
-        }
-
-        let bytes = std::fs::read(image_path).ok()?;
-
-        // 根据扩展名推断 MIME
-        let mime = if image_path.ends_with(".png") {
-            "image/png"
-        } else if image_path.ends_with(".webp") {
-            "image/webp"
-        } else {
-            "image/jpeg"
-        };
-
-        self.run_vision(prompt, &bytes, mime).await
+        self.run_vision(prompt, image_bytes, mime).await
     }
 
     /// 调用视觉模型识别一张图片，记录耗时与用量后返回文本描述。
@@ -208,6 +178,165 @@ impl ScreenAnalyzer {
                 None
             },
         }
+    }
+}
+
+/// 一张图的处理意图。调用方只说明手里是什么图，给谁看由 [`deliver_image`] 决定。
+#[derive(Clone, Copy)]
+pub enum ImageIntent<'a> {
+    /// 聊天里附带的截图，连同玩家这句话一起理解
+    ChatScreenshot {
+        user_name: &'a str,
+        user_text: &'a str,
+    },
+    /// 拖拽投喂的单张图片
+    DroppedFile { user_name: &'a str },
+    /// 主动窥屏的桌面截图：两种投递方式都要给出一句完整 prompt
+    PeekDesktop {
+        ai_name: &'a str,
+        user_name: &'a str,
+    },
+    /// 场景背景图，只判断室内外——结果必须是文本，不走原生识图
+    SceneStill { name: &'a str, desc: &'a str },
+}
+
+/// 一次识图投递的结果。
+#[derive(Default)]
+pub struct ImageDelivery {
+    /// 原生识图：挂进本轮请求的 data URL（不写记忆）；转述或不允许原生时为 None
+    pub attach: Option<String>,
+    /// 落进上下文的文本：转述是画面描述，原生时是与意图配套的那句话
+    pub text: Option<String>,
+}
+
+/// 意图在两种投递方式下各自的文本（视觉 prompt 全部集中在这里，调用方不再拼）。
+#[derive(Default)]
+struct IntentPlan {
+    /// 结果要回文本的意图（场景标注）不允许原生识图
+    allows_native: bool,
+    /// 原生直发时要一并落进上下文的轻提示；None 表示不需要额外台词
+    native_hint: Option<String>,
+    /// 转述用的识图 prompt
+    describe_prompt: String,
+    /// 转述结果的前后包装（窥屏要嵌进一句整话里）
+    describe_prefix: String,
+    describe_suffix: String,
+}
+
+impl ImageIntent<'_> {
+    fn label(&self) -> &'static str {
+        match self {
+            Self::ChatScreenshot { .. } => "聊天截图",
+            Self::DroppedFile { .. } => "图片投喂",
+            Self::PeekDesktop { .. } => "主动窥屏",
+            Self::SceneStill { .. } => "场景标注",
+        }
+    }
+
+    fn plan(&self) -> IntentPlan {
+        match *self {
+            Self::ChatScreenshot {
+                user_name,
+                user_text,
+            } => IntentPlan {
+                allows_native: true,
+                native_hint: None,
+                describe_prompt: format!(
+                    "你是一个图像信息转述者，你将饰演旁白这一角色输出台词，用第三人称叙述把你看到的画面描述给其他AI让他理解用户的图片内容。用户（名字是\"{user_name}\"）的信息是：\"{user_text}\"\n\n以上是用户发的消息，请切合用户实际获取信息的需要，获取画面中的重点内容，用200字描述主体部分即可。如果你看到一个聊天窗口，有角色的立绘和对话框，不要描述这部分，只描述桌面上的其他内容。因为那部分是玩家与AI的聊天窗口。但如果用户信息中明确提到了AI的立绘，背景等（比如用户消息说“看看你的周围，这是哪里呀？”）的时候，你可以描述AI的立绘或背景来告诉主AI的环境感知能力。"
+                ),
+                ..Default::default()
+            },
+            Self::DroppedFile { user_name } => IntentPlan {
+                allows_native: true,
+                native_hint: Some(format!(
+                    "用户（名字是\"{user_name}\"）发来一张图片，请你直接查看图片内容。"
+                )),
+                describe_prompt: format!(
+                    "用户（名字是\"{user_name}\"）给你看了一张图片，请你用第三人称叙述把你看到的画面描述给其他AI让他理解用户的图片内容"
+                ),
+                ..Default::default()
+            },
+            Self::PeekDesktop { ai_name, user_name } => IntentPlan {
+                allows_native: true,
+                native_hint: Some(format!(
+                    "{{ {ai_name} 偷看了一眼 {user_name} 的电脑桌面，请你结合桌面截图内容与 {user_name} 自然地聊两句。 }}"
+                )),
+                describe_prompt: "你是一个图像信息转述者，你将需要把你看到的画面描述给另一个AI让他理解用户的图片内容。用户开放了那个AI的自主窥屏功能，请获取桌面画面中的重点内容，用200字描述主体部分即可。如果你看到一个聊天窗口，有角色的立绘和对话框，不要描述这部分，只描述桌面上的其他内容。因为那部分是玩家与AI的聊天窗口。".to_string(),
+                describe_prefix: format!("{{ {ai_name} 偷看了一眼 {user_name} 的电脑桌面: "),
+                describe_suffix: " }".to_string(),
+            },
+            Self::SceneStill { name, desc } => IntentPlan {
+                describe_prompt: format!(
+                    "你是场景分类助手。根据场景名称、描述和背景图判断该地点是室内还是室外。\
+                     只输出三个词之一：室内、室外、不确定\n场景名：{name}\n描述：{desc}"
+                ),
+                ..Default::default()
+            },
+        }
+    }
+}
+
+/// 图片交给谁看：原生识图（附在对话请求里）还是旁白转述（先让 VLM 转成文本）。
+///
+/// 聊天侧四个入口（截图、投喂、窥屏、场景标注）共用这一处判定与 prompt，调用方拿到
+/// 结果自己决定落哪（当轮请求 / 台词表 / 工具返回）。`analyzer` 由调用方持有，这里
+/// 只借它发转述请求。转述失败时两项都为 None，调用方按各自策略降级。
+pub async fn deliver_image(
+    app: &AppHandle,
+    analyzer: &mut ScreenAnalyzer,
+    image_bytes: &[u8],
+    intent: ImageIntent<'_>,
+) -> ImageDelivery {
+    let plan = intent.plan();
+
+    if plan.allows_native && native_vision_enabled(app) {
+        let compress = resolve_chat_provider(app)
+            .map(|p| p.native_image_compress())
+            .unwrap_or_default();
+        let auto_compress = crate::config::app_config::AppConfig::load(app)
+            .map(|c| c.auto_compress_image)
+            .unwrap_or(true);
+
+        if let Some(attach) = image_bytes_to_native_data_url(image_bytes, compress, auto_compress) {
+            tracing::info!(
+                "[Vision] {} 走原生识图：图片当轮直发对话模型（不写记忆）。",
+                intent.label()
+            );
+            return ImageDelivery {
+                attach: Some(attach),
+                text: plan.native_hint,
+            };
+        }
+        tracing::warn!("[Vision] {} 图片编码失败，回退到旁白转述。", intent.label());
+    }
+
+    let Some(narration) = analyzer
+        .analyze_image(
+            image_bytes,
+            &plan.describe_prompt,
+            sniff_image_mime(image_bytes),
+        )
+        .await
+    else {
+        return ImageDelivery::default();
+    };
+
+    ImageDelivery {
+        attach: None,
+        text: Some(format!(
+            "{}{narration}{}",
+            plan.describe_prefix, plan.describe_suffix
+        )),
+    }
+}
+
+/// 从字节头部推断图片 MIME，供 data URL 使用（猜不出按 png 兜底）。
+fn sniff_image_mime(image_bytes: &[u8]) -> &'static str {
+    match image::guess_format(image_bytes) {
+        Ok(image::ImageFormat::Jpeg) => "image/jpeg",
+        Ok(image::ImageFormat::WebP) => "image/webp",
+        Ok(image::ImageFormat::Gif) => "image/gif",
+        _ => "image/png",
     }
 }
 

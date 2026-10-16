@@ -93,6 +93,10 @@ export default {
     },
   },
   adventure: {
+    lock: {
+      title: "シナリオを開始できません",
+      running: "すでにシナリオが実行中です。先に現在のシナリオを終了してください",
+    },
     standalone: {
       title: "独立シナリオ",
       empty: "独立シナリオはまだありません",
@@ -331,6 +335,8 @@ export default {
       },
       ENABLE_PROACTIVE_SYSTEM: "自動会話システムを有効にするか",
       MAX_PROACTIVE_TIMES: "ユーザーが応答するまでの自動会話の最大回数",
+      PROACTIVE_EXPECTED_INTERVAL_MINUTES:
+        "自発的な会話の期待間隔（分、1–60）。小さいほど頻繁になり、1 サイクルあたりの興味増加の範囲はここから逆算されます",
       ENABLE_VISUAL_PRECEPTION: "デスクトップ画面の自動視覚認識を許可（画面をのぞき見）",
       SCREEN_WEIGHT: "視覚モード発動の重み（大きいほど画面を見て話しかけやすい、デフォルト 30）",
       ENABLE_TOPIC_CREATER: "新しい話題を自律的に探して開始することを許可",
@@ -421,6 +427,9 @@ export default {
       chatCount: "会話{count}回",
       prereqAdventure: "前置アドベンチャーを完了",
       achievement: "特定の実績を解放",
+    },
+    lock: {
+      scriptRunning: "現在シナリオが進行中です",
     },
   },
   characterInfo: {
@@ -545,6 +554,17 @@ export default {
       add: "衣装を追加",
       item: "衣装 #{index}",
       empty: "衣装設定がまだありません。「衣装を追加」をクリックして作成してください",
+    },
+    gsvEmo: {
+      title: "GSV 感情参照音声",
+      description:
+        "オンにすると感情分類（驚き/喜び/恐怖/悲しみ/怒り/中立）ごとに参照音声とテキストを切り替えます。音声パスとテキストの両方を入力した分類のみ有効で、残りの分類は上の gsv_voice_filename / gsv_voice_text を使用します。",
+      enable: "オン",
+      disable: "オフ",
+      voiceFile: "参照音声ファイル",
+      voiceFilePlaceholder: "GSV サーバーからアクセス可能な音声パス（例: /refs/开心.wav）",
+      text: "参照テキスト",
+      textPlaceholder: "参照音声に対応するテキスト",
     },
     touch: {
       hint: "立ち絵の上に触れられる範囲を描き、部位ごとに AI へ送る一言を設定します。衣装ごとに別々の範囲を持てます。静止画の立ち絵にのみ有効で、Live2D モデルの触れられる範囲はモデル側の設定で決まります。",
@@ -922,10 +942,6 @@ export default {
     sample: {
       title: "テキストサンプル",
       demo: "Ling Chat: テキスト表示速度のテスト",
-    },
-    inlineMotion: {
-      title: "インライン動作テキスト",
-      desc: "有効にすると、動作テキストがセリフと同時に表示され、再クリックは不要です",
     },
     mergeLine: {
       title: "セリフ結合閾値",

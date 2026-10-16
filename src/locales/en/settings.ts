@@ -106,6 +106,10 @@ export default {
     },
   },
   adventure: {
+    lock: {
+      title: "Cannot Start Scenario",
+      running: "Another scenario is already running. Please finish it first.",
+    },
     standalone: {
       title: "Standalone Scenarios",
       empty: "No standalone scenarios yet",
@@ -350,6 +354,8 @@ export default {
       },
       ENABLE_PROACTIVE_SYSTEM: "Whether to enable the proactive chat system",
       MAX_PROACTIVE_TIMES: "How many times the AI can chat proactively before the user responds",
+      PROACTIVE_EXPECTED_INTERVAL_MINUTES:
+        "Expected interval between proactive chats in minutes, 1–60: smaller means more frequent. The per-cycle interest growth range is derived from it",
       ENABLE_VISUAL_PRECEPTION:
         "Allow proactive visual perception of the desktop (peeking at your screen)",
       SCREEN_WEIGHT:
@@ -442,6 +448,9 @@ export default {
       chatCount: "Chat {count} times",
       prereqAdventure: "Complete the prerequisite adventure",
       achievement: "Unlock a specific achievement",
+    },
+    lock: {
+      scriptRunning: "A scenario is currently running",
     },
   },
   characterInfo: {
@@ -568,6 +577,17 @@ export default {
       add: "Add Outfit",
       item: "Outfit #{index}",
       empty: 'No outfits configured yet. Click "Add Outfit" to create one',
+    },
+    gsvEmo: {
+      title: "GSV Emotion Reference Voice",
+      description:
+        "When enabled, the reference audio and text switch by emotion category (surprised / happy / fearful / sad / angry / neutral). Only categories with both an audio path and text take effect; the rest keep using the gsv_voice_filename / gsv_voice_text above.",
+      enable: "Enabled",
+      disable: "Disabled",
+      voiceFile: "Reference voice file",
+      voiceFilePlaceholder: "Audio path accessible from the GSV server (e.g. /refs/开心.wav)",
+      text: "Reference text",
+      textPlaceholder: "Text spoken in the reference audio",
     },
     touch: {
       hint: "Draw the areas that can be touched on the artwork, and give each part a line to send to the AI. Every outfit keeps its own set. This applies to static artwork only — a Live2D model's touchable areas come from its own configuration.",
@@ -942,10 +962,6 @@ export default {
     sample: {
       title: "Display Text Sample",
       demo: "Ling Chat: Testing text display speed",
-    },
-    inlineMotion: {
-      title: "Inline Action Text",
-      desc: "When on, action text displays together with the dialogue — no extra click needed",
     },
     mergeLine: {
       title: "Merge Line Threshold",

@@ -91,6 +91,10 @@ export default {
     },
   },
   adventure: {
+    lock: {
+      title: "開唔到劇本",
+      running: "已經有個劇本行緊，請先結束咗佢先",
+    },
     standalone: {
       title: "獨立劇本",
       empty: "而家冇獨立劇本",
@@ -324,6 +328,8 @@ export default {
       },
       ENABLE_PROACTIVE_SYSTEM: "使唔使啟用主動對話系統",
       MAX_PROACTIVE_TIMES: "喺用戶回應之前，可以主動對話嘅次數",
+      PROACTIVE_EXPECTED_INTERVAL_MINUTES:
+        "兩次主動搭話之間嘅期望間隔（分鐘，1–60）：數值越細越頻繁，程式據此反推每輪興趣值嘅增長隨機範圍",
       ENABLE_VISUAL_PRECEPTION: "畀唔畀主動視覺感知桌面畫面（偷睇屏幕）",
       SCREEN_WEIGHT: "視覺模式觸發權重（越大越容易偷睇屏幕傾偈，預設 30）",
       ENABLE_TOPIC_CREATER: "容許自己搵新話題主動開傾",
@@ -411,6 +417,9 @@ export default {
       chatCount: "傾偈{count}次",
       prereqAdventure: "搞掂前置冒險",
       achievement: "解鎖特定成就",
+    },
+    lock: {
+      scriptRunning: "而家有劇本行緊",
     },
   },
   characterInfo: {
@@ -534,6 +543,17 @@ export default {
       add: "新增服裝",
       item: "服裝 #{index}",
       empty: '而家冇服裝配置，撳"新增服裝"開一個',
+    },
+    gsvEmo: {
+      title: "GSV 情緒參考語音",
+      description:
+        "開啟後按情緒分類（吃驚/開心/恐懼/難過/生氣/中立）切換參考語音與文本。音頻路徑同文本都填咗嘅分類先會生效，未填全嘅分類照用上面嘅 gsv_voice_filename / gsv_voice_text。",
+      enable: "已開啟",
+      disable: "已關閉",
+      voiceFile: "參考語音檔案",
+      voiceFilePlaceholder: "填寫 GSV 伺服器可存取嘅音頻路徑（如 /refs/開心.wav）",
+      text: "參考文本",
+      textPlaceholder: "參考音頻對應的文本內容",
     },
     touch: {
       hint: "喺立繪上面畫出可以摸嘅範圍，每個部位配一句發畀 AI 嘅話。每件服裝各自一套範圍。淨係對靜態立繪有效，Live2D 角色嘅可摸範圍由模型配置決定。",
@@ -903,10 +923,6 @@ export default {
     sample: {
       title: "顯示文字樣本",
       demo: "Ling Chat: 測試文字顯示速度",
-    },
-    inlineMotion: {
-      title: "內聯動作文字",
-      desc: "開咗之後動作文字會同台詞一齊顯示，唔使撳第二次",
     },
     mergeLine: {
       title: "對白合併閾值",

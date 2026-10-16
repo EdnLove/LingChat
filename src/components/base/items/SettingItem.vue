@@ -105,8 +105,7 @@ const emit = defineEmits<{
 
 const localValue = ref(props.setting.value);
 
-// type="number" 输入上 v-model 会自动把值转成 number，而后端设置映射要求字符串，
-// 这里统一 String 兜底，否则数字字段整页保存会因参数反序列化失败而报错。
+// 监听本地值的变化，并触发更新事件。
 watch(localValue, (newValue) => {
   emit("update:value", String(newValue));
 });

@@ -321,6 +321,19 @@ pub async fn stream_with_tool_loop(
             let mut character_switched = false;
             for call in calls {
                 tracing::info!(tool = call.function.name, call_id = call.id, "执行聊天工具");
+
+                if context.base_allowed.contains(&call.function.name)
+                    && !context.allowed_tools.contains(&call.function.name)
+                {
+                    tracing::info!(
+                        tool = %call.function.name,
+                        "本轮没有下发这个工具（模型凭记忆直接调用），已重新激活"
+                    );
+                    tool_rag.touch(
+                        active_role_name.as_deref(),
+                        std::slice::from_ref(&call.function.name),
+                    );
+                }
                 emit_tool_activity_event(
                     &app,
                     &call.id,

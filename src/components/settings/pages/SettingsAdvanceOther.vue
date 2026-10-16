@@ -286,7 +286,10 @@ const saveSettings = async () => {
 
     await loadConfig(false);
   } catch (error: any) {
-    saveStatus.message = t("settings.advanceOther.msg.error", { error: error.message });
+    // 后端命令的错误是字符串，直接取 error.message 会渲染成 "错误: undefined"
+    saveStatus.message = t("settings.advanceOther.msg.error", {
+      error: typeof error === "string" ? error : error.message,
+    });
     saveStatus.colorClass = "text-red-500";
   } finally {
     isLoading.value = false;

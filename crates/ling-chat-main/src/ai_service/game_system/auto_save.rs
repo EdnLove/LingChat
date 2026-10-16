@@ -1,6 +1,6 @@
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use chrono::Local;
 use sea_orm::DatabaseConnection;
@@ -16,8 +16,13 @@ use crate::db::managers::save_repo::SaveRepo;
 
 const AUTO_SAVE_PREFIX: &str = "自动存档";
 const EXIT_SAVE_TIMEOUT_SECS: u64 = 5;
+const ENTER_GRACE_SECS: u64 = 60;
 
-/// 一行是否属于「真实对话」（玩家发言或角色回复）；人设行与旁白/系统/剧情提示不计。
+/// 一行是否属于「真实对话」——玩家发言或角色回复。
+/// 人设 system 行、旁白/系统/剧情提示（内容以 [`NARRATION_TAG`] 开头）一律不计，
+/// 因此主菜单（仅有占位/旁白行）算不出内容，自动存档不会误触发覆盖旧档。
+/// 用内容前缀而非 display_name 判旁白：剧本作者可给旁白事件自定义展示名，会绕过 display_name。
+/// 已知边角：试玩会话（`preview_generation`）期间若正好 tick，预览台词会被计为真实对话写进主槽，本次不处理。
 pub(crate) fn is_real_dialogue(line: &GameLine) -> bool {
     match line.attribute() {
         // 角色回复：assistant 且归属某角色（工具调用回填的前缀行 sender 为空，排除）
@@ -35,6 +40,8 @@ pub(crate) fn is_real_dialogue(line: &GameLine) -> bool {
 }
 
 /// 计算「真实对话」内容指纹；无真实对话返回 `None`。
+/// 抽出为自由函数，供载入/手动存档路径在持有 `game_status` 锁时复用，避免与
+/// 定时循环（manager→ai_service）反向取锁造成死锁。
 pub fn hash_of_real_lines(lines: &[GameLine]) -> Option<u64> {
     let mut hasher = DefaultHasher::new();
     let mut real = 0u64;
@@ -70,6 +77,8 @@ pub struct AutoSaveManager {
     last_saved_hash: Option<u64>,
     /// Resolved auto-save slot ID (lazily found or created on first save).
     auto_save_id: Option<i32>,
+    /// 进入新一局的冷却截止时刻，见 [`ENTER_GRACE_SECS`]。
+    grace_until: Option<Instant>,
 }
 
 impl AutoSaveManager {
@@ -80,12 +89,16 @@ impl AutoSaveManager {
             ai_service,
             last_saved_hash: None,
             auto_save_id: None,
+            grace_until: None,
         }
     }
 
     // ========== Periodic Loop ==========
 
-    /// 定时自动存档循环，不返回；每轮热重读开关与间隔。
+    /// Run the periodic auto-save loop.  Never returns.
+    ///
+    /// 每轮先 sleep 再存：避免 `tokio::time::interval` 首次 `tick()` 立即返回导致启动抢跑，
+    /// 并让开关与间隔每轮热重读（改设置无需重启）。
     pub async fn run_periodic(manager: Arc<Mutex<Self>>) {
         loop {
             let (enabled, interval_secs) = {
@@ -109,10 +122,12 @@ impl AutoSaveManager {
 
     // ========== Close Handler ==========
 
-    /// 在主窗口注册关闭前存档的处理器。
+    /// Register a close-requested handler on the main window that performs a
+    /// final auto-save before allowing the window to actually close.
     pub fn setup_close_handler(app: AppHandle, window: WebviewWindow, manager: Arc<Mutex<Self>>) {
         window.clone().on_window_event(move |event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                // Prevent the window from closing immediately
                 api.prevent_close();
 
                 let mgr = manager.clone();
@@ -137,6 +152,7 @@ impl AutoSaveManager {
                         ),
                     }
 
+                    // Drop the manager lock before exiting
                     drop(save_result);
 
                     // 通知前端存档已完成，由前端决定是否退出
@@ -150,11 +166,20 @@ impl AutoSaveManager {
 
     /// Perform a save only when there is real dialogue whose content changed since last save.
     async fn perform_save(&mut self) -> Result<(), String> {
+        // 0. 开关：关闭时定时与退出存档都跳过
         let cfg = AppConfig::load(&self.app).unwrap_or_default();
         if !cfg.auto_save_enabled {
             return Ok(());
         }
 
+        // 0b. 冷却期：刚进入一局，先别动上一局的自动存档
+        if let Some(until) = self.grace_until {
+            if Instant::now() < until {
+                return Ok(());
+            }
+        }
+
+        // 1. Compute current hash (returns None if there is no real dialogue)
         let current_hash = self.compute_line_hash().await;
 
         let current_hash = match current_hash {
@@ -165,19 +190,39 @@ impl AutoSaveManager {
             },
         };
 
+        // 2. Skip if unchanged since last save
         if self.last_saved_hash == Some(current_hash) {
             return Ok(());
         }
 
-        let save_id = self.find_or_create_slot().await?;
+        // 3. 解析自动存档位。已存在的档位此刻只取 id 不写库：标题/主角/时间戳要等
+        //    台词写成功之后再刷（见 4b），否则写失败会把旧档刷新成"刚刚存过"的样子。
+        let save_id = self.resolve_slot().await?;
 
+        // 4. Perform the actual save
         let mut service = self.ai_service.lock().await;
-        let lines = service.game_status.lock().await.line_list.clone();
+        let (lines, main_id) = {
+            let gs = service.game_status.lock().await;
+            (gs.line_list.clone(), gs.main_role_id)
+        };
 
-        SaveRepo::sync_lines(&self.db, save_id, &lines)
+        // 4a. Sync lines (smart diff)。自动存档位只跟踪当前这一局，允许在无共同锚点
+        //     （切过角色、开过新档）时整体接管重建，而不是永久拒绝写入。
+        SaveRepo::sync_lines(&self.db, save_id, &lines, true)
             .await
             .map_err(|e| format!("同步台词失败: {}", e))?;
 
+        // 4b. 台词落库成功后再刷新档位元数据，与内容同进同退
+        let now = Local::now();
+        let title = format!("{} {}", AUTO_SAVE_PREFIX, now.format("%Y-%m-%d %H:%M:%S"));
+        SaveRepo::update_save_title(&self.db, save_id, &title)
+            .await
+            .map_err(|e| format!("更新自动存档标题失败: {}", e))?;
+        SaveRepo::update_save_main_role(&self.db, save_id, main_id)
+            .await
+            .map_err(|e| format!("设置主角失败: {}", e))?;
+
+        // 4c. Set active save
         service.game_status.lock().await.active_save_id = Some(save_id);
 
         // 记录本局使用的「我的身份」，否则读自动存档会沿用全局当前身份。
@@ -192,6 +237,7 @@ impl AutoSaveManager {
             }
         }
 
+        // 4d. Write GameStatus snapshot
         let snapshot = service.game_status.lock().await.to_snapshot();
         let snapshot_json =
             serde_json::to_string(&snapshot).map_err(|e| format!("序列化状态失败: {}", e))?;
@@ -199,16 +245,18 @@ impl AutoSaveManager {
             .await
             .map_err(|e| format!("保存状态失败: {}", e))?;
 
+        // 4e. Persist memory banks
         service
             .persist_memory_banks(save_id)
             .await
             .map_err(|e| format!("保存记忆库失败: {}", e))?;
 
+        // 4f. Persist script state (if running)
         let script_status_snapshot = service.game_status.lock().await.script_status.clone();
         match script_status_snapshot {
             Some(script_status) => {
                 let vars_json = serde_json::to_string(&script_status.vars).unwrap_or_default();
-                // 与手动存档统一：写 path_key() 并归一化分隔符。
+                // 与手动存档统一：写 path_key() 并归一化分隔符，读档时按同一规则回匹配
                 let script_folder = script_status.path_key().replace('\\', "/");
                 let _ = SaveRepo::upsert_running_script(
                     &self.db,
@@ -224,7 +272,7 @@ impl AutoSaveManager {
                 });
             },
             None => {
-                // 无剧本在跑：清掉旧的进度行。
+                // 当前无剧本在跑：清掉该存档早年关联的旧进度行，避免读档误续跑已结束的剧本
                 if let Err(e) = SaveRepo::clear_running_script(&self.db, save_id).await {
                     tracing::warn!("[AutoSave] 清理旧剧本状态失败: {}", e);
                 }
@@ -233,10 +281,10 @@ impl AutoSaveManager {
 
         drop(service);
 
+        // 5. Update tracking state
         self.last_saved_hash = Some(current_hash);
 
-        let now = Local::now();
-        let title = format!("{} {}", AUTO_SAVE_PREFIX, now.format("%Y-%m-%d %H:%M:%S"));
+        // 6. Emit event to frontend
         let timestamp = now.format("%H:%M:%S").to_string();
 
         let _ = self.app.emit(
@@ -252,16 +300,25 @@ impl AutoSaveManager {
         Ok(())
     }
 
-    /// 退出前存档：与定时存档同一套闸门。
+    /// Exit save: go through the same gate as the periodic save.
+    /// 不再 reset 强制写：开关关闭 / 无真实对话 / 内容自上次存档未变化时跳过，
+    /// 避免停在主菜单关程序也盖一次旧自动存档。
     async fn perform_exit_save(&mut self) -> Result<(), String> {
         self.perform_save().await
     }
 
     // ========== Helpers ==========
 
-    /// 载入/手动存档成功后同步基线，避免下一次 tick 重复存档。
+    /// 载入存档 / 手动存档成功后同步基线：把 `last_saved_hash` 设为已给定内容的 hash，
+    /// 使下一次 tick 不会把刚载入（或刚落盘）的内容当成新变化重存一次而覆盖旧自动存档。
     pub fn set_baseline(&mut self, hash: Option<u64>) {
         self.last_saved_hash = hash;
+    }
+
+    /// 起算进入新一局的冷却。主菜单进游戏、切角色、清空对话时调用，
+    /// 冷却期内不给自动存档，让玩家有机会先从存档列表读回上一局的自动存档。
+    pub fn arm_grace(&mut self) {
+        self.grace_until = Some(Instant::now() + Duration::from_secs(ENTER_GRACE_SECS));
     }
 
     /// Compute a hash of the current real-dialogue contents (see [`hash_of_real_lines`]).
@@ -271,34 +328,24 @@ impl AutoSaveManager {
         hash_of_real_lines(lines)
     }
 
-    /// 按标题前缀找自动存档槽，没有则新建。
-    async fn find_or_create_slot(&mut self) -> Result<i32, String> {
+    /// 解析自动存档位：已有档位直接返回其 id，不动它的任何元数据（标题、主角、
+    /// 时间戳统一由写台词成功后的 `perform_save` 4b 刷新）；没有档位则新建一位，
+    /// 并写好标题与主角，保证刚建的空档也能被正常读回。
+    async fn resolve_slot(&mut self) -> Result<i32, String> {
+        // 按标题前缀找已有自动存档位
+        if let Ok(Some(existing)) =
+            SaveRepo::find_save_by_title_prefix(&self.db, AUTO_SAVE_PREFIX).await
+        {
+            self.auto_save_id = Some(existing.id);
+            return Ok(existing.id);
+        }
+
+        // 新建档位：标题带当前时间，主角取当前主角色
         let main_id = {
             let service = self.ai_service.lock().await;
             let gs = service.game_status.lock().await;
             gs.main_role_id
         };
-
-        if let Ok(Some(existing)) =
-            SaveRepo::find_save_by_title_prefix(&self.db, AUTO_SAVE_PREFIX).await
-        {
-            let save_id = existing.id;
-            let new_title = format!(
-                "{} {}",
-                AUTO_SAVE_PREFIX,
-                Local::now().format("%Y-%m-%d %H:%M:%S")
-            );
-            SaveRepo::update_save_title(&self.db, save_id, &new_title)
-                .await
-                .map_err(|e| format!("更新自动存档标题失败: {}", e))?;
-            // 同步 main_role_id，防止切角色后指向旧角色
-            SaveRepo::update_save_main_role(&self.db, save_id, main_id)
-                .await
-                .map_err(|e| format!("设置主角失败: {}", e))?;
-            self.auto_save_id = Some(save_id);
-            return Ok(save_id);
-        }
-
         let title = format!(
             "{} {}",
             AUTO_SAVE_PREFIX,
@@ -307,13 +354,12 @@ impl AutoSaveManager {
         let model = SaveRepo::create_save(&self.db, &title)
             .await
             .map_err(|e| format!("创建自动存档失败: {}", e))?;
-        let save_id = model.id;
 
-        SaveRepo::update_save_main_role(&self.db, save_id, main_id)
+        SaveRepo::update_save_main_role(&self.db, model.id, main_id)
             .await
             .map_err(|e| format!("设置主角失败: {}", e))?;
 
-        self.auto_save_id = Some(save_id);
-        Ok(save_id)
+        self.auto_save_id = Some(model.id);
+        Ok(model.id)
     }
 }

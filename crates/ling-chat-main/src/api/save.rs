@@ -230,7 +230,7 @@ pub async fn create_save(
 
     // 2. 同步台词
     if !lines.is_empty() {
-        SaveRepo::sync_lines(db, save_id, &lines)
+        SaveRepo::sync_lines(db, save_id, &lines, false)
             .await
             .map_err(|e| format!("同步台词失败: {}", e))?;
     }
@@ -313,28 +313,9 @@ pub async fn load_save(app: AppHandle, save_id: i32) -> Result<WebInitData, Stri
     let state = app.state::<AppState>();
     let db = &state.db;
 
-    // 读档前必须中止旧引擎并清掉其输入通道，否则它会继续往共享 GameStatus 写台词。
-    let aborted_script_engine = if let Some(handle) = state.script_task.lock().await.take() {
-        handle.abort();
-        true
-    } else {
-        false
-    };
-    {
-        let mut ch = state.script_channels.lock().await;
-        let _ = ch.input_tx.take();
-        let _ = ch.choice_tx.take();
-        ch.choice_allow_free = false;
-    }
+    crate::api::script::abort_running_script(&app).await;
 
     let mut service = state.ai_service.lock().await;
-
-    if aborted_script_engine {
-        service
-            .script_manager
-            .is_running
-            .store(false, std::sync::atomic::Ordering::SeqCst);
-    }
 
     // 1. 获取存档
     let save_model = SaveRepo::get_save_by_id(db, save_id)
@@ -500,7 +481,7 @@ pub async fn update_save(
     let lines = service.game_status.lock().await.line_list.clone();
 
     // 2. 同步台词（智能 diff）
-    SaveRepo::sync_lines(db, save_id, &lines)
+    SaveRepo::sync_lines(db, save_id, &lines, false)
         .await
         .map_err(|e| format!("同步台词失败: {}", e))?;
 

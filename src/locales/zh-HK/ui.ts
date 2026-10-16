@@ -389,6 +389,7 @@ export default {
     todoReminderStyle: "待辦提醒方式",
     todoReminderStyleRole: "角色提醒",
     todoReminderStyleToast: "彈窗訊息提醒",
+    growthRangeHint: "≈ 每輪興趣增長 {min} ~ {max}（由上面嘅間隔反推）",
   },
   calendarPage: {
     yearMonth: "{year}年 {month}月",

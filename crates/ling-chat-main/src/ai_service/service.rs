@@ -239,8 +239,10 @@ impl AIService {
         gs.entry_greeting_done = false;
         gs.player = Default::default();
         gs.active_save_id = None;
+        // 好感度会话边界：存档全局变量里的 `affection.{role_id}` 是「上一个会话/存档」
         gs.global_variables.clear();
         gs.affection_eval_cursor = 0;
+        // 会话边界代号：切换角色 / 读档 / 清空对话都会清空 GameStatus 并重建，
         gs.preview_generation = gs.preview_generation.wrapping_add(1);
     }
 
