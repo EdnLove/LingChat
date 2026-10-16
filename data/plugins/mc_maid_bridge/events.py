@@ -1,17 +1,17 @@
 """模组推来的一条游戏事件 → 一句只陈述事实的中文。
 
 只写发生了什么，不写「该有什么情绪」——情绪由模型自己决定，留在台词表里的始终是
-客观记录。哪一条算紧急（要当场请角色开口）由 `_URGENT` 定，事件落地在 hooks.py。
+客观记录。哪一条算紧急（要当场请角色开口）由 `URGENT` 定，事件落地在 hooks.py。
 
 **身边那一圈刻意不在这里登记**：附近有什么活物、玩家进出视线、头顶遮没遮住、脚下踩到
-什么，这四类（模组的 `player_proximity_change` / `player_sight_change` / `living_near` /
+什么，这五类（模组的 `player_proximity_change` / `player_sight_change` / `living_near` /
 `shelter_change` / `ground_change`）不再翻成旁白。她此刻的处境由玩家开口那一刻随消息
 带过去的一份实时快照交代（见 `tools.carry_text`），逐条记下来只会让台词表积满
 「附近有村民」——2026-10-16 真机上一个晚上 34 条事件旁白里 31 条是这类。模组那边照推
 不误，这里不认就等于丢掉，是本次改动有意为之的「不认识就不出声」（见下）。
 
 加一类事件：写一个函数，在 `FORMATTERS` 里登记一行；紧急的话再进 `_URGENT`。
-每个函数收 `(data, player_name)`，只有受伤那条用得上名字（打她的可能是玩家本人）。
+每个函数只收这一条事件的数据；「是不是玩家干的」由模组给的标记回答，不必拿配置里的用户名去比。
 认不出的 event_type 一律不出声——模组先加了新事件、插件还没跟上时，这是刻意的向后兼容。
 """
 
@@ -21,10 +21,16 @@ from wording import (
     DIMENSION_NAMES,
     MOB_NAMES,
     as_int,
-    direction_text,
     name_of,
-    number,
+    nearness_place,
+    who_of,
 )
+
+# 挨了多重只说档位，不报具体掉了几点血——数字一进上下文，模型就会照着念
+# 「一共掉了 0.2 点血」。档位对着血量尺度定：一点以内是擦破皮，五点上下是实打实的一下。
+# 措辞不预设「是被打的」：摔伤、烧死、淹死也走这一条，说成「被打得有点疼」就不对了。
+HURT_PHRASES = ((1.0, "受了点轻伤"), (5.0, "伤得有点疼"), (10.0, "伤得不轻"))
+HURT_WORST = "伤得很重"
 
 # 受理即完成的动作收尾时记进台词表的旁白。go_to 另有说法（看走到哪了）。
 ACTION_DONE_PHRASES = {
@@ -35,20 +41,26 @@ ACTION_DONE_PHRASES = {
 }
 
 
-def format_event(data, player_name=""):
+def format_event(data):
     """一条事件 → (中文, 是否紧急)。认不出的类型返回空文本，调用方据此什么都不做。"""
     kind = (data.get("event_type") or "").strip()
     formatter = FORMATTERS.get(kind)
     if formatter is None:
         return "", False
-    return formatter(data, player_name), kind in URGENT
+    # 玩家死在旁边不是背景动静，当场请她开口；别的生灵死了照旧走「攒够几条」那套。
+    # 外层那个 bool 不能省：`or` 会把右操作数原样返回，缺字段时就成了 None 而不是假。
+    urgent = kind in URGENT or bool(kind == "creature_death" and data.get("victim_owner"))
+    return formatter(data), urgent
 
 
-def snapshot(data, _player):
+def snapshot(data):
     """接上世界时的第一帧：把眼下的处境交代清楚，模型才知道自己在哪儿。
 
     顺手把玩家在游戏里的名字写上：所有事件旁白里出现的都是这个名字，模型得先知道
     它指的就是玩家本人，才不会当成另一个人。名字来自模组，没配置也能说清。
+
+    血量不进这一条：数字说了模型就念，而且「快撑不住了」有专门那条（`low_health`，
+    接上之后的下一次采样就会判）。
     """
     player = (data.get("player_name") or "").strip()
     who = f"玩家（{player}）" if player else "玩家"
@@ -60,27 +72,24 @@ def snapshot(data, _player):
     if data.get("sky"):
         clauses.append("现在是白天" if data.get("phase") == "day" else "现在是夜里")
         clauses.append(_weather_phrase(data))
-    health = f"你的血量 {number(data.get('maid_health'))}/{number(data.get('maid_max_health'))}"
-    if as_int(data.get("player_max_health"), 0) > 0:
-        health += f"，玩家 {number(data.get('player_health'))}/{number(data.get('player_max_health'))}"
-    return f"{'，'.join(clauses)}。{health}。"
+    return f"{'，'.join(clauses)}。"
 
 
-def biome(data, _player):
+def biome(data):
     return f"周围的环境变了，现在来到了{name_of(BIOME_NAMES, data.get('biome'))}。"
 
 
-def dimension(data, _player):
+def dimension(data):
     came_from = name_of(DIMENSION_NAMES, data.get("from_dimension"))
     went_to = name_of(DIMENSION_NAMES, data.get("to_dimension"))
     return f"你跟着玩家从{came_from}来到了{went_to}。"
 
 
-def time_phase(data, _player):
+def time_phase(data):
     return "天黑了。" if data.get("phase") == "night" else "天亮了。"
 
 
-def weather(data, _player):
+def weather(data):
     if data.get("thundering"):
         return "变天了，外面在打雷。"
     if data.get("raining"):
@@ -88,45 +97,69 @@ def weather(data, _player):
     return "雨停了，天放晴了。"
 
 
-def low_health(data, _player):
+def low_health(data):
     who = "你" if data.get("who") == "maid" else "玩家"
-    now = number(data.get("health"))
-    most = number(data.get("max_health"))
-    return f"{who}的血量只剩 {now}/{most}，快撑不住了。"
+    return f"{who}伤得很重，再挨一下就撑不住了。"
 
 
-def maid_hurt(data, player_name):
-    """女仆受伤。模组会把一小段连续挨打合成一条，所以这里要照顾「几下」。"""
-    attacker = (data.get("attacker") or "").strip()
-    if attacker and player_name and attacker == player_name:
+def maid_hurt(data):
+    """女仆受伤。模组会把一小段连续挨打合成一条，所以这里要照顾「几下」。
+
+    只说伤得多重，不报掉了几点血、现在剩多少——那些数字模型会照抄进台词里。
+    动手的是谁看两个标记：`attacker_owner` 是「她主人干的」（也就是玩家自己），
+    `attacker_type` 是生物（说中文名），都没有才轮到伤害类型兜底。账号名一律不念。
+    """
+    if data.get("attacker_owner"):
         cause = "被玩家打了"
-    elif attacker:
-        cause = f"被{attacker}打了"
+    elif data.get("attacker_type"):
+        who = name_of(MOB_NAMES, data.get("attacker_type"), "什么东西")
+        cause = f"被{who}打了"
+    elif (data.get("attacker") or "").strip():
+        cause = "被别的玩家打了"
     else:
         cause = DAMAGE_HINTS.get((data.get("damage_type") or "").strip(), "挨了打")
     count = as_int(data.get("count"), 1)
-    times = f"连续 {count} 下，" if count > 1 else ""
-    damage = number(data.get("damage"))
-    now = number(data.get("health"))
-    most = number(data.get("max_health"))
-    return f"你{cause}，{times}一共掉了 {damage} 点血，现在是 {now}/{most}。"
+    times = "连着挨了几下，" if count > 1 else ""
+    return f"你{cause}，{times}{_hurt_phrase(data.get('damage'))}。"
 
 
-def threat_near(data, _player):
-    """敌对生物靠近。说清是什么、多远、在哪个方向；还没看见它就补一句。
+def creature_death(data):
+    """附近死了个生灵：谁死了、怎么死的。
+
+    因果是快照差分给不出的（它最多说「附近原来有村民，现在没有了」），只有事件说得清，
+    所以这一条走 `LivingDeathEvent`。同类连着死时模组只报第一条，这里不必再判频率。
+    """
+    who = "玩家" if data.get("victim_owner") else who_of(data.get("category"), data.get("type"))
+    return f"{nearness_place(data.get('distance'))}的{who}{_death_cause(data)}。"
+
+
+def _death_cause(data):
+    """怎么死的：一句动词短语。谁动的手看标记与类型 id，都不认识就按伤害类型说。"""
+    if data.get("attacker_owner"):
+        return "被你杀了"
+    if (data.get("attacker") or "").strip():
+        return "被别的玩家杀了"
+    if (data.get("attacker_type") or "").strip():
+        who = name_of(MOB_NAMES, data.get("attacker_type"), "什么东西")
+        return f"被{who}杀了"
+    return DAMAGE_HINTS.get((data.get("damage_type") or "").strip()) or "死了"
+
+
+def threat_near(data):
+    """敌对生物靠近。只说是什么东西靠过来了。
 
     身边那一层只剩这一条还在写旁白：它是唯一「得当场叫醒她」的观察，其余几类都由
-    开口时那份快照带过去。
+    开口时那份快照带过去。方位与距离都不说——模型会照着旁白复述「左前方有僵尸，
+    离我不远」，而这些细节对玩家没用，她该知道的只是「有危险在靠近」。
     """
     who = name_of(MOB_NAMES, data.get("type"), "什么东西")
-    where = direction_text(data.get("direction"))
-    text = f"有{who}靠过来了，大约 {number(data.get('distance'))} 格，在你{where}。"
+    text = f"有{who}靠过来了。"
     if not data.get("visible"):
         text += "你还没看到它。"
     return text
 
 
-def action_done(data, _player):
+def action_done(data):
     """动作收尾。三种结局都要说：被顶掉也要说，否则角色会一直以为还在做。"""
     action = (data.get("action") or "").strip()
     status = (data.get("status") or "").strip()
@@ -150,6 +183,18 @@ def _weather_phrase(data):
     return "天气晴朗"
 
 
+def _hurt_phrase(damage):
+    """掉了多少血 → 「受了点轻伤」这类说法。数字给不出来时说「挨了一下」。"""
+    try:
+        lost = float(damage)
+    except (TypeError, ValueError):
+        return "挨了一下"
+    for threshold, phrase in HURT_PHRASES:
+        if lost <= threshold:
+            return phrase
+    return HURT_WORST
+
+
 FORMATTERS = {
     "state_snapshot": snapshot,
     "biome_change": biome,
@@ -159,6 +204,7 @@ FORMATTERS = {
     "low_health": low_health,
     "maid_hurt": maid_hurt,
     "threat_near": threat_near,
+    "creature_death": creature_death,
     "action_done": action_done,
 }
 

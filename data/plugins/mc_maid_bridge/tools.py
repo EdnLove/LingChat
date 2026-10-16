@@ -9,7 +9,11 @@
 - 查询（看一眼周围）：现取一份快照翻成几句事实，只回给模型看，不写台词表。
 
 那份快照有第二个用处：玩家在 MC 里说话时，随那句话带一句「你此刻的处境」（见
-`carry_text`）。身边的变化不再逐条写成旁白，她知道周围有什么就靠这一句。
+`carry_text`）；她挨打那类「出事」的旁白后面也缀一句眼前的活物（见 `creature_text`）。
+身边的变化不再逐条写成旁白，她知道周围有什么就靠这两处。
+
+给模型的话一律不带数字：格数、血量、光照写进上下文，它就会照本宣科地复述
+「大约 10.5 格」这种句子，而玩家并不需要知道几位小数。
 """
 
 from bridge import ask, ready
@@ -17,9 +21,8 @@ from wording import (
     BLOCK_NAMES,
     DIMENSION_NAMES,
     MOB_NAMES,
-    as_int,
     name_of,
-    number,
+    nearness_place,
     sighting,
 )
 
@@ -30,6 +33,10 @@ LOOK_TIMEOUT_MS = 8000
 # 玩家说话时顺手取快照的超时：给得很短，玩家那句话不能被一次查询拖住（游戏暂停时
 # 模组答不上来，这一轮就不带，照常把话送进对话）。
 CARRY_TIMEOUT_MS = 1500
+
+# 玩家离她这么近才算「在身边」。只判距离，不问「她看不看得见他」——视线那条会让模型
+# 去编「我看见你了」，而真正要紧的只是主人有没有走远。
+OWNER_NEAR = 30.0
 
 LOOK_AROUND_TOOL = "maid_look_around"
 
@@ -143,66 +150,104 @@ def snapshot(maid_id, timeout_ms):
 def carry_text(data):
     """一份快照 → 一句「你此刻的处境」，附在玩家的发言后面。
 
-    只挑此刻要紧的说：脚下与头顶、玩家在不在身边、附近有什么活物。正前方那一眼与光照
-    留给工具那句——玩家问起来才需要那么细，每句话都带上就成了噪音。
+    只挑此刻要紧的说：脚下与头顶、玩家在不在身边、附近有什么活物。正前方那一眼留给
+    工具那句——玩家问起来才需要那么细，每句话都带上就成了噪音。
     帧里没有 owner 字段说明这压根不是快照（多半是别的东西回了信），那就什么都不带。
     """
     if "owner" not in data:
         return ""
     parts = []
-    foot = name_of(BLOCK_NAMES, (data.get("standing_on") or {}).get("id"), "")
+    foot = _footing_phrase(data)
     if foot:
-        parts.append(f"脚下是{foot}")
-    # 下界与末地没有天空，「头顶有没有遮挡」在那里无从谈起
-    if data.get("has_sky"):
-        parts.append("头顶有遮挡" if data.get("sheltered") else "头顶是露天的")
+        parts.append(foot)
     parts.append(_owner_phrase(data.get("owner") or {}))
-    nearby = data.get("nearby") or []
-    if nearby:
-        described = "、".join(sighting(one) for one in nearby)
-        parts.append(f"附近有 {len(nearby)} 个活物：{described}")
+    creatures = creature_phrase(data)
+    if creatures:
+        parts.append(creatures)
     return "（你此刻：" + "；".join(parts) + "）"
 
 
+def creature_phrase(data):
+    """附近有哪些活物，一句话的中间那半截（「附近有左前方近处的僵尸」）。
+
+    出事那一刻（她挨打、血量告急）跟着事件旁白一起给她——怪物另记一条有 2 分钟防抖
+    挡着，但「她刚挨了一下，旁边站着谁」是当下最要紧的处境，不该等到玩家下次说话。
+    """
+    nearby = data.get("nearby") or []
+    if not nearby:
+        return ""
+    described = "、".join(sighting(one) for one in nearby)
+    return f"附近有{described}"
+
+
+def creature_text(data):
+    """同上，但成句：没有活物就什么都说不出来（空串）。"""
+    phrase = creature_phrase(data)
+    return f"{phrase}。" if phrase else ""
+
+
 def _look_around_text(data):
-    """她身边这一圈，说成四句事实：站位 → 正前方 → 玩家 → 附近的活物。"""
+    """她身边这一圈，说成四句事实：站位 → 正前方 → 玩家 → 附近的活物。
+
+    一律不给数字：格数、血量、光照写进上下文，模型就会照本宣科地念出来。
+    """
     dimension = name_of(DIMENSION_NAMES, data.get("dimension"), "某个世界")
     foot = name_of(BLOCK_NAMES, (data.get("standing_on") or {}).get("id"), "说不清的东西")
     roof = "头顶有遮挡，看不到天" if data.get("sheltered") else "头顶是露天的"
-    lines = [f"你正站在{dimension}，脚下是{foot}，{roof}，光照 {as_int(data.get('light'), 0)}。"]
+    lines = [f"你正站在{dimension}，脚下是{foot}，{roof}。"]
 
     look = data.get("looking_at") or {}
     look_kind = (look.get("kind") or "").strip()
     if look_kind == "block":
         block = name_of(BLOCK_NAMES, look.get("id"), "一个方块")
-        lines.append(f"正前方 {number(look.get('distance'))} 格处是{block}。")
+        lines.append(f"正前方{nearness_place(look.get('distance'))}是{block}。")
     elif look_kind == "entity":
         entity = name_of(MOB_NAMES, look.get("id"), "一个活物")
-        lines.append(f"正前方 {number(look.get('distance'))} 格处是{entity}。")
+        lines.append(f"正前方{nearness_place(look.get('distance'))}是{entity}。")
     else:
         lines.append("正前方没有挡着的东西，视线是通的。")
 
     lines.append(_owner_phrase(data.get("owner") or {}) + "。")
 
-    nearby = data.get("nearby") or []
-    if not nearby:
-        lines.append("附近没有别的活物。")
-    else:
-        described = "、".join(sighting(one) for one in nearby)
-        lines.append(f"附近有 {len(nearby)} 个活物：{described}。")
-        if data.get("truncated"):
-            lines.append("更远的没列出来。")
+    creatures = creature_text(data)
+    lines.append(creatures if creatures else "附近没有别的活物。")
+    if data.get("truncated"):
+        lines.append("更远的没列出来。")
     return "".join(lines)
 
 
+def _footing_phrase(data):
+    """脚下踩着哪。「近/中/远」的档位在这句里没意义，所以单独拎出来。"""
+    foot = name_of(BLOCK_NAMES, (data.get("standing_on") or {}).get("id"), "")
+    if not foot:
+        return ""
+    # 下界与末地没有天空，「头顶有没有遮挡」在那里无从谈起
+    roof = ""
+    if data.get("has_sky"):
+        roof = "，头顶有遮挡" if data.get("sheltered") else "，头顶是露天的"
+    return f"脚下是{foot}{roof}"
+
+
+def _nearness(distance):
+    """「近处」/「不远处」/「远处」，塞进「正前方 X 是…」这种句子用。"""
+    return {"近": "近处", "中": "不远处", "远": "远处"}.get(nearness(distance), "不远处")
+
+
 def _owner_phrase(owner):
-    """主人在哪，不带句号。两条路共用这一句，说法只有一处：工具那句自己收尾，
-    携带那句用分号与别的分句连起来。"""
+    """主人在不在她身边（`OWNER_NEAR` 之内），不带句号。
+
+    只说在不在，不给格数，也不问视线：两条路（工具与开口时携带）共用这一句，
+    说法只有一处。
+    """
     if not owner.get("same_dimension"):
         return "玩家不在你所在的这个世界里"
-    if owner.get("visible"):
-        return f"玩家就在你 {number(owner.get('distance'))} 格以内，你看得见他"
-    return f"玩家离你大约 {number(owner.get('distance'))} 格，但被什么挡着，你看不见他"
+    try:
+        distance = float(owner.get("distance"))
+    except (TypeError, ValueError):
+        return "你身边没有玩家"
+    if 0 <= distance <= OWNER_NEAR:
+        return "玩家就在你身边"
+    return "玩家不在你身边"
 
 
 TOOLS = {

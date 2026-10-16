@@ -37,6 +37,9 @@ from events import format_event
 # 游戏事件的标记前缀。既用来认自己写过的行，也用来判「自上次对话以来攒了几条」。
 EVENT_TAG = "［MC 事件］"
 
+# 抓屏时按这个关键词找游戏窗口（标题或进程名命中即可），找不到就抓整个屏幕。
+DEFAULT_SCREEN_WINDOW = "Minecraft"
+
 # 进入 MC 的那条提示。开头是它的标记（模型与人都靠它认出这是桥接写的），写法变了要
 # 重新交代一遍，幂等按内容判，见 `_entry_hint_written`。
 ENTRY_HINT = (
@@ -44,7 +47,10 @@ ENTRY_HINT = (
     "- 你在 LingChat 回的话会同步显示成游戏内女仆的聊天气泡，照常说话就行。\n"
     "- 以「［Minecraft］」开头的消息就是玩家在游戏里说的话，和玩家在输入框里发的一句一样。\n"
     "- 玩家那句话后面若还跟着一句「（你此刻：…）」，那是你当时看到的情形（脚下踩着哪、"
-    "头顶遮没遮住、玩家离你多远、身边有什么活物），不是玩家说的话。\n"
+    "头顶遮没遮住、玩家在不在你身边、身边有什么活物），不是玩家说的话。\n"
+    "- 玩家在游戏里说话时，消息后面可能还附着一张图，那是他当时屏幕上的画面，也就是你"
+    "眼前看到的样子：他让你看什么（搭的房子、手里的东西、眼前的风景）就照着图说，别猜。"
+    "图里如果出现聊天窗口，那是你自己在的那扇窗，不用管它。\n"
     "- 以「［MC 事件］」开头的是世界本身的旁白（换地形、天黑、下雨、受伤、有敌对生物"
     "靠近这类），它不是谁说的话，当背景信息看。\n"
     "- 玩家让你做动作（过来、坐下、看着我、去床上躺下）时用 maid_ 开头的工具指挥女仆："
@@ -153,7 +159,8 @@ def _handle_chat(ctx, chat):
     # 话写进了自己的台词。配置里填了 MC 用户名、而说话的不是他时（多人服里女仆的主人
     # 另有其人）才点名。
     sender = (chat.get("sender") or "").strip()
-    who = player_name(config(ctx))
+    cfg = config(ctx)
+    who = player_name(cfg)
     if who and sender and sender != who:
         text = f"［Minecraft］{sender}说：{message}"
     else:
@@ -161,7 +168,19 @@ def _handle_chat(ctx, chat):
     note = _carry(chat)
     # 与玩家在输入框里发一句走同一条路：写进台词历史、按当前配置生成回复，
     # 所以聊天窗里看得到，角色的回话也会顺着 on_line_shown 变成游戏内气泡。
-    send_user_message(f"{text}\n{note}" if note else text)
+    send_user_message(f"{text}\n{note}" if note else text, screen=_screen_window(cfg))
+
+
+def _screen_window(cfg):
+    """这次发言要不要顺带看一眼玩家屏幕；要的话返回要找的窗口标题关键词。
+
+    宿主拿这个关键词去找窗口、抓一张、压小了附在这条消息后面（原生识图没开、没声明
+    capture_screen 时它自己会跳过）。返回空串 = 不带图，只在配置里关掉时这样；
+    关键词填了空按默认找 Minecraft，填错也只是退回抓整屏，不会没图。
+    """
+    if not truthy(cfg.get("look_at_screen"), True):
+        return ""
+    return (cfg.get("screen_window") or "").strip() or DEFAULT_SCREEN_WINDOW
 
 
 def _carry(chat):
@@ -184,18 +203,31 @@ def _carry(chat):
 def _handle_event(ctx, data):
     """一条游戏事件：记成旁白，该开口的时候请角色开口。
 
-    紧急的（挨打、血量告急、敌对生物靠近、动作收尾）当场开口；其余的攒够若干条、
+    紧急的（挨打、血量告急、动作收尾、敌对生物靠近）当场开口；其余的攒够若干条、
     且这期间没人说话才请一次。
     """
-    text, urgent = format_event(data, player_name(config(ctx)))
+    text, urgent = format_event(data)
     if not text:
         return
+    if urgent:
+        # 出事这一刻正好是「再感知一次周围」的时机：怪物那条有 2 分钟防抖管着，
+        # 这期间新来的谁都不会各记一条，所以她身边站着什么就跟着这条一起交代。
+        text += _creature_text(data)
     written = add_prompt_line("narrator", EVENT_TAG + text)
     if not written.get("ok"):
         print(f"[mc_maid_bridge] 游戏事件没能写进台词表：{written.get('error')}")
         return
     if urgent or _quiet_event_run(written.get("index"), bridge.proactive_after(ctx)):
         _nudge()
+
+
+def _creature_text(data):
+    """她身边有什么活物，一句话（没有就空串）。取不到就这一条不带。"""
+    maid = (data.get("maid_id") or "").strip()
+    if not maid:
+        return ""
+    snapshot, _ = tools.snapshot(maid, tools.CARRY_TIMEOUT_MS)
+    return tools.creature_text(snapshot) if snapshot else ""
 
 
 def _quiet_event_run(index, count):

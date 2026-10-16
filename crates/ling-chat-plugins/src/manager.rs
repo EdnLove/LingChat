@@ -262,6 +262,7 @@ impl PluginManager {
             env: python_backend::collect_env(&record.manifest),
             read: record.manifest.read.clone(),
             send_user_message: record.manifest.send_user_message,
+            capture_screen: record.manifest.capture_screen,
             trigger_proactive: record.manifest.trigger_proactive,
         }
     }

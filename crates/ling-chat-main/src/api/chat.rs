@@ -377,8 +377,33 @@ async fn handle_debug_command(app: &AppHandle, text: &str) -> Result<(), String>
                 tracing::info!("[{}] {} : {}{}{}{}", i, name, emotion, content, tts, action);
             }
         },
+        // 与 /查看记忆 的区别：那边看的是记忆构建器的产物（多条 system 各自独立），
+        // 这边看的是 provider 真正交给适配器的请求——所有 system 已被合并成一条，
+        cmd if cmd.starts_with("/查看原始记忆") => {
+            let limit = cmd
+                .trim_start_matches("/查看原始记忆")
+                .trim()
+                .parse::<usize>()
+                .ok()
+                .filter(|n| *n > 0);
+            let recent = crate::utils::llm_request_logger::recent_request_summaries();
+            if recent.is_empty() {
+                tracing::warn!("还没有发出过 LLM 请求（或当前 provider 未走 genai 通道）。");
+                return Ok(());
+            }
+
+            let total = recent.len();
+            let shown = limit.unwrap_or(total).min(total);
+            tracing::info!("=== 原始请求历史：共 {total} 条（最新在前），本次输出 {shown} 条 ===");
+            for (i, summary) in recent.iter().take(shown).enumerate() {
+                tracing::info!("--- [{}/{}] ---\n{}", i + 1, total, summary);
+            }
+        },
         other if other.starts_with('/') => {
-            tracing::warn!("未知调试指令: {}。可用指令: /查看记忆, /查看台词", other);
+            tracing::warn!(
+                "未知调试指令: {}。可用指令: /查看记忆, /查看原始记忆, /查看台词",
+                other
+            );
         },
         _ => unreachable!(),
     }

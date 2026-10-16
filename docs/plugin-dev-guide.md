@@ -101,7 +101,7 @@ script = "tavily.py"
 parameters = '{ "type":"object", "properties":{ "query":{"type":"string"}, "max_results":{"type":"integer","default":5} }, "required":["query"] }'
 ```
 
-除工具与资源，插件还可以订阅宿主信号（`[[subscribe]]`）、声明 WebSocket 连接（`[[ws]]` 与 `ws_allow`）、声明启动入口（`[startup]`）、前置插件（`depends_on`）、可读素材范围（`read`）、把外部消息送进对话的能力（`send_user_message`）以及请求角色主动开口的能力（`trigger_proactive`），见后文对应章节。
+除工具与资源，插件还可以订阅宿主信号（`[[subscribe]]`）、声明 WebSocket 连接（`[[ws]]` 与 `ws_allow`）、声明启动入口（`[startup]`）、前置插件（`depends_on`）、可读素材范围（`read`）、把外部消息送进对话的能力（`send_user_message`）、送消息时顺带抓一张屏幕的能力（`capture_screen`）以及请求角色主动开口的能力（`trigger_proactive`），见后文对应章节。
 
 **工具的下发与权限**：插件启用时，宿主会把它声明的工具一并授权给默认角色组（与工具设置页里打开开关同义），工具才会随主聊天下发给 LLM、也才能进 Tool RAG 的候选池；禁用插件时授权一起收回。
 
@@ -287,6 +287,31 @@ r = send_user_message("今天好累啊")
   别紧接着去 `read_context` 断言一定写进去了
 - `/` 开头的内容会被当成调试指令（`/查看记忆` 等），插件侧应自行过滤
 - 别把收到的 `ai_reply` 原样再 `send_user_message` 转回来，否则会和角色互相刷屏
+
+### 顺带让角色看一眼屏幕：`send_user_message(text, screen="...")`
+
+有些消息光看文字是接不上的——玩家说「你看我给你搭的房子」，模型得**看见**才知道那是个什么
+形状。`screen` 填一个窗口标题关键词，宿主就在送这条消息前抓一张画面，随消息一起给模型看：
+
+```python
+send_user_message("［Minecraft］你看我给你搭的爱心", screen="Minecraft")
+```
+
+```toml
+# manifest.toml：抓屏是另一项能力，要单独声明；不写 = 一律不带图
+capture_screen = true
+```
+
+- 关键词匹配**窗口标题或进程名**（不区分大小写）；找不到那个窗口就抓**整个桌面**
+- 图会先缩到**长边 1024** 再编 JPEG（约一千 token），窗口小到 200 像素以下、
+  或抓回来是一张纯色图（窗口最小化、独显全屏游戏常见）时按抓失败处理，退到抓整屏
+- 三道关任何一道不过都只是**这次不带图**，消息照发：没声明 `capture_screen`、
+  当前对话模型没开**原生识图**（抓了也只能让视觉模型转述，等于每条消息多花一次调用）、
+  抓不到画面
+- 返回值多一个 `screenshot` 字段说明结果：`attached`（带上了）/ `off`（没要求）/
+  `denied`（没声明能力）/ `no_vision`（没开原生识图）/ `capture_failed`（抓不到）
+- 图片**只在这一轮请求里**，不写进台词历史、不进长期记忆；想让她以后还记得，
+  得靠她自己在台词里说出来
 
 ## 订阅宿主信号：`[[subscribe]]`
 

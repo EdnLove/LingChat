@@ -188,17 +188,9 @@ BLOCK_NAMES = {
     "minecraft:glowstone": "萤石",
 }
 
-# 八向方位。以女仆的身体朝向为准，而不是她正在看的方向。
-DIRECTION_NAMES = {
-    "front": "正前方",
-    "front_right": "右前方",
-    "right": "右侧",
-    "back_right": "右后方",
-    "back": "背后",
-    "back_left": "左后方",
-    "left": "左侧",
-    "front_left": "左前方",
-}
+# 「近」与「中」的分界（格）。再远一律说「远」。
+NEAR_CLOSE = 5.0
+NEAR_MID = 10.0
 
 # 附近那只算哪一类。有自己名字的生物直接用名字，所以 living 不带称呼。
 CATEGORY_NAMES = {"player": "另一个玩家", "maid": "别的女仆", "living": ""}
@@ -231,33 +223,39 @@ def name_of(names, raw, default="未知的地方"):
     return names.get(identifier) or identifier.split(":")[-1].replace("_", " ")
 
 
-def direction_text(raw):
-    """方位 token → 中文；认不出的说「附近」，别让句子缺一块。"""
-    return name_of(DIRECTION_NAMES, raw, "附近")
-
-
 def who_of(category, type_id):
     """附近那只算谁：类别有专门称呼的（另一个玩家、别的女仆）用它，其余用生物名。"""
     return CATEGORY_NAMES.get(category or "") or name_of(MOB_NAMES, type_id, "什么东西")
 
 
 def sighting(one):
-    """一份附近实体的记录 → 「右前方 6.2 格的僵尸（被挡着）」。"""
-    where = direction_text(one.get("direction"))
+    """一份附近实体的记录 → 「近处的僵尸（被挡着）」。
+
+    只说是什么、大概多远，不说方位，也不给格数：模型会把旁白里的方位与数字照样
+    复述出来（「左前方 10.5 格有只蜘蛛」），而玩家并不需要知道这些。
+    """
     who = who_of(one.get("category"), one.get("type"))
     hidden = "" if one.get("visible") else "（被挡着）"
-    return f"{where} {number(one.get('distance'))} 格的{who}{hidden}"
+    return f"{nearness_place(one.get('distance'))}的{who}{hidden}"
 
 
-def number(value):
-    """血量与距离这类数字：整数不带小数点，其余留一位；给不出来就留个问号。"""
+def nearness(distance):
+    """距离 → 「近」/「中」/「远」。档位对着模组的感知半径（默认 12 格）定：
+    贴身与一臂之内算近，走到跟前要几步算中，剩下那一圈算远。给不出数字就当「中」。"""
     try:
-        as_float = float(value)
+        value = float(distance)
     except (TypeError, ValueError):
-        return "?"
-    if as_float == int(as_float):
-        return str(int(as_float))
-    return f"{as_float:.1f}"
+        return "中"
+    if value <= NEAR_CLOSE:
+        return "近"
+    if value <= NEAR_MID:
+        return "中"
+    return "远"
+
+
+def nearness_place(distance):
+    """同上，但给的是「近处」/「不远处」/「远处」这种能直接塞进句子的说法。"""
+    return {"近": "近处", "中": "不远处", "远": "远处"}[nearness(distance)]
 
 
 def as_int(value, default=0):

@@ -11,6 +11,10 @@ send_user_message = true
 # 游戏里的变化攒够了，要请角色主动开口（会花掉一轮生成）。
 trigger_proactive = true
 
+# 玩家在游戏里说话时，顺带抓一张屏幕给模型看（她要能看懂你搭的爱心、手里的东西，
+# 光靠文字是说不出来的）。屏幕上是玩家的隐私，所以单独声明一条。
+capture_screen = true
+
 # 桥接模组只在本机回环上监听，白名单也只放行回环，避免这个插件被指向任意外部地址。
 ws_allow = ["ws://127.0.0.1:", "ws://localhost:"]
 
@@ -42,6 +46,22 @@ label = "把角色的话同步成游戏内气泡"
 kind = "boolean"
 required = false
 default = true
+
+[[config]]
+key = "look_at_screen"
+label = "说话时顺带看一眼玩家屏幕"
+kind = "boolean"
+required = false
+default = true
+hint = "你每次在游戏里说话，都抓一张当时的画面附在消息后面（她这才看得到你搭的房子、手里的东西、眼前的风景）。\n约合一千 token 一张；聊天模型没开原生识图时这一项自动不起作用。不想花这个钱就关掉。"
+
+[[config]]
+key = "screen_window"
+label = "游戏窗口标题关键词"
+kind = "string"
+required = false
+default = "Minecraft"
+hint = "按窗口标题（或进程名）找要抓的游戏窗口，找不到就抓整个屏幕。\n只有窗口标题被改过、或者非原版启动器时才需要动这一项。"
 
 [[config]]
 key = "proactive_after_events"
@@ -106,7 +126,7 @@ timeout_ms = 15000
 
 [[tools]]
 name = "maid_look_around"
-description = "看一眼女仆身边现在有什么。返回她正前方挡着的方块或生物、脚下踩着哪、头顶有没有遮挡、光照、附近一圈的活物与方位、以及玩家离她多远、看不看得见。玩家问她「你周围有什么」「你看到什么了」时用它，不要凭印象编。"
+description = "看一眼女仆身边现在有什么。返回她正前方挡着的方块或生物、脚下踩着哪、头顶有没有遮挡、附近一圈的活物、以及玩家在不在她身边。玩家问她「你周围有什么」「你看到什么了」时用它，不要凭印象编。距离只说近/中/远，活物不说方位。"
 parameters = '{ "type":"object", "properties":{} }'
 script = "tools.py"
 timeout_ms = 15000
