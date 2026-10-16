@@ -35,6 +35,10 @@ export default {
     },
   },
   adventure: {
+    lock: {
+      title: "シナリオを開始できません",
+      running: "すでにシナリオが実行中です。先に現在のシナリオを終了してください",
+    },
     standalone: {
       title: "独立シナリオ",
       empty: "独立シナリオはまだありません",
@@ -116,12 +120,14 @@ export default {
       editTitleTip: "ダブルクリックでセーブのタイトルを変更",
       untitled: "無題のセーブ",
       noMessage: "会話セリフの記録なし",
+      current: "今回のセーブ",
     },
     action: {
       reading: "読み込み中...",
       load: "セーブを読み込む",
       saving: "保存中...",
       overwrite: "セーブを上書き",
+      update: "セーブを更新",
       deleting: "削除中...",
       delete: "セーブを削除",
     },
@@ -143,6 +149,8 @@ export default {
       overwriteConfirm: "セーブを上書きすると以前の進行が失われます。上書きしますか？",
       overwriteSuccessTitle: "保存しました",
       overwriteSuccessMsg: "セーブを上書きしました",
+      updateSuccessTitle: "更新しました",
+      updateSuccessMsg: "セーブを更新しました",
       overwriteFailTitle: "保存に失敗しました",
       deleteConfirm: "このセーブを削除しますか？この操作は元に戻せません。",
       deleteSuccessTitle: "削除しました",
@@ -217,28 +225,21 @@ export default {
     },
     fields: {
       llm: {
-        output_sec_lang: "LLM_OUTPUT_SEC_LANG — 第二言語の出力を許可（オフで中国語のみ）",
-        consumers:
-          "COMSUMERS — 同時コンシューマー数（増やすとストリーム出力が高速化、デフォルト 3）",
+        output_sec_lang: "第二言語の出力を許可（オフで中国語のみ）",
+        consumers: "同時コンシューマー数（増やすとストリーム出力が高速化、デフォルト 3）",
         timeout_secs:
           "LLM リクエストのアイドルタイムアウト（秒）— 初回応答およびストリーム隣接イベントの最大待機時間（10–3600）",
-        no_emotion_limit_prompt:
-          "NO_EMOTION_LIMIT_PROMPT — emotion 数制限を解除（トークン消費が増える場合あり）",
+        no_emotion_limit_prompt: "emotion 数制限を解除（トークン消費が増える場合あり）",
       },
       translate: {
-        enable: "ENABLE_TRANSLATE — AI 翻訳を有効化（中国語会話を第二言語に翻訳）",
+        enable: "AI 翻訳を有効化（中国語会話を第二言語に翻訳）",
       },
       features: {
-        enable_time_sense:
-          "USE_TIME_SENSE — 時間認識を有効化（コンテキストの時刻に応じてシステムリマインドを追加）",
-        enable_emotion_classifier:
-          "ENABLE_EMOTION_CLASSIFIER — 感情分類器を有効化（ONNX モデル、会話 emotion の自動タグ付け）",
-        use_persistent_memory:
-          "USE_PERSISTENT_MEMORY — 記憶を自動圧縮します。保存後の再起動で反映されます",
-        memory_update_interval:
-          "MEMORY_UPDATE_INTERVAL — 要約を開始する可視台詞数（1–10000、既定 250）",
-        memory_recent_window:
-          "MEMORY_RECENT_WINDOW — 圧縮後に保持する役割可視台詞数（0–10000、既定 30）",
+        enable_time_sense: "時間認識を有効化（コンテキストの時刻に応じてシステムリマインドを追加）",
+        enable_emotion_classifier: "感情分類器を有効化（ONNX モデル、会話 emotion の自動タグ付け）",
+        use_persistent_memory: "記憶を自動圧縮します。保存後の再起動で反映されます",
+        memory_update_interval: "要約を開始する可視台詞数（1–10000、既定 250）",
+        memory_recent_window: "圧縮後に保持する役割可視台詞数（0–10000、既定 30）",
       },
       tts: {
         simple_vits_api_url: "Simple-Vits-API アドレス（VITS アダプター）",
@@ -262,28 +263,25 @@ export default {
           "GitHub Token を入力（権限不要、GraphQL API 呼び出し用）。空欄なら REST API を使用し、独立 upvote 数は取得できません（👍 絵文字数で代替）。作成先: https://github.com/settings/tokens",
       },
       log: {
-        enable: "LOG_ENABLE — 実行ログをファイルに書き込む（data/log/app/ ディレクトリ）",
-        retention_days: "LOG_RETENTION_DAYS — ログファイルの保持日数。超過分は起動時に自動削除",
+        enable: "実行ログをファイルに書き込む（data/log/app/ ディレクトリ）",
+        retention_days: "ログファイルの保持日数。超過分は起動時に自動削除",
         llm_request_body:
-          "LOG_LLM_REQUEST_BODY — 各 LLM リクエストの完全な JSON を data/log/llm/ に記録（デフォルトオフ）",
+          "各 LLM リクエストの完全な JSON を data/log/llm/ に記録（デフォルトオフ）",
         genai_debug:
-          "LOG_GENAI_DEBUG — genai SDK のデバッグログを有効化（リクエスト/レスポンス詳細、保存後すぐ有効、デフォルトオフ）",
+          "genai SDK のデバッグログを有効化（リクエスト/レスポンス詳細、保存後すぐ有効、デフォルトオフ）",
       },
-      ENABLE_PROACTIVE_SYSTEM: "ENABLE_PROACTIVE_SYSTEM — 自動会話システムを有効にするか",
-      MAX_PROACTIVE_TIMES: "MAX_PROACTIVE_TIMES — ユーザーが応答するまでの自動会話の最大回数",
-      ENABLE_VISUAL_PRECEPTION:
-        "ENABLE_VISUAL_PRECEPTION — デスクトップ画面の自動視覚認識を許可（画面をのぞき見）",
-      SCREEN_WEIGHT:
-        "SCREEN_WEIGHT — 視覚モード発動の重み（大きいほど画面を見て話しかけやすい、デフォルト 30）",
-      ENABLE_TOPIC_CREATER: "ENABLE_TOPIC_CREATER — 新しい話題を自律的に探して開始することを許可",
-      TOPIC_WEIGHT: "TOPIC_WEIGHT — ランダム話題の発動重み（デフォルト 60）",
-      ENABLE_TODO_PRECEPTION:
-        "ENABLE_TODO_PRECEPTION — 暇な時に未完了 TODO を自動で読み取り穏やかにリマインド",
-      TODO_WEIGHT: "TODO_WEIGHT — TODO リマインドの発動重み（デフォルト 10）",
-      ENABLE_SCHEDULE_REMINDER:
-        "ENABLE_SCHEDULE_REMINDER — 強制スケジュール時報ポップアップを有効化",
-      ENABLE_IMPORTANT_DAY_REMINDER:
-        "ENABLE_IMPORTANT_DAY_REMINDER — 重要な記念日・特別な日の心温まるリマインドを有効化",
+      ENABLE_PROACTIVE_SYSTEM: "自動会話システムを有効にするか",
+      MAX_PROACTIVE_TIMES: "ユーザーが応答するまでの自動会話の最大回数",
+      PROACTIVE_EXPECTED_INTERVAL_MINUTES:
+        "自発的な会話の期待間隔（分、1–60）。小さいほど頻繁になり、1 サイクルあたりの興味増加の範囲はここから逆算されます",
+      ENABLE_VISUAL_PRECEPTION: "デスクトップ画面の自動視覚認識を許可（画面をのぞき見）",
+      SCREEN_WEIGHT: "視覚モード発動の重み（大きいほど画面を見て話しかけやすい、デフォルト 30）",
+      ENABLE_TOPIC_CREATER: "新しい話題を自律的に探して開始することを許可",
+      TOPIC_WEIGHT: "ランダム話題の発動重み（デフォルト 60）",
+      ENABLE_TODO_PRECEPTION: "暇な時に未完了 TODO を自動で読み取り穏やかにリマインド",
+      TODO_WEIGHT: "TODO リマインドの発動重み（デフォルト 10）",
+      ENABLE_SCHEDULE_REMINDER: "強制スケジュール時報ポップアップを有効化",
+      ENABLE_IMPORTANT_DAY_REMINDER: "重要な記念日・特別な日の心温まるリマインドを有効化",
     },
   },
   workshop: {
@@ -366,6 +364,9 @@ export default {
       chatCount: "会話{count}回",
       prereqAdventure: "前置アドベンチャーを完了",
       achievement: "特定の実績を解放",
+    },
+    lock: {
+      scriptRunning: "現在シナリオが進行中です",
     },
   },
   characterInfo: {
@@ -712,6 +713,12 @@ export default {
       delete: "削除",
       edit: "シーンを編集",
       noDescription: "説明なし（選択してもナレーションは発生しません）",
+      location: {
+        indoor: "屋内",
+        outdoor: "屋外",
+        unknown: "不明",
+        editTitle: "クリックで屋内外タグを切り替え",
+      },
       tip: "ヒント",
       noDescriptionTip:
         "シーン「{name}」には説明がありません。選択してもシーンナレーションは発生しません",
@@ -783,6 +790,9 @@ export default {
       snow: "雪",
       blizzard: "吹雪",
       fog: "霧",
+      city: "都市",
+      cityPlaceholder: "例：成都",
+      autoSync: "天気同期",
     },
     animation: {
       switchTitle: "アニメーション切替",
@@ -852,10 +862,6 @@ export default {
     sample: {
       title: "テキストサンプル",
       demo: "Ling Chat: テキスト表示速度のテスト",
-    },
-    inlineMotion: {
-      title: "インライン動作テキスト",
-      desc: "有効にすると、動作テキストがセリフと同時に表示され、再クリックは不要です",
     },
     mergeLine: {
       title: "セリフ結合閾値",

@@ -126,7 +126,7 @@
 
       <!-- 音乐控制台 -->
       <div
-        class="flex gap-3 rounded-xl border border-white/10 bg-white/5 p-4 backdrop-blur-md max-[640px]:flex-col max-[640px]:gap-2"
+        class="flex gap-3 rounded-xl border border-white/10 bg-white/5 p-4 max-[640px]:flex-col max-[640px]:gap-2"
       >
         <div
           class="flex w-[60%] items-center justify-between rounded-lg bg-black/20 px-3 py-2 text-sm font-medium text-gray-200 max-[640px]:w-full"
@@ -225,9 +225,7 @@
       </div>
 
       <!-- 音乐列表 -->
-      <div
-        class="mt-4 flex flex-col overflow-hidden rounded-xl border border-white/10 bg-black/20 backdrop-blur-sm"
-      >
+      <div class="mt-4 flex flex-col overflow-hidden rounded-xl border border-white/10 bg-black/20">
         <div v-if="filteredMusicList.length === 0" class="py-8 text-center text-sm text-gray-400">
           {{ $t("settings.sound.bgm.empty") }}
         </div>
@@ -330,9 +328,7 @@
           $t("settings.sound.ambient.fileCount", { count: ambientFileList.length })
         }}</span>
       </div>
-      <div
-        class="flex flex-col overflow-hidden rounded-xl border border-white/10 bg-black/20 backdrop-blur-sm"
-      >
+      <div class="flex flex-col overflow-hidden rounded-xl border border-white/10 bg-black/20">
         <div v-if="ambientFileList.length === 0" class="py-4 text-center text-sm text-gray-400">
           {{ $t("settings.sound.ambient.empty") }}
         </div>
@@ -402,9 +398,7 @@
           >{{ uiStore.ambientTracks.length }}/{{ maxAmbientTracks }}</span
         >
       </div>
-      <div
-        class="flex flex-col overflow-hidden rounded-xl border border-white/10 bg-black/20 backdrop-blur-sm"
-      >
+      <div class="flex flex-col overflow-hidden rounded-xl border border-white/10 bg-black/20">
         <div
           v-if="uiStore.ambientTracks.length === 0"
           class="py-4 text-center text-sm text-gray-400"
@@ -658,33 +652,6 @@ const togglePlaybackMode = () => {
   else uiStore.bgMusicMode = "loop-list";
 };
 
-// 自动切歌处理 (响应播放结束事件)
-const handleTrackEnd = () => {
-  if (musicList.value.length === 0) return;
-
-  const currentUrl = uiStore.currentBackgroundMusic;
-  const currentIndex = musicList.value.findIndex((m) => m.url === currentUrl);
-
-  let nextMusic: MusicItem | undefined = undefined;
-
-  if (uiStore.bgMusicMode === "loop-single") {
-    // 单曲循环
-    nextMusic = currentIndex !== -1 ? musicList.value[currentIndex] : musicList.value[0];
-  } else if (uiStore.bgMusicMode === "random") {
-    // 随机播放
-    const randomIndex = Math.floor(Math.random() * musicList.value.length);
-    nextMusic = musicList.value[randomIndex];
-  } else {
-    // 列表循环
-    const nextIndex = currentIndex !== -1 ? (currentIndex + 1) % musicList.value.length : 0;
-    nextMusic = musicList.value[nextIndex];
-  }
-
-  if (nextMusic) {
-    playMusic(nextMusic);
-  }
-};
-
 const inferMusicNameFromUrl = (musicUrl: string): string => {
   if (!musicUrl || musicUrl === "None") return t("settings.sound.bgm.noMusicSelected");
   const fileName = decodeURIComponent(musicUrl.split("/").pop() || "");
@@ -880,15 +847,6 @@ watch(
     } else {
       backgroundAudioPlayer.value.play().catch((e) => console.error("播放失败:", e));
     }
-  },
-);
-
-// 监听背景音乐结束事件，通过store中的_musicEndTime触发
-watch(
-  () => uiStore._musicEndTime,
-  () => {
-    // 当音乐结束时，调用handleTrackEnd处理音乐切换
-    handleTrackEnd();
   },
 );
 

@@ -17,7 +17,7 @@
         <div
           v-for="plugin in plugins"
           :key="plugin.id"
-          class="rounded-xl border border-white/10 bg-white/5 p-4 backdrop-blur-md"
+          class="rounded-xl border border-white/10 bg-white/5 p-4"
         >
           <!-- 头部：名称 + 版本 + 开关 -->
           <div class="flex items-center justify-between gap-3">

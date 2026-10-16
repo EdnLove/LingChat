@@ -123,7 +123,8 @@ export default {
     navCalendar: "大切な日",
     navProactive: "自発会話",
     navToolCalls: "ツール呼び出し",
-    clockTip: "「ここに追加した情報は、画面の向こうのあの子にも見えているよ！」",
+    todoWidgetTitle: "TODO ウィジェット",
+    todoWidgetTip: "画面の隅に小さなパネルを置いて、直近の予定とやることをいつでも確認",
     create: "新規作成",
     titleSchedule: "リンリンアラーム",
     subtitleSchedule: "時間になるとあの子がお知らせしてくれるよ",
@@ -139,6 +140,19 @@ export default {
     titleDefault: "リンちゃんアラーム",
     subtitleDefault: "あの子にリマインドしてほしいことを残してね",
   },
+  todoWidget: {
+    pin: "常に最前面",
+    unpin: "最前面を解除",
+    close: "閉じる",
+    overdue: "期限切れ",
+    tomorrow: "明日",
+    dayUnit: "日",
+    tabSchedule: "予定",
+    tabTodo: "ToDo",
+    noDeadlineTodo: "期限つきのToDoはないよ",
+    emptySchedule: "予定はまだないよ",
+    emptyTodo: "未完了のToDoはないよ",
+  },
   toolCalls: {
     accessModeTitle: "ツールアクセス権限",
     accessModeHint:
@@ -149,6 +163,9 @@ export default {
       "メインチャットの1回の返信で連続実行できるツールラウンド数を制限します。1ラウンドに複数のツール呼び出しが含まれる場合があります。",
     maxToolRoundsUnit: "ラウンド",
     maxToolRoundsRange: "範囲 {min}～{max} · 既定値 {default}",
+    toolRagTitle: "ツールのオンデマンド検索",
+    toolRagHint:
+      "各リクエストにはよく使うツールだけを送り、必要になったときモデルが一文でツールを検索してから呼び出します。すべてのツール説明が占めていたコンテキストを節約できます。オフにすると毎回すべての許可済みツールを送信します。",
     accessModes: {
       manual: {
         label: "毎回確認",
@@ -326,6 +343,7 @@ export default {
     },
     tools: {
       web_search: "ウェブ検索",
+      tool_search: "ツール検索",
       get_current_time: "現在時刻",
       schedule_get_all: "スケジュール確認",
       schedule_add_todo: "ToDo 追加",
@@ -371,6 +389,11 @@ export default {
     priorityLabel: "優先度:",
     newGroup: "新規タスクグループ",
     newTask: "新規ToDoタスク",
+    editTask: "ToDoタスクを編集",
+    reminderOff: "リマインドしない",
+    reminderMinutes: "{count} 分前に",
+    reminderHours: "{count} 時間前に",
+    reminderDays: "{count} 日前に",
   },
   schedulePage: {
     emptyGroups: "スケジュールテーマがまだありません。右上の新規作成から追加してね",
@@ -387,6 +410,10 @@ export default {
     save: "保存",
     success: "保存しました",
     error: "エラー: {message}",
+    todoReminderStyle: "ToDoのリマインド方法",
+    todoReminderStyleRole: "キャラが声をかける",
+    todoReminderStyleToast: "システム通知",
+    growthRangeHint: "≈ 1 サイクルあたりの興味増加 {min} ~ {max}（上の間隔から逆算）",
   },
   calendarPage: {
     yearMonth: "{year}年 {month}月",

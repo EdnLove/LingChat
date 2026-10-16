@@ -54,6 +54,7 @@ pub struct GameRoleManager {
 }
 
 impl GameRoleManager {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         data_dir: PathBuf,
         db: DatabaseConnection,
@@ -92,6 +93,21 @@ impl GameRoleManager {
         self.clothes_overrides.insert(role_id, clothes);
     }
 
+    pub fn remap_character_costume(&mut self, role_id: i32, old: &str, new: &str) {
+        if self
+            .clothes_overrides
+            .get(&role_id)
+            .is_some_and(|name| name == old)
+        {
+            self.clothes_overrides.insert(role_id, new.into());
+        }
+        if let Some(role) = self.loaded_roles.get_mut(&role_id) {
+            if role.current_clothes == old {
+                role.current_clothes = new.into();
+            }
+        }
+    }
+
     /// 获取角色；若未加载则从 DB 惰性注册。
     pub async fn get_role(
         &mut self,
@@ -116,7 +132,7 @@ impl GameRoleManager {
     /// 记忆系统未启用或角色未加载时返回空字符串。供 memory.get_current 工具调用。
     pub async fn get_role_memory_text(&self, role_id: i32) -> String {
         match self.memory_bank_systems.get(&role_id) {
-            Some(sys) if sys.is_enabled() => sys.get_system_memory_text().await,
+            Some(sys) if sys.is_enabled() => sys.get_memory_context_text().await,
             _ => String::new(),
         }
     }
@@ -198,6 +214,10 @@ impl GameRoleManager {
 
         let display_name = settings.ai_name.clone();
         let resource_path = role.resource_folder.clone();
+        let worldbook = settings
+            .resource_path
+            .as_deref()
+            .and_then(|path| crate::ai_service::worldbook::Worldbook::load(Path::new(path)));
 
         let voice_maker = build_voice_maker(
             &self.data_dir,
@@ -228,6 +248,7 @@ impl GameRoleManager {
 
         let new_role = GameRole {
             role_id: Some(role.id),
+            worldbook,
             display_name: Some(display_name),
             settings,
             resource_path,
@@ -324,6 +345,7 @@ impl GameRoleManager {
         db: &DatabaseConnection,
         lines: &[GameLine],
         recent_n: Option<usize>,
+        completed_turn: bool,
     ) -> Result<()> {
         let source_lines: &[GameLine] = match recent_n {
             Some(n) if n < lines.len() => &lines[lines.len() - n..],
@@ -369,7 +391,7 @@ impl GameRoleManager {
             );
 
             // 阶段 2: MemoryBank 启用时 — 同步后台结果 + 触发压缩 + 获取记忆文本
-            let (mb_exists, slice_start, system_addendum, short_term_prefix) = {
+            let (mb_exists, slice_start, memory_context) = {
                 let sys = self.memory_bank_systems.get(&rid);
                 match sys {
                     Some(s) if s.is_enabled() => {
@@ -377,14 +399,16 @@ impl GameRoleManager {
                         if let Some(role) = self.loaded_roles.get_mut(&rid) {
                             s.sync_to_role(role);
                         }
-                        s.check_and_trigger_auto_update(source_lines);
-                        let start = s.get_slice_start_index(source_lines).await;
-                        let sys_text = s.get_system_memory_text().await;
-                        let short = s.get_short_term_user_text().await;
-                        (true, start, sys_text, short)
+                        if completed_turn {
+                            s.check_and_trigger_completed_turn(source_lines);
+                        } else {
+                            s.check_and_trigger_auto_update(source_lines);
+                        }
+                        let (start, context) = s.get_context_snapshot(source_lines).await;
+                        (true, start, context)
                     },
-                    Some(_) => (true, 0, String::new(), String::new()),
-                    None => (false, 0, String::new(), String::new()),
+                    Some(_) => (true, 0, String::new()),
+                    None => (false, 0, String::new()),
                 }
             };
 
@@ -412,13 +436,9 @@ impl GameRoleManager {
 
             // 阶段 4: 写入角色记忆
             if let Some(role) = self.loaded_roles.get_mut(&rid) {
-                let use_mb = mb_exists && mb_enabled && !system_addendum.is_empty();
+                let use_mb = mb_exists && mb_enabled && !memory_context.is_empty();
                 role.memory = if use_mb {
-                    Self::merge_memory_bank_into_context(
-                        built,
-                        &system_addendum,
-                        &short_term_prefix,
-                    )
+                    Self::merge_memory_bank_into_context(built, &memory_context)
                 } else {
                     built
                 };
@@ -440,6 +460,7 @@ impl GameRoleManager {
     /// 惰性构造角色的 `PersistentMemorySystem`。
     ///
     /// 调用方保证在 `enabled=true` 时槽位内已就绪 LLM（构造函数注入）。
+    #[allow(clippy::too_many_arguments)]
     fn ensure_memory_bank_system(
         &mut self,
         role_id: i32,
@@ -590,12 +611,12 @@ impl GameRoleManager {
         true
     }
 
-    /// 刷新已加载角色的形象配置：Live2D 模型、主对话/桌宠的显示方式、桌宠无框模式。
+    /// 刷新已加载角色的形象配置和主对话立绘、气泡布局。
     ///
-    /// 这四个字段必须一起拷：内存里的 `role.settings` 是之后
+    /// 这些字段必须一起拷：内存里的 `role.settings` 是之后
     /// `init_game` / 切角色时 `onstage_roles` 的数据源，漏拷会让保存后的
     /// 显示方式在下一次 init 时被打回旧值。
-    pub fn update_role_live2d_settings(
+    pub fn update_role_visual_settings(
         &mut self,
         role_id: i32,
         settings: &CharacterSettings,
@@ -608,6 +629,17 @@ impl GameRoleManager {
         role.settings.avatar_mode = settings.avatar_mode.clone();
         role.settings.avatar_mode_p = settings.avatar_mode_p.clone();
         role.settings.pet_frameless = settings.pet_frameless;
+        role.settings.scale = settings.scale;
+        role.settings.offset_x = settings.offset_x;
+        role.settings.offset_y = settings.offset_y;
+        role.settings.scale_p = settings.scale_p;
+        role.settings.offset_x_p = settings.offset_x_p;
+        role.settings.offset_y_p = settings.offset_y_p;
+        role.settings.bubble_top = settings.bubble_top;
+        role.settings.bubble_left = settings.bubble_left;
+        role.settings.clothes = settings.clothes.clone();
+        role.settings.clothes_name = settings.clothes_name.clone();
+        role.settings.body_part = settings.body_part.clone();
         true
     }
 
@@ -668,64 +700,28 @@ impl GameRoleManager {
         Ok(())
     }
 
-    /// 将 MemoryBank 文本合并到 LLM 消息中。
-    ///
-    /// - `system_addendum`：合并到第一条 system 消息末尾
-    /// - `short_term_prefix`：前置到第一条 user 消息；没有 user 时在 system 后插入
-    ///
-    /// 另会合并连续出现的多条 system 消息为一条。
+    /// 将 MemoryBank 作为独立、低优先级的历史资料消息插入上下文。
+    /// 角色人设和用户消息均保持原样，避免历史摘要冒充当前用户输入或覆盖人设。
     fn merge_memory_bank_into_context(
         memory: Vec<LlmMessage>,
-        system_addendum: &str,
-        short_term_prefix: &str,
+        memory_context: &str,
     ) -> Vec<LlmMessage> {
         let mut out = memory;
-
-        if !system_addendum.trim().is_empty() {
-            if let Some(first) = out.first_mut() {
-                if first.role == "system" {
-                    let content = &first.content;
-                    if !content.contains(system_addendum) {
-                        first.content = format!("{}{}", content, system_addendum);
-                    }
-                } else {
-                    out.insert(0, LlmMessage::system(system_addendum));
-                }
-            } else {
-                out.push(LlmMessage::system(system_addendum));
-            }
-        }
-
-        if !short_term_prefix.trim().is_empty() {
-            let insert_at = out
+        let memory_context = memory_context.trim();
+        if memory_context.is_empty()
+            || out
                 .iter()
-                .position(|message| message.role != "system")
-                .unwrap_or(out.len());
-            if out
-                .get(insert_at)
-                .is_some_and(|message| message.role == "user")
-            {
-                let first_user = &mut out[insert_at];
-                if !first_user.content.contains(short_term_prefix) {
-                    first_user.content = format!("{}{}", short_term_prefix, first_user.content);
-                }
-            } else {
-                out.insert(insert_at, LlmMessage::user(short_term_prefix));
-            }
+                .any(|message| message.role == "system" && message.content == memory_context)
+        {
+            return out;
         }
 
-        // 合并连续 system 消息
-        let mut cleaned: Vec<LlmMessage> = Vec::new();
-        for msg in out {
-            if let Some(last) = cleaned.last_mut() {
-                if last.role == "system" && msg.role == "system" {
-                    last.content = format!("{}\n{}", last.content, msg.content);
-                    continue;
-                }
-            }
-            cleaned.push(msg);
-        }
-        cleaned
+        let insert_at = out
+            .iter()
+            .take_while(|message| message.role == "system")
+            .count();
+        out.insert(insert_at, LlmMessage::system(memory_context));
+        out
     }
 
     // ── 内部辅助方法（已有，未修改） ──
@@ -802,11 +798,50 @@ impl GameRoleManager {
     }
 }
 
+#[cfg(test)]
+mod memory_context_tests {
+    use super::*;
+
+    #[test]
+    fn memory_context_is_separate_from_persona_and_user_message() {
+        let input = vec![
+            LlmMessage::system("不可变角色人设"),
+            LlmMessage::user("玩家当前消息"),
+        ];
+
+        let output = GameRoleManager::merge_memory_bank_into_context(input, "历史记忆资料");
+
+        assert_eq!(output.len(), 3);
+        assert_eq!(output[0].role, "system");
+        assert_eq!(output[0].content, "不可变角色人设");
+        assert_eq!(output[1].role, "system");
+        assert_eq!(output[1].content, "历史记忆资料");
+        assert_eq!(output[2].role, "user");
+        assert_eq!(output[2].content, "玩家当前消息");
+    }
+
+    #[test]
+    fn memory_context_follows_all_original_system_messages() {
+        let input = vec![
+            LlmMessage::system("角色人设"),
+            LlmMessage::system("系统规则"),
+            LlmMessage::user("当前消息"),
+        ];
+
+        let output = GameRoleManager::merge_memory_bank_into_context(input, "历史资料");
+
+        assert_eq!(output[0].content, "角色人设");
+        assert_eq!(output[1].content, "系统规则");
+        assert_eq!(output[2].content, "历史资料");
+        assert_eq!(output[3].content, "当前消息");
+    }
+}
+
 /// 根据 `CharacterSettings.tts_type` 与 `voice_models` 构造角色的 `VoiceMaker`。
 ///
 /// 未启用 TTS / 配置缺失时返回 `None`。对应 Python `GameRole` 构造时调用
 /// `voice_maker = VoiceMaker(...)`。
-fn build_voice_maker(
+pub(crate) fn build_voice_maker(
     data_dir: &Path,
     settings: &CharacterSettings,
     tts_config: &TtsConfig,

@@ -19,6 +19,10 @@
   <AchievementToast v-if="isMainWindow" />
   <AdventureUnlockNotify v-if="isMainWindow" />
   <AppDialog v-if="isMainWindow" />
+
+  <!-- 全局背景音乐层：主窗口常驻，不随路由卸载，故 /chat ↔ /pet 切换时 BGM 不中断。
+       必须按窗口门控：设置窗与日志窗也复用 App.vue，且各自注册了 script:music 监听。 -->
+  <BgmLayer v-if="isMainWindow" />
 </template>
 
 <script setup lang="ts">
@@ -32,6 +36,7 @@ import Notification from "./components/ui/Notification.vue";
 import AchievementToast from "./components/ui/AchievementToast.vue";
 import AdventureUnlockNotify from "./components/ui/AdventureUnlockNotify.vue";
 import AppDialog from "./components/ui/AppDialog.vue";
+import BgmLayer from "./components/ui/BgmLayer.vue";
 import { useAsrInput } from "./composables/asr";
 import { useCanDeliver } from "./composables/useCanDeliver";
 import { useZoom } from "./composables/useZoom";
@@ -63,8 +68,11 @@ useCursorFx();
 useCanDeliver();
 // 激活 Ctrl+滚轮 UI 全局缩放
 useZoom();
-// 久坐提醒
-useSedentaryReminder();
+// 久坐提醒（仅主窗口）：定时器内部没有窗口标签判断，不 gate 的话每个挂载 App.vue
+// 的窗口都会各起一份，重复播提醒音并重复弹系统通知
+if (isMainWindow) {
+  useSedentaryReminder();
+}
 // ASR 全局初始化（仅主窗口一次）：auto_listen 能量监测门控 + 事件监听。
 // useAsrInput 状态是模块级单例，GameDialog / ChatInput（桌宠）的 mic 按钮
 // 与这里共享同一会话。

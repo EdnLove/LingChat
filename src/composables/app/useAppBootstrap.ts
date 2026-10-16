@@ -4,6 +4,7 @@
  * 集中处理挂载时的一次性初始化：
  *   - UI Store（加载角色 tips）
  *   - 自动弹出独立日志窗口（仅主窗口触发，开关在日志页设置）
+ *   - 按记忆恢复 TODO 小组件窗口（仅主窗口触发，开关在日程页左下角）
  *   - LLM 提供商配置预加载，避免主界面因 store 未加载而误判未选择模型
  *   - 成就系统的 window 控制台测试钩子 + WebSocket 解锁监听
  *
@@ -15,6 +16,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { initUIStore } from "@/stores/modules/ui/ui";
 import { useLlmProvidersStore } from "@/stores/modules/llm-providers";
 import { useAchievementStore } from "@/stores/modules/ui/achievement";
+import { isTodoWidgetEnabled, openTodoWidget } from "@/utils/todoWidget";
 
 export function useAppBootstrap() {
   onMounted(() => {
@@ -27,6 +29,11 @@ export function useAppBootstrap() {
       localStorage.getItem("lingchat_log_window_auto_open") === "1"
     ) {
       invoke("open_log_window").catch((e) => console.error("自动打开日志窗口失败:", e));
+    }
+
+    // 按上次的记忆恢复 TODO 小组件窗口（仅主窗口触发，开关在日程页左下角）
+    if (getCurrentWindow().label === "main" && isTodoWidgetEnabled()) {
+      openTodoWidget().catch((e) => console.error("自动打开 TODO 小组件失败:", e));
     }
 
     // 预加载 LLM 提供商配置，避免主界面因 store 未加载而误判未选择模型

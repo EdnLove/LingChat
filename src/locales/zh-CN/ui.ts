@@ -130,7 +130,8 @@ export default {
     navCalendar: "重要日子",
     navProactive: "主动对话",
     navToolCalls: "工具调用",
-    clockTip: '"在这里添加的信息屏幕后的那个ta也看得到哦！"',
+    todoWidgetTitle: "TODO 小组件",
+    todoWidgetTip: "在屏幕角落挂一块小窗，随时看最近的日程和待办",
     create: "新建",
     titleSchedule: "铃铃提醒闹钟",
     subtitleSchedule: "到点的时候ta会提醒你的哦",
@@ -145,6 +146,19 @@ export default {
     titleDefault: "小灵闹钟",
     subtitleDefault: "留下需要她提醒你的事情吧",
   },
+  todoWidget: {
+    pin: "保持置顶",
+    unpin: "取消置顶",
+    close: "关闭",
+    overdue: "已逾期",
+    tomorrow: "明天",
+    dayUnit: "天",
+    tabSchedule: "日程",
+    tabTodo: "待办",
+    noDeadlineTodo: "待办都没设截止时间",
+    emptySchedule: "还没有日程",
+    emptyTodo: "没有未完成的待办",
+  },
   toolCalls: {
     accessModeTitle: "工具访问权限",
     accessModeHint:
@@ -154,6 +168,9 @@ export default {
     maxToolRoundsHint: "限制主聊中单次回复可连续执行工具的轮数；每轮可能包含多个工具调用。",
     maxToolRoundsUnit: "轮",
     maxToolRoundsRange: "范围 {min}–{max} · 默认 {default}",
+    toolRagTitle: "工具按需检索",
+    toolRagHint:
+      "每次请求只下发常用工具，模型需要时先用一句话检索出合适的工具再调用，省下全部工具说明占用的上下文。关闭后每次请求都下发全部已授权工具。",
     accessModes: {
       manual: { label: "逐次确认", description: "写入、编辑、删除文件和执行命令前都需要你确认。" },
       auto_approve: {
@@ -310,6 +327,7 @@ export default {
     },
     tools: {
       web_search: "网页搜索",
+      tool_search: "检索工具",
       get_current_time: "当前时间",
       schedule_get_all: "查询日程",
       schedule_add_todo: "添加待办",
@@ -355,6 +373,11 @@ export default {
     priorityLabel: "优先级:",
     newGroup: "新建任务组",
     newTask: "新建待办任务",
+    editTask: "编辑待办任务",
+    reminderOff: "不提醒",
+    reminderMinutes: "提前 {count} 分钟",
+    reminderHours: "提前 {count} 小时",
+    reminderDays: "提前 {count} 天",
   },
   schedulePage: {
     emptyGroups: "还没有日程主题，点击右上角新建一个吧",
@@ -371,6 +394,10 @@ export default {
     save: "保存",
     success: "已保存成功",
     error: "错误: {message}",
+    todoReminderStyle: "待办提醒方式",
+    todoReminderStyleRole: "角色提醒",
+    todoReminderStyleToast: "弹窗消息提醒",
+    growthRangeHint: "≈ 每轮兴趣增长 {min} ~ {max}（由上面的间隔反推）",
   },
   calendarPage: {
     yearMonth: "{year}年 {month}月",

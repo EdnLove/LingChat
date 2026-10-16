@@ -7,6 +7,8 @@
 
 **LingChat - 一个灵动の人工智能聊天陪伴助手**
 
+**简体中文** · [English](README.en.md) · [日本語](README.ja.md)
+
 [📥 下载最新版本](https://github.com/SlimeBoyOwO/LingChat/releases) · [🐛 报告 Bug](https://github.com/SlimeBoyOwO/LingChat/issues) · [📖 源代码使用教程](https://github.com/SlimeBoyOwO/LingChat/blob/develop/others/document/%E6%BA%90%E4%BB%A3%E7%A0%81%E4%BD%BF%E7%94%A8.md)
 
 </div>
@@ -108,7 +110,7 @@
 ### 🔧 准备工作
 
 > [!NOTE]
-> **API 申请：** 在 [DeepSeek 官方网站](https://platform.platform.com/) 或其他大模型平台申请属于你的 API 密钥，并确保账户内有余额。
+> **API 申请：** 在 [DeepSeek 官方网站](https://platform.deepseek.com/) 或其他大模型平台申请属于你的 API 密钥，并确保账户内有余额。
 
 ### 📦 第一步：下载与安装
 
@@ -198,6 +200,8 @@
 <a href="https://github.com/SlimeBoyOwO/LingChat/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=SlimeBoyOwO/LingChat" />
 </a>
+
+![Alt](https://repobeats.axiom.co/api/embed/14581ef6577f5929864e0700d17c88253e01c8fa.svg "Repobeats analytics image")
 
 ## ⭐️ 喜欢这个项目吗？请给我们点一个 Star！
 

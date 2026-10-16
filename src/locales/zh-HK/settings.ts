@@ -36,6 +36,10 @@ export default {
     },
   },
   adventure: {
+    lock: {
+      title: "開唔到劇本",
+      running: "已經有個劇本行緊，請先結束咗佢先",
+    },
     standalone: {
       title: "獨立劇本",
       empty: "而家冇獨立劇本",
@@ -117,12 +121,14 @@ export default {
       editTitleTip: "撳兩下修改存檔標題",
       untitled: "未命名存檔",
       noMessage: "冇對話台詞記錄",
+      current: "而家嘅存檔",
     },
     action: {
       reading: "讀取緊...",
       load: "讀取存檔",
       saving: "儲存緊...",
       overwrite: "覆蓋存檔",
+      update: "更新存檔",
       deleting: "刪緊...",
       delete: "刪走存檔",
     },
@@ -144,6 +150,8 @@ export default {
       overwriteConfirm: "覆蓋存檔會冇咗之前嘅存檔進度，確定要覆蓋咩？",
       overwriteSuccessTitle: "儲存成功",
       overwriteSuccessMsg: "存檔覆蓋咗喇",
+      updateSuccessTitle: "更新成功",
+      updateSuccessMsg: "存檔更新咗喇",
       overwriteFailTitle: "儲存失敗",
       deleteConfirm: "確定要刪走呢個存檔咩？刪咗就返唔到轉頭㗎。",
       deleteSuccessTitle: "刪除成功",
@@ -216,24 +224,20 @@ export default {
     },
     fields: {
       llm: {
-        output_sec_lang: "LLM_OUTPUT_SEC_LANG — 畀唔畀輸出第二語言（閂咗之後淨係輸出中文）",
-        consumers: "COMSUMERS — 並發消費者數量（加大可以加快流式輸出，預設 3）",
+        output_sec_lang: "畀唔畀輸出第二語言（閂咗之後淨係輸出中文）",
+        consumers: "並發消費者數量（加大可以加快流式輸出，預設 3）",
         timeout_secs: "LLM 請求空閒超時（秒）— 首次回應同流式相鄰事件嘅最長等候時間（10–3600）",
-        no_emotion_limit_prompt:
-          "NO_EMOTION_LIMIT_PROMPT — 解除 emotion 數量限制（可能會用多咗 token）",
+        no_emotion_limit_prompt: "解除 emotion 數量限制（可能會用多咗 token）",
       },
       translate: {
-        enable: "ENABLE_TRANSLATE — 啟用 AI 翻譯（將中文對話翻譯做第二語言）",
+        enable: "啟用 AI 翻譯（將中文對話翻譯做第二語言）",
       },
       features: {
-        enable_time_sense: "USE_TIME_SENSE — 啟用時間感知（按上下文時間加系統提醒）",
-        enable_emotion_classifier:
-          "ENABLE_EMOTION_CLASSIFIER — 啟用情感分類器（ONNX 模型，用嚟自動標註對話嘅 emotion）",
-        use_persistent_memory: "USE_PERSISTENT_MEMORY — 自動壓縮記憶，儲存後要重啟先會生效",
-        memory_update_interval:
-          "MEMORY_UPDATE_INTERVAL — 觸發摘要嘅可見台詞數（1–10000，預設 250）",
-        memory_recent_window:
-          "MEMORY_RECENT_WINDOW — 壓縮後保留嘅角色可見台詞數（0–10000，預設 30）",
+        enable_time_sense: "啟用時間感知（按上下文時間加系統提醒）",
+        enable_emotion_classifier: "啟用情感分類器（ONNX 模型，用嚟自動標註對話嘅 emotion）",
+        use_persistent_memory: "自動壓縮記憶，儲存後要重啟先會生效",
+        memory_update_interval: "觸發摘要嘅可見台詞數（1–10000，預設 250）",
+        memory_recent_window: "壓縮後保留嘅角色可見台詞數（0–10000，預設 30）",
       },
       tts: {
         simple_vits_api_url: "Simple-Vits-API 地址（VITS 適配器）",
@@ -257,25 +261,23 @@ export default {
           "填你嘅 GitHub Token（唔使任何權限，淨係用嚟調用 GraphQL API）。留空就用 REST API，攞唔到獨立 upvote 數（會用 👍 表情數代替）。Token 創建地址：https://github.com/settings/tokens",
       },
       log: {
-        enable: "LOG_ENABLE — 使唔使將運行日誌寫入文件（喺 data/log/app/ 目錄）",
-        retention_days: "LOG_RETENTION_DAYS — 日誌文件保留日數，過咗期嘅舊文件會喺啟動嗰陣自動清走",
-        llm_request_body:
-          "LOG_LLM_REQUEST_BODY — 記低每次 LLM 請求嘅完整請求體 JSON 落 data/log/llm/ 目錄（預設閂）",
-        genai_debug:
-          "LOG_GENAI_DEBUG — 開啟 genai SDK 嘅調試日誌（包含請求/回應細節，儲存後即時生效，預設閂）",
+        enable: "使唔使將運行日誌寫入文件（喺 data/log/app/ 目錄）",
+        retention_days: "日誌文件保留日數，過咗期嘅舊文件會喺啟動嗰陣自動清走",
+        llm_request_body: "記低每次 LLM 請求嘅完整請求體 JSON 落 data/log/llm/ 目錄（預設閂）",
+        genai_debug: "開啟 genai SDK 嘅調試日誌（包含請求/回應細節，儲存後即時生效，預設閂）",
       },
-      ENABLE_PROACTIVE_SYSTEM: "ENABLE_PROACTIVE_SYSTEM — 使唔使啟用主動對話系統",
-      MAX_PROACTIVE_TIMES: "MAX_PROACTIVE_TIMES — 喺用戶回應之前，可以主動對話嘅次數",
-      ENABLE_VISUAL_PRECEPTION: "ENABLE_VISUAL_PRECEPTION — 畀唔畀主動視覺感知桌面畫面（偷睇屏幕）",
-      SCREEN_WEIGHT: "SCREEN_WEIGHT — 視覺模式觸發權重（越大越容易偷睇屏幕傾偈，預設 30）",
-      ENABLE_TOPIC_CREATER: "ENABLE_TOPIC_CREATER — 容許自己搵新話題主動開傾",
-      TOPIC_WEIGHT: "TOPIC_WEIGHT — 隨機話題觸發權重（預設 60）",
-      ENABLE_TODO_PRECEPTION:
-        "ENABLE_TODO_PRECEPTION — 容許得閒嗰陣自動讀取未完成嘅 TODO 兼溫和提提你",
-      TODO_WEIGHT: "TODO_WEIGHT — TODO 提醒觸發權重（預設 10）",
-      ENABLE_SCHEDULE_REMINDER: "ENABLE_SCHEDULE_REMINDER — 啟用強日程報時彈窗提醒",
-      ENABLE_IMPORTANT_DAY_REMINDER:
-        "ENABLE_IMPORTANT_DAY_REMINDER — 啟用重要節日同特別日子嘅暖心提醒",
+      ENABLE_PROACTIVE_SYSTEM: "使唔使啟用主動對話系統",
+      MAX_PROACTIVE_TIMES: "喺用戶回應之前，可以主動對話嘅次數",
+      PROACTIVE_EXPECTED_INTERVAL_MINUTES:
+        "兩次主動搭話之間嘅期望間隔（分鐘，1–60）：數值越細越頻繁，程式據此反推每輪興趣值嘅增長隨機範圍",
+      ENABLE_VISUAL_PRECEPTION: "畀唔畀主動視覺感知桌面畫面（偷睇屏幕）",
+      SCREEN_WEIGHT: "視覺模式觸發權重（越大越容易偷睇屏幕傾偈，預設 30）",
+      ENABLE_TOPIC_CREATER: "容許自己搵新話題主動開傾",
+      TOPIC_WEIGHT: "隨機話題觸發權重（預設 60）",
+      ENABLE_TODO_PRECEPTION: "容許得閒嗰陣自動讀取未完成嘅 TODO 兼溫和提提你",
+      TODO_WEIGHT: "TODO 提醒觸發權重（預設 10）",
+      ENABLE_SCHEDULE_REMINDER: "啟用強日程報時彈窗提醒",
+      ENABLE_IMPORTANT_DAY_REMINDER: "啟用重要節日同特別日子嘅暖心提醒",
     },
   },
   workshop: {
@@ -355,6 +357,9 @@ export default {
       chatCount: "傾偈{count}次",
       prereqAdventure: "搞掂前置冒險",
       achievement: "解鎖特定成就",
+    },
+    lock: {
+      scriptRunning: "而家有劇本行緊",
     },
   },
   characterInfo: {
@@ -697,6 +702,12 @@ export default {
       delete: "刪走",
       edit: "編輯場景",
       noDescription: "冇描述（揀咗都唔會觸發旁白）",
+      location: {
+        indoor: "室內",
+        outdoor: "室外",
+        unknown: "唔確定",
+        editTitle: "㩒一下切換室內外標註",
+      },
       tip: "提提你",
       noDescriptionTip: '場景"{name}"冇描述，揀咗都唔會觸發場景旁白',
       deleteConfirm: '確定要刪走場景"{name}"咩？',
@@ -763,6 +774,9 @@ export default {
       snow: "雪景",
       blizzard: "雪暴",
       fog: "霧",
+      city: "城市",
+      cityPlaceholder: "例如：成都",
+      autoSync: "天氣同步",
     },
     animation: {
       switchTitle: "動畫開關",
@@ -832,10 +846,6 @@ export default {
     sample: {
       title: "顯示文字樣本",
       demo: "Ling Chat: 測試文字顯示速度",
-    },
-    inlineMotion: {
-      title: "內聯動作文字",
-      desc: "開咗之後動作文字會同台詞一齊顯示，唔使撳第二次",
     },
     mergeLine: {
       title: "對白合併閾值",

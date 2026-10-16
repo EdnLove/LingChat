@@ -87,5 +87,10 @@ export default {
     priority: "優先度 PRIORITY",
     newGroup: "新規タスクグループ",
     newTask: "新規タスク",
+    editTask: "タスクを編集",
+    reminderOff: "リマインドしない",
+    reminderMinutes: "{count} 分前に",
+    reminderHours: "{count} 時間前に",
+    reminderDays: "{count} 日前に",
   },
 };

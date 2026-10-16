@@ -10,7 +10,6 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
 /// 前端事件发射器由宿主 AppHandle 实现。
-
 /// 便捷函数：直接向 AppHandle 发 serde 可序列化 payload。业务层也可以绕过 trait。
 pub fn emit<T: Serialize + Clone>(app: &AppHandle, event: &str, payload: &T) -> Result<()> {
     app.emit(event, payload.clone())
@@ -22,6 +21,28 @@ pub fn emit_thinking(app: &AppHandle, is_thinking: bool) {
     let payload = super::responses::ThinkingResponse::new(is_thinking);
     if let Err(e) = app.emit(super::responses::event_names::AI_THINKING, &payload) {
         tracing::warn!("emit thinking 失败: {e}");
+    }
+}
+
+/// 请求前端弹出待办截止提醒的系统通知。
+/// 只发给主窗口：其余窗口（如桌宠模式另开的设置窗）也注册了全局监听，广播会重复弹。
+pub fn emit_proactive_remind(
+    app: &AppHandle,
+    title: String,
+    todo_text: String,
+    minutes_before: i32,
+) {
+    let payload = super::responses::ProactiveRemindResponse {
+        title,
+        todo_text,
+        minutes_before,
+    };
+    if let Err(e) = app.emit_to(
+        "main",
+        super::responses::event_names::PROACTIVE_REMIND,
+        &payload,
+    ) {
+        tracing::warn!("emit proactive:remind 失败: {e}");
     }
 }
 

@@ -60,7 +60,18 @@ pub struct TodoItem {
     pub text: String,
     pub priority: i32,
     pub completed: bool,
+    /// 截止时间，形如 `2026-10-15T18:00`（datetime-local 原生格式）。None 表示不限时。
     pub deadline: Option<String>,
+    /// 提前多少分钟提醒。None 表示不提醒。
+    pub remind_before_minutes: Option<i32>,
+}
+
+/// 命中的待办到期提醒。文本与提前量同时供「角色提醒」与「弹窗提醒」两种方式使用。
+#[derive(Clone, Debug)]
+pub struct TodoReminder {
+    pub todo_text: String,
+    pub minutes_before: i32,
+    pub deadline: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]

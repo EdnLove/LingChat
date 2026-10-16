@@ -112,6 +112,29 @@ export const actions = {
     this.currentScene = null;
   },
 
+  /**
+   * 收集写档载荷：截图（必要时等正在进行的截图）+ 剧本阅读锚点。
+   * 锚点缺失时不下发这几个字段，后端回退引擎当前进度。
+   */
+  async collectSaveProgress(this: GameState): Promise<Record<string, unknown>> {
+    let screenshotPath = this.latestScreenshot;
+    if (!screenshotPath && this.screenshotPending) {
+      screenshotPath = await this.screenshotPending;
+    }
+    const cursor = this.scriptReadCursor;
+    return {
+      screenshotPath,
+      ...(cursor
+        ? {
+            playerChapter: cursor.chapter,
+            playerEventIndex: cursor.eventIndex,
+            playerLineCount: cursor.lineCount,
+            playerVarsJson: JSON.stringify(cursor.vars),
+          }
+        : {}),
+    };
+  },
+
   /** 截图主窗口（1 次 IPC，0 次窗口枚举）。若已有截图进行中则复用同一个 Promise。 */
   async captureScreenshot(this: GameState): Promise<string | null> {
     // 已有截图进行中 → 复用
@@ -267,6 +290,12 @@ export function applyWebInitData(state: GameState, gameInfo: WebInitData): void 
   } else {
     state.dialogHistory = [];
   }
+
+  // 剧情模式标记不随 init data 传递，而换角色 / 重新 init 都是会话边界：
+  // 后端此刻已把旧剧本停掉，前端的章节名与选项按钮也必须一起清掉，
+  // 否则会挂在新角色界面上继续可点（issue #698）。读档与清空对话
+  // 本来就在本函数之后显式 enterStoryMode / exitStoryMode，不受影响。
+  state.runningScript = null;
 
   state.initialized = true;
 }

@@ -19,9 +19,10 @@
           class="polygon-glow"
         />
         <polygon
+          v-if="isGlowing"
           :points="toPoints(polygon)"
           vector-effect="non-scaling-stroke"
-          class="polygon-shape"
+          class="polygon-flow"
         />
       </template>
     </svg>
@@ -38,6 +39,7 @@ import type { GameRole } from "@/stores/modules/game/state";
 import {
   fitFromObjectFit,
   hitRegion,
+  touchRegionMessage,
   imageRectInBox,
   parseBodyPart,
   resolveCostumeKey,
@@ -135,7 +137,7 @@ function handleClick(event: MouseEvent) {
   if (now - lastClickAt < CLICK_DEBOUNCE_MS) return;
   lastClickAt = now;
 
-  const message = regions.value[part]?.message || `${gameStore.userName}戳了一下你`;
+  const message = touchRegionMessage(regions.value[part]?.message, gameStore.userName);
   gameStore.currentStatus = "thinking";
   invoke("send_system_message", { text: message }).catch((error) => {
     console.error("发送消息失败:", error);
@@ -183,70 +185,57 @@ onBeforeUnmount(() => {
 <style scoped>
 @reference "tailwindcss";
 
-.polygon-shape {
-  fill: none;
-  stroke: white;
-  stroke-width: 0;
-  transition: all 300ms ease-in-out;
-}
-
+/* 触摸区域高亮整体不用 filter。原实现用一条四层 drop-shadow 链并逐帧改它的
+   半径，每帧都要重跑滤镜图；即使改成常量，单次栅格化这条链也仍有一次可见的
+   顿挫。改为纯描边 + 虚线流动，只走绘制路径。
+   颜色取青色（同 GameDialog 分割线与桌宠外框）：白色描边在浅色立绘上看不见。 */
 .polygon-glow {
   fill: none;
-  stroke: rgba(255, 255, 255, 0.9);
+  stroke: rgba(34, 211, 238, 0.4);
   stroke-width: 2;
   animation: border-glow-pulse 3s ease-in-out forwards;
-  filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.9))
-    drop-shadow(0 0 12px rgba(255, 255, 255, 0.7)) drop-shadow(0 0 20px rgba(255, 255, 255, 0.5))
-    drop-shadow(0 0 30px rgba(100, 200, 255, 0.4));
+}
+
+/* 亮段沿轮廓流动：dasharray 定出"一段亮 + 一段空"，动画只推 dashoffset，
+   一个周期内首尾相接，循环无缝。*/
+.polygon-flow {
+  fill: none;
+  stroke: rgba(34, 211, 238, 0.95);
+  stroke-width: 2;
+  stroke-dasharray: 10 46;
+  animation:
+    border-glow-pulse 3s ease-in-out forwards,
+    border-glow-flow 1.6s linear infinite;
 }
 
 @keyframes border-glow-pulse {
   0% {
-    stroke: rgba(255, 255, 255, 0);
-    stroke-width: 0;
-    filter: drop-shadow(0 0 0 rgba(255, 255, 255, 0)) drop-shadow(0 0 0 rgba(255, 255, 255, 0))
-      drop-shadow(0 0 0 rgba(255, 255, 255, 0)) drop-shadow(0 0 0 rgba(100, 200, 255, 0));
+    opacity: 0;
   }
   15% {
-    stroke: rgba(255, 255, 255, 1);
-    stroke-width: 2;
-    filter: drop-shadow(0 0 8px rgba(255, 255, 255, 1))
-      drop-shadow(0 0 16px rgba(255, 255, 255, 0.8)) drop-shadow(0 0 28px rgba(255, 255, 255, 0.6))
-      drop-shadow(0 0 40px rgba(100, 200, 255, 0.5));
-  }
-  30% {
-    stroke: rgba(255, 255, 255, 0.8);
-    stroke-width: 1.5;
-    filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.7))
-      drop-shadow(0 0 10px rgba(255, 255, 255, 0.5)) drop-shadow(0 0 18px rgba(255, 255, 255, 0.4))
-      drop-shadow(0 0 25px rgba(100, 200, 255, 0.3));
+    opacity: 1;
   }
   50% {
-    stroke: rgba(255, 255, 255, 1);
-    stroke-width: 2.5;
-    filter: drop-shadow(0 0 10px rgba(255, 255, 255, 1))
-      drop-shadow(0 0 20px rgba(255, 255, 255, 0.8)) drop-shadow(0 0 35px rgba(255, 255, 255, 0.6))
-      drop-shadow(0 0 50px rgba(100, 200, 255, 0.5));
+    opacity: 1;
   }
   70% {
-    stroke: rgba(255, 255, 255, 0.6);
-    stroke-width: 1.5;
-    filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.6))
-      drop-shadow(0 0 12px rgba(255, 255, 255, 0.4)) drop-shadow(0 0 20px rgba(255, 255, 255, 0.3))
-      drop-shadow(0 0 30px rgba(100, 200, 255, 0.25));
+    opacity: 0.75;
   }
   85% {
-    stroke: rgba(255, 255, 255, 0.3);
-    stroke-width: 1;
-    filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.4))
-      drop-shadow(0 0 6px rgba(255, 255, 255, 0.2)) drop-shadow(0 0 10px rgba(255, 255, 255, 0.15))
-      drop-shadow(0 0 15px rgba(100, 200, 255, 0.1));
+    opacity: 0.35;
   }
   100% {
-    stroke: rgba(255, 255, 255, 0);
-    stroke-width: 0;
-    filter: drop-shadow(0 0 0 rgba(255, 255, 255, 0)) drop-shadow(0 0 0 rgba(255, 255, 255, 0))
-      drop-shadow(0 0 0 rgba(255, 255, 255, 0)) drop-shadow(0 0 0 rgba(100, 200, 255, 0));
+    opacity: 0;
+  }
+}
+
+/* 位移量等于 dasharray 一个周期（10 + 46），结尾与开头重合，循环处不跳变 */
+@keyframes border-glow-flow {
+  from {
+    stroke-dashoffset: 56;
+  }
+  to {
+    stroke-dashoffset: 0;
   }
 }
 </style>

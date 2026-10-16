@@ -121,7 +121,8 @@ export default {
     navCalendar: "重要日子",
     navProactive: "主動傾偈",
     navToolCalls: "工具調用",
-    clockTip: '"喺呢度加嘅資料，螢幕後面嗰個ta都睇到㗎！"',
+    todoWidgetTitle: "TODO 小工具",
+    todoWidgetTip: "喺螢幕角落掛住一塊細窗，隨時睇最近嘅日程同待辦",
     create: "新增",
     titleSchedule: "鈴鈴提提你鬧鐘",
     subtitleSchedule: "到點嗰陣ta會提提你㗎",
@@ -136,6 +137,19 @@ export default {
     titleDefault: "小靈鬧鐘",
     subtitleDefault: "留低想佢提提你嘅嘢啦",
   },
+  todoWidget: {
+    pin: "保持置頂",
+    unpin: "取消置頂",
+    close: "閂咗佢",
+    overdue: "已逾期",
+    tomorrow: "聽日",
+    dayUnit: "日",
+    tabSchedule: "日程",
+    tabTodo: "待辦",
+    noDeadlineTodo: "啲待辦都冇設截止時間",
+    emptySchedule: "仲未有日程",
+    emptyTodo: "冇未完成嘅待辦",
+  },
   toolCalls: {
     accessModeTitle: "工具存取權限",
     accessModeHint:
@@ -145,6 +159,9 @@ export default {
     maxToolRoundsHint: "限制主聊天單次回覆可連續執行工具嘅輪數；每輪可能包含多個工具調用。",
     maxToolRoundsUnit: "輪",
     maxToolRoundsRange: "範圍 {min}–{max} · 預設 {default}",
+    toolRagTitle: "工具按需檢索",
+    toolRagHint:
+      "每次請求只下發常用工具，模型需要時先用一句話檢索出合適嘅工具再調用，慳返全部工具說明佔用嘅上下文。關閉後每次請求都下發全部已授權工具。",
     accessModes: {
       manual: { label: "逐次確認", description: "寫入、編輯、刪除檔案同執行命令之前都會問你。" },
       auto_approve: {
@@ -302,6 +319,7 @@ export default {
     },
     tools: {
       web_search: "網頁搜尋",
+      tool_search: "檢索工具",
       get_current_time: "目前時間",
       schedule_get_all: "查詢日程",
       schedule_add_todo: "新增待辦",
@@ -347,6 +365,11 @@ export default {
     priorityLabel: "優先級:",
     newGroup: "新增任務組",
     newTask: "新增待辦任務",
+    editTask: "編輯待辦任務",
+    reminderOff: "唔提醒",
+    reminderMinutes: "提早 {count} 分鐘",
+    reminderHours: "提早 {count} 小時",
+    reminderDays: "提早 {count} 日",
   },
   schedulePage: {
     emptyGroups: "仲未有日程主題，撳右上角新增一個啦",
@@ -363,6 +386,10 @@ export default {
     save: "儲存",
     success: "已儲存成功",
     error: "錯誤: {message}",
+    todoReminderStyle: "待辦提醒方式",
+    todoReminderStyleRole: "角色提醒",
+    todoReminderStyleToast: "彈窗訊息提醒",
+    growthRangeHint: "≈ 每輪興趣增長 {min} ~ {max}（由上面嘅間隔反推）",
   },
   calendarPage: {
     yearMonth: "{year}年 {month}月",

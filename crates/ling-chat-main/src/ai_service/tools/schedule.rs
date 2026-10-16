@@ -3,7 +3,7 @@ use std::fs;
 
 use async_trait::async_trait;
 use serde_json::{Value, json};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::AppState;
 use crate::ai_service::proactive_system::types::{TodoGroup, TodoItem, UserScheduleSettings};
@@ -40,7 +40,9 @@ fn save_schedule_settings(settings: &UserScheduleSettings) -> Result<(), String>
 }
 
 /// 重载主动对话系统的日程提醒配置（与 api/schedule.rs save_schedules 一致）。
+/// 顺带广播一次改动：AI 写日程走的是这条路径，不广播的话 TODO 小组件看不到。
 async fn reload_proactive(app: &AppHandle) {
+    let _ = app.emit("schedules:changed", ());
     let state = app.state::<AppState>();
     if let Some(proactive) = &state.proactive_system {
         let mut sys = proactive.lock().await;
@@ -166,7 +168,8 @@ impl Tool for AddTodo {
                     "text": {"type": "string", "description": "待办内容"},
                     "group": {"type": "string", "description": "分组名，默认 default"},
                     "priority": {"type": "integer", "description": "优先级，默认 0"},
-                    "deadline": {"type": "string", "description": "截止时间，可选"}
+                    "deadline": {"type": "string", "description": "截止时间，可选，形如 2026-10-15T18:00"},
+                    "remind_before_minutes": {"type": "integer", "description": "截止前多少分钟提醒；0 或不填表示不提醒"}
                 },
                 "required": ["text"],
                 "additionalProperties": false
@@ -200,6 +203,9 @@ impl Tool for AddTodo {
             .get("deadline")
             .and_then(Value::as_str)
             .map(str::to_string);
+        let remind_before_minutes =
+            optional_i32(obj, "remind_before_minutes", "schedule_add_todo")?
+                .filter(|minutes| *minutes > 0);
 
         let mut settings = load_schedule_settings().map_err(ToolError::Execution)?;
         let new_id = next_todo_id(&settings).map_err(ToolError::Execution)?;
@@ -217,6 +223,7 @@ impl Tool for AddTodo {
             priority,
             completed: false,
             deadline,
+            remind_before_minutes,
         });
 
         save_schedule_settings(&settings).map_err(ToolError::Execution)?;
@@ -242,6 +249,8 @@ impl Tool for UpdateTodo {
                     "done": {"type": "boolean", "description": "是否已完成，可选"},
                     "text": {"type": "string", "description": "新的待办内容，可选"},
                     "priority": {"type": "integer", "description": "新的优先级，可选"},
+                    "deadline": {"type": "string", "description": "新的截止时间，形如 2026-10-15T18:00；传空字符串表示清除，可选"},
+                    "remind_before_minutes": {"type": "integer", "description": "截止前多少分钟提醒；0 表示不提醒，可选"},
                     "group": {"type": "string", "description": "分组名；旧数据 ID 重复时必须提供"}
                 },
                 "required": ["id"],
@@ -262,10 +271,21 @@ impl Tool for UpdateTodo {
         let done = obj.get("done").and_then(Value::as_bool);
         let text = obj.get("text").and_then(Value::as_str).map(str::to_string);
         let priority = optional_i32(obj, "priority", "schedule_update_todo")?;
+        let deadline = obj
+            .get("deadline")
+            .and_then(Value::as_str)
+            .map(|value| value.trim().to_string());
+        let remind_before_minutes =
+            optional_i32(obj, "remind_before_minutes", "schedule_update_todo")?;
         let requested_group = obj.get("group").and_then(Value::as_str);
-        if done.is_none() && text.is_none() && priority.is_none() {
+        if done.is_none()
+            && text.is_none()
+            && priority.is_none()
+            && deadline.is_none()
+            && remind_before_minutes.is_none()
+        {
             return Err(ToolError::InvalidArguments(
-                "schedule_update_todo 至少需要 done/text/priority 中的一项".into(),
+                "schedule_update_todo 至少需要 done/text/priority/deadline/remind_before_minutes 中的一项".into(),
             ));
         }
 
@@ -291,6 +311,14 @@ impl Tool for UpdateTodo {
         }
         if let Some(p) = priority {
             todo.priority = p;
+        }
+        if let Some(d) = deadline {
+            // 空字符串表示清除截止时间
+            todo.deadline = if d.is_empty() { None } else { Some(d) };
+        }
+        if let Some(minutes) = remind_before_minutes {
+            // 0 表示不提醒
+            todo.remind_before_minutes = if minutes > 0 { Some(minutes) } else { None };
         }
 
         save_schedule_settings(&settings).map_err(ToolError::Execution)?;

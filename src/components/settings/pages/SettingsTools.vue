@@ -157,6 +157,24 @@
             </div>
           </div>
         </div>
+        <div class="mt-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3">
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div class="min-w-0">
+              <h3 class="font-semibold text-white">
+                {{ $t("ui.toolCalls.toolRagTitle") }}
+              </h3>
+              <p class="mt-1 text-sm leading-relaxed text-gray-300">
+                {{ $t("ui.toolCalls.toolRagHint") }}
+              </p>
+            </div>
+            <div class="flex shrink-0 items-center">
+              <Toggle
+                :checked="form.tool_rag"
+                @change="(value: boolean) => (form.tool_rag = value)"
+              />
+            </div>
+          </div>
+        </div>
         <div
           v-if="form.access_mode === 'full_access'"
           class="mt-3 rounded-lg border-l-4 border-amber-400/70 bg-amber-400/10 px-4 py-3 text-sm text-amber-200/90"
@@ -225,7 +243,7 @@
         </label>
         <select
           v-model="form.web_search.provider"
-          class="shadow-glass focus:border-brand focus:ring-brand/20 mt-2 w-full cursor-pointer rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white backdrop-blur-xl backdrop-saturate-150 transition-all duration-200 focus:ring-2 focus:outline-none"
+          class="shadow-glass focus:border-brand focus:ring-brand/20 mt-2 w-full cursor-pointer rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white transition-all duration-200 focus:ring-2 focus:outline-none"
         >
           <option value="kimi" class="bg-slate-800 text-white">Kimi /search</option>
           <option value="bocha" class="bg-slate-800 text-white">BoCha 博查</option>
@@ -266,7 +284,7 @@
                   ? $t('ui.toolCalls.kimiApiKeyPlaceholder')
                   : $t('ui.toolCalls.apiKeyPlaceholder')
             "
-            class="shadow-glass focus:border-brand focus:ring-brand/20 mt-2 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white backdrop-blur-xl backdrop-saturate-150 transition-all duration-200 focus:ring-2 focus:outline-none"
+            class="shadow-glass focus:border-brand focus:ring-brand/20 mt-2 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white transition-all duration-200 focus:ring-2 focus:outline-none"
           />
           <p v-if="form.web_search.provider === 'kimi'" class="mt-2 mb-2 text-sm text-gray-300">
             {{ $t("ui.toolCalls.kimiHint") }}
@@ -282,7 +300,7 @@
             type="text"
             v-model="form.web_search.model"
             placeholder="deepseek-flash"
-            class="shadow-glass focus:border-brand focus:ring-brand/20 mt-2 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white backdrop-blur-xl backdrop-saturate-150 transition-all duration-200 focus:ring-2 focus:outline-none"
+            class="shadow-glass focus:border-brand focus:ring-brand/20 mt-2 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white transition-all duration-200 focus:ring-2 focus:outline-none"
           />
           <p class="mt-2 mb-2 text-sm text-gray-300">
             {{ $t("ui.toolCalls.dsHint") }}
@@ -301,7 +319,7 @@
             type="text"
             v-model="form.web_search.base_url"
             placeholder="https://api.kimi.com/coding/v1/search"
-            class="shadow-glass focus:border-brand focus:ring-brand/20 mt-2 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white backdrop-blur-xl backdrop-saturate-150 transition-all duration-200 focus:ring-2 focus:outline-none"
+            class="shadow-glass focus:border-brand focus:ring-brand/20 mt-2 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white transition-all duration-200 focus:ring-2 focus:outline-none"
           />
         </template>
 
@@ -315,7 +333,7 @@
             min="1"
             max="20"
             step="1"
-            class="shadow-glass focus:border-brand focus:ring-brand/20 mt-2 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white backdrop-blur-xl backdrop-saturate-150 transition-all duration-200 focus:ring-2 focus:outline-none"
+            class="shadow-glass focus:border-brand focus:ring-brand/20 mt-2 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white transition-all duration-200 focus:ring-2 focus:outline-none"
           />
         </template>
 
@@ -342,7 +360,7 @@
           type="text"
           v-model="form.web_search.proxy_addr"
           placeholder="http://127.0.0.1:10808"
-          class="shadow-glass focus:border-brand focus:ring-brand/20 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white backdrop-blur-xl backdrop-saturate-150 transition-all duration-200 focus:ring-2 focus:outline-none"
+          class="shadow-glass focus:border-brand focus:ring-brand/20 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white transition-all duration-200 focus:ring-2 focus:outline-none"
         />
       </div>
 
@@ -611,6 +629,7 @@ const form = reactive<ToolSettings>({
   groups: {},
   access_mode: "manual",
   max_tool_rounds: DEFAULT_TOOL_ROUND_LIMIT,
+  tool_rag: true,
 });
 
 const status = reactive({ message: "", color: "#4ade80" });
@@ -757,6 +776,7 @@ onMounted(async () => {
     Object.assign(form.groups, settings.groups ?? {});
     form.access_mode = settings.access_mode ?? "manual";
     form.max_tool_rounds = settings.max_tool_rounds ?? DEFAULT_TOOL_ROUND_LIMIT;
+    form.tool_rag = settings.tool_rag ?? true;
     normalizeToolRoundLimit();
     normalizeMediaSettings();
     await loadRuntimeInfo();

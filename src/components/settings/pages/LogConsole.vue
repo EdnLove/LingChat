@@ -84,7 +84,7 @@
     <!-- Log area -->
     <div
       ref="logContainer"
-      class="min-h-0 flex-1 scrollbar-thin overflow-x-hidden overflow-y-auto rounded-xl border border-white/10 bg-black/65 px-3 py-3 font-['Cascadia_Code','Fira_Code','JetBrains_Mono','Consolas',monospace] text-[13px] leading-[1.7] backdrop-blur-md"
+      class="min-h-0 flex-1 scrollbar-thin overflow-x-hidden overflow-y-auto rounded-xl border border-white/10 bg-black/65 px-3 py-3 font-['Cascadia_Code','Fira_Code','JetBrains_Mono','Consolas',monospace] text-[13px] leading-[1.7]"
       :class="standalone ? 'max-h-none' : 'max-h-[70dvh]'"
       :style="{ scrollbarColor: 'var(--accent-color, #79d9ff) transparent' }"
       @scroll="handleScroll"

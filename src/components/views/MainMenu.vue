@@ -33,11 +33,11 @@
     <!-- 设置/存档页期间的背景压暗层。z-4 位于人物层(z-3)与菜单列(z-5)之间，
          只压暗背景与人物，退场中的菜单保持清晰。
          跟随 currentPage 而不是 settingsMounted：后者要等面板退场动画播完才置否，
-         会让虚化在面板划走之后还残留一段 -->
+         会让压暗在面板划走之后还残留一段 -->
     <Transition name="menu-dim">
       <div
         v-if="currentPage !== 'mainMenu'"
-        class="pointer-events-none absolute inset-0 z-4 backdrop-blur-[12px] backdrop-brightness-90"
+        class="pointer-events-none absolute inset-0 z-4 bg-black/10"
       ></div>
     </Transition>
 

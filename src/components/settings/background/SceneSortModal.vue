@@ -5,7 +5,7 @@
     class="fixed inset-0 z-[9998] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
   >
     <div
-      class="relative flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl border border-white/20 bg-slate-900/60 shadow-2xl backdrop-blur-2xl"
+      class="relative flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl border border-white/20 bg-slate-900/60 shadow-2xl"
       @click.stop
     >
       <div class="flex items-center justify-between border-b border-white/10 bg-white/10 p-4">

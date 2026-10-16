@@ -10,6 +10,9 @@ export default {
     screenshotAsk: "截图提问",
     screenshotRetake: "点击重新截图，右键取消截图",
     closeDialog: "关闭对话",
+    quickSave: "快速存档",
+    quickLoad: "快速读档",
+    quickSaveNoSave: "本次还没有存档，先在存档页创建一个吧",
     moreActions: "更多操作",
     listening: "正在聆听...",
     inputPlaceholder: "在这里输入消息...",
@@ -54,7 +57,7 @@ export default {
     availableAmbient: "可用环境音",
     spectrum: {
       title: "音频频谱",
-      hint: "实时采集正在播放的背景音乐与环境音，显示在右下角",
+      hint: "实时采集正在播放的背景音乐与环境音，显示在主界面右下角；桌宠模式下显示为头像外圈的圆环",
       palette: "配色",
       styleMirror: "镜像",
       styleBars: "柱状",

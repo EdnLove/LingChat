@@ -17,11 +17,9 @@
         :class="{ 'affection-heartbeat': heartbeatEnabled }"
         :style="heartbeatStyle"
       />
+      <!-- 顶栏按钮显示当前档位（初识/平淡/熟络…），无数据时回落标题 -->
       <h3 class="m-0 hidden text-lg font-bold xl:block">
-        {{ $t("ui.affection.title") }}
-        <span v-if="average !== null" class="ml-1 text-sm font-normal tabular-nums opacity-80">
-          {{ average }}
-        </span>
+        {{ tier ? $t(`ui.affection.tier.${tier}`) : $t("ui.affection.title") }}
       </h3>
     </Button>
 

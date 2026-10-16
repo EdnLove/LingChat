@@ -28,7 +28,7 @@
     <textarea
       :id="setting.key"
       v-model="localValue"
-      class="shadow-glass focus:border-brand focus:ring-brand/20 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white backdrop-blur-xl backdrop-saturate-150 transition-all duration-200 focus:ring-2 focus:outline-none"
+      class="shadow-glass focus:border-brand focus:ring-brand/20 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white transition-all duration-200 focus:ring-2 focus:outline-none"
       rows="8"
     ></textarea>
   </template>
@@ -49,7 +49,7 @@
         type="text"
         :id="setting.key"
         v-model="setting.value"
-        class="shadow-glass focus:border-brand focus:ring-brand/20 flex-1 rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white backdrop-blur-xl backdrop-saturate-150 transition-all duration-200 focus:ring-2 focus:outline-none"
+        class="shadow-glass focus:border-brand focus:ring-brand/20 flex-1 rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white transition-all duration-200 focus:ring-2 focus:outline-none"
       />
       <button
         @click="selectFile(setting)"
@@ -67,7 +67,7 @@
         :min="setting.key === 'llm.timeout_secs' ? 10 : undefined"
         :max="setting.key === 'llm.timeout_secs' ? 3600 : undefined"
         :step="setting.key === 'llm.timeout_secs' ? 1 : undefined"
-        class="shadow-glass focus:border-brand focus:ring-brand/20 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white backdrop-blur-xl backdrop-saturate-150 transition-all duration-200 focus:ring-2 focus:outline-none"
+        class="shadow-glass focus:border-brand focus:ring-brand/20 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white transition-all duration-200 focus:ring-2 focus:outline-none"
       />
     </div>
     <div v-else>
@@ -75,7 +75,7 @@
         type="text"
         :id="setting.key"
         v-model="localValue"
-        class="shadow-glass focus:border-brand focus:ring-brand/20 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white backdrop-blur-xl backdrop-saturate-150 transition-all duration-200 focus:ring-2 focus:outline-none"
+        class="shadow-glass focus:border-brand focus:ring-brand/20 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white transition-all duration-200 focus:ring-2 focus:outline-none"
       />
     </div>
   </template>
@@ -105,9 +105,9 @@ const emit = defineEmits<{
 
 const localValue = ref(props.setting.value);
 
-// 监听本地值的变化，并触发更新事件
+// 监听本地值的变化，并触发更新事件。
 watch(localValue, (newValue) => {
-  emit("update:value", newValue);
+  emit("update:value", String(newValue));
 });
 
 // 监听props.setting.value的变化，同步到本地值

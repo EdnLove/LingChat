@@ -9,6 +9,10 @@
       class="animate-pet-scale relative transition-transform duration-300 ease-out"
       :style="{ width: frameSize + 'px', height: frameSize + 'px' }"
     >
+      <!-- 音频频谱圆环：画在头像圆框外圈，靠窗口顶部的留白放得下（见 PetSpectrumRing 与 constants.ts）。
+           放在最前面，DOM 顺序上先绘制，会被头像、按钮与输入框依次盖住。 -->
+      <PetSpectrumRing v-if="singleRole && !petFrameless" />
+
       <!-- 设置按钮 -->
       <button
         type="button"
@@ -135,6 +139,7 @@ import { useVoicePlayback } from "@/composables/role/useVoicePlayback";
 import { prefersLive2d } from "@/types/live2d";
 import { isAndroid } from "@/utils/platform";
 import RoleAvatar from "./GameRoleAvatar.vue";
+import PetSpectrumRing from "./PetSpectrumRing.vue";
 import Live2DStage from "../game/live2d/Live2DStage.vue";
 import { Play, Pause, Settings, LogOut, Camera, Mic, MicOff } from "lucide-vue-next";
 

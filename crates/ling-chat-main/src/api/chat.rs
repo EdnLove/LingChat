@@ -4,28 +4,20 @@ use regex::Regex;
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::AppState;
-use crate::ai_service::llm::provider_config::resolve_chat_provider;
+use crate::ai_service::game_system::game_status::GameStatus;
 use crate::ai_service::message_system::events;
 use crate::ai_service::message_system::generator::{
     GeneratorDeps, GeneratorSource, MessageGenerator,
 };
 use crate::ai_service::message_system::processor::EmotionSegment;
-use crate::ai_service::screen_analyzer::{NativeImageCompress, image_bytes_to_native_data_url};
+use crate::ai_service::screen_analyzer::{ImageDelivery, ImageIntent, deliver_image};
 use crate::ai_service::tts::local::LocalTtsState;
 use crate::ai_service::types::{LineAttributeExt, LineBase};
 use crate::api::game::{GameLineInit, compute_user_message_seqs};
 use crate::config::AppConfig;
 use crate::db::entities::line::LineAttribute;
 use crate::db::managers::save_repo::SaveRepo;
-use crate::utils::prompt::PromptRole;
-
-/// 判断当前对话模型是否开启原生多模态识图（支持识图 且 协议能承载图片）。
-/// 开启后用户发图可直接带图走对话模型，不再先用旁白转述。
-fn chat_native_vision_supported(app: &AppHandle) -> bool {
-    resolve_chat_provider(app)
-        .map(|p| p.support_vision && p.is_genai_multimodal_capable())
-        .unwrap_or(false)
-}
+use crate::utils::prompt::{PromptRole, REPLY_LENGTH_VAR_KEY, ReplyLengthMode};
 
 /// 发送玩家消息，进入正常对话生成流程。
 #[tauri::command]
@@ -67,6 +59,75 @@ pub async fn send_system_message(
     dispatch_chat_turn(app, None, screenshot_base64, Some(preamble)).await
 }
 
+/// 回复台词数量档位当前是否可调整：尚未进入对话（没有当前角色 / 台词表为空）
+/// 或处于剧本模式时不可调整。
+fn reply_length_adjustable(gs: &GameStatus) -> bool {
+    gs.script_status.is_none() && gs.current_role_id.is_some() && !gs.line_list.is_empty()
+}
+
+/// 读取当前存档的回复台词数量档位。
+///
+/// 返回 `None` 表示当前不可调整（剧本模式 / 剧本编辑器试玩中 / 尚未进入对话），
+/// 前端据此把选项置灰；`Some("short" | "normal" | "free")` 表示可调整。
+/// 这是跟随存档的运行时状态（存在存档全局变量里），不是应用配置，
+/// 因此不走 settings 配置树，`get_setting_by_key` 也查不到它。
+#[tauri::command]
+pub async fn get_reply_length_mode(app: AppHandle) -> Result<Option<String>, String> {
+    let state = app.state::<AppState>();
+    // 试玩会话整个 GameStatus 都会在结束时还原，此时读取的档位没有意义
+    if state.pending_preview_restore.lock().await.is_some() {
+        return Ok(None);
+    }
+    let svc = state.ai_service.lock().await;
+    let gs = svc.game_status.lock().await;
+    if !reply_length_adjustable(&gs) {
+        return Ok(None);
+    }
+    Ok(Some(gs.reply_length_mode().as_str().to_string()))
+}
+
+/// 设置回复台词数量档位：写入存档全局变量，并插一条系统提示台词告知模型新要求。
+///
+/// 档位没变化时直接返回（不重复插台词）；守卫不满足时报错而不是静默成功。
+#[tauri::command]
+pub async fn set_reply_length_mode(app: AppHandle, mode: String) -> Result<String, String> {
+    let new_mode = match mode.trim().to_ascii_lowercase().as_str() {
+        "short" => ReplyLengthMode::Short,
+        "normal" => ReplyLengthMode::Normal,
+        "free" => ReplyLengthMode::Free,
+        other => return Err(format!("未知的回复台词数量档位：{other}")),
+    };
+
+    let state = app.state::<AppState>();
+    // 试玩会话会整体快照并还原 GameStatus，此时写入注定被回滚，直接拒绝
+    if state.pending_preview_restore.lock().await.is_some() {
+        return Err("剧本编辑器试玩中无法调整回复台词数量".to_string());
+    }
+
+    // 锁序固定为 ai_service -> game_status（与全仓一致）。这里只追加台词、不改已有下标，
+    // 因此不取 generation_lock——它被整轮生成持有（最长一个 LLM 超时），设置页按钮等不起。
+    let svc = state.ai_service.lock().await;
+    let mut gs = svc.game_status.lock().await;
+
+    if gs.script_status.is_some() {
+        return Err("剧本模式下无法调整回复台词数量".to_string());
+    }
+    if !reply_length_adjustable(&gs) {
+        return Err("尚未进入对话，无法调整回复台词数量".to_string());
+    }
+    // 幂等：档位未变化（含变量缺失 + 选「正常」）就不插提示
+    if gs.reply_length_mode() == new_mode {
+        return Ok(new_mode.as_str().to_string());
+    }
+
+    // 先落提示台词再改变量：写台词失败时变量保持原样，避免「变量说短档、模型却没被告知」
+    gs.add_system_hint_line(&state.db, new_mode.announce_text())
+        .await
+        .map_err(|e| format!("写入系统提示台词失败: {e}"))?;
+    gs.set_variable(REPLY_LENGTH_VAR_KEY, serde_json::json!(new_mode.as_str()));
+    Ok(new_mode.as_str().to_string())
+}
+
 /// 一轮对话的公共流程：截图处理 → 组装生成依赖 → 入队生成。
 ///
 /// `text` 为本轮玩家消息，None 表示本轮没有玩家发言（系统消息、主动触发）。
@@ -98,64 +159,45 @@ async fn dispatch_chat_turn(
     // 捕获当前试玩代号（自由对话恒等，行为不变）
     let preview_generation = game_status.lock().await.preview_generation;
 
-    // 对话模型是否原生识图：开启后把截图当轮直发给模型，跳过旁白转述
-    let native_vision = chat_native_vision_supported(&app);
-    // 原生识图图片压缩参数（取自聊天 provider 的压缩设置，默认不压缩原图直发）
-    let native_compress = resolve_chat_provider(&app)
-        .map(|p| p.native_image_compress())
-        .unwrap_or_default();
-    // 全局：图片超过端点大小限制时是否自动压缩（关闭则超限图片按原样直发）
-    let auto_compress = AppConfig::load(&app)
-        .map(|c| c.auto_compress_image)
-        .unwrap_or(true);
     // 当轮附带的多模态图片 data URL（原生识图路径专用，不写入记忆）
     let mut transient_image: Option<String> = None;
 
     // 发送思考事件
     events::emit_thinking(&app, true);
 
-    // 截图分析：在创建 GeneratorDeps 之前，确保旁白台词已写入 line_list。
-    // 原生识图开启时优先把图片当轮携带发送（默认原图直发，可在 provider 设置里
-    // 开启压缩以省上下文/缓存）；图片编码失败或未开启原生识图时，回退到「旁白转述」路径。
+    // 截图交给识图投递决定：原生生图当轮直发（不写记忆），否则转述成旁白台词写进 line_list。
+    // 必须在创建 GeneratorDeps 之前完成，旁白要排在本轮上下文里。
     if let Some(ref b64) = screenshot_base64 {
         if let Ok(image_bytes) = base64::Engine::decode(&base64::prelude::BASE64_STANDARD, b64) {
-            if native_vision {
-                transient_image =
-                    image_bytes_to_native_data_url(&image_bytes, native_compress, auto_compress);
-                if transient_image.is_some() {
-                    tracing::info!("[Chat] 原生识图: 截图直接携带当轮发送（不写记忆）。");
-                } else {
-                    tracing::warn!("[Chat] 截图压缩失败，回退到旁白转述。");
-                }
-            }
+            let delivery = {
+                let mut sa = state.screen_analyzer.lock().await;
+                deliver_image(
+                    &app,
+                    &mut sa,
+                    &image_bytes,
+                    ImageIntent::ChatScreenshot {
+                        user_name: &user_name,
+                        user_text: text.as_deref().unwrap_or_default(),
+                    },
+                )
+                .await
+            };
 
-            if transient_image.is_none() {
-                let prompt = format!(
-                    "你是一个图像信息转述者，你将饰演旁白这一角色输出台词，用第三人称叙述把你看到的画面描述给其他AI让他理解用户的图片内容。用户（名字是\"{}\"）的信息是：\"{}\"\n\n以上是用户发的消息，请切合用户实际获取信息的需要，获取画面中的重点内容，用200字描述主体部分即可。如果你看到一个聊天窗口，有角色的立绘和对话框，不要描述这部分，只描述桌面上的其他内容。因为那部分是玩家与AI的聊天窗口。但如果用户信息中明确提到了AI的立绘，背景等（比如用户消息说“看看你的周围，这是哪里呀？”）的时候，你可以描述AI的立绘或背景来告诉主AI的环境感知能力。",
-                    user_name,
-                    text.as_deref().unwrap_or_default()
-                );
-
-                let analysis = {
-                    let mut sa = state.screen_analyzer.lock().await;
-                    sa.analyze_image(&image_bytes, &prompt).await
-                };
-
-                if let Some(narration) = analysis {
-                    let mut gs = game_status.lock().await;
-                    gs.add_line(
-                        &state.db,
-                        LineBase {
-                            content: PromptRole::Narrator.build_prompt(&narration),
-                            attribute: LineAttributeExt(LineAttribute::User),
-                            display_name: Some("旁白".to_string()),
-                            ..Default::default()
-                        },
-                    )
-                    .await
-                    .map_err(|e| format!("添加旁白台词失败: {}", e))?;
-                    tracing::info!("[Chat] Screenshot analysis narration added to game_status.");
-                }
+            transient_image = delivery.attach;
+            if let Some(narration) = delivery.text {
+                let mut gs = game_status.lock().await;
+                gs.add_line(
+                    &state.db,
+                    LineBase {
+                        content: PromptRole::Narrator.build_prompt(&narration),
+                        attribute: LineAttributeExt(LineAttribute::User),
+                        display_name: Some("旁白".to_string()),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .map_err(|e| format!("添加旁白台词失败: {}", e))?;
+                tracing::info!("[Chat] Screenshot analysis narration added to game_status.");
             }
         }
     }
@@ -388,7 +430,7 @@ pub async fn rollback_conversation(
 
         // 若存在活跃存档，同步截断到 DB
         if let Some(save_id) = gs.active_save_id {
-            SaveRepo::sync_lines(&db, save_id, &gs.line_list)
+            SaveRepo::sync_lines(&db, save_id, &gs.line_list, false)
                 .await
                 .map_err(|e| format!("同步存档失败: {}", e))?;
         }
@@ -583,7 +625,7 @@ pub async fn generate_line_voice(app: AppHandle, line_seq: u32) -> Result<String
 
         // 6. 存在活跃存档时同步到 DB，保证重启后仍可播放
         if let Some(save_id) = gs.active_save_id {
-            SaveRepo::sync_lines(&db, save_id, &gs.line_list)
+            SaveRepo::sync_lines(&db, save_id, &gs.line_list, false)
                 .await
                 .map_err(|e| format!("同步存档失败: {}", e))?;
         }
@@ -653,63 +695,34 @@ pub async fn feed_image(app: AppHandle, path: String) -> Result<(), String> {
 
     tracing::info!("[FileFeed] 收到图片投喂");
 
-    // 对话模型原生识图：把图片当轮直发给模型（不写记忆，省上下文/缓存）
-    let native_vision = chat_native_vision_supported(&app);
-    // 原生识图图片压缩参数（取自聊天 provider 的压缩设置，默认不压缩原图直发）
-    let native_compress = resolve_chat_provider(&app)
-        .map(|p| p.native_image_compress())
-        .unwrap_or_default();
-    // 全局：图片超过端点大小限制时是否自动压缩（关闭则超限图片按原样直发）
-    let auto_compress = AppConfig::load(&app)
-        .map(|c| c.auto_compress_image)
-        .unwrap_or(true);
-
     events::emit_thinking(&app, true);
 
-    // 原生识图路径：仅写入一条轻量文本提示（图片本身当轮发送，不持久化）
-    if native_vision {
-        let transient_image = read_file_native_data_url(&path, native_compress, auto_compress);
-        if let Some(image) = transient_image {
-            let mut gs = game_status.lock().await;
-            gs.add_line(
-                &state.db,
-                LineBase {
-                    content: PromptRole::Narrator.build_prompt(&format!(
-                        "用户（名字是\"{}\"）发来一张图片，请你直接查看图片内容。",
-                        user_name
-                    )),
-                    attribute: LineAttributeExt(LineAttribute::User),
-                    display_name: Some("旁白".to_string()),
-                    ..Default::default()
+    // 图片交给识图投递决定：原生生图当轮直发（不写记忆），否则转述成旁白；读不到文件就照常触发本轮。
+    let delivery = match std::fs::read(&path) {
+        Ok(image_bytes) => {
+            let mut sa = state.screen_analyzer.lock().await;
+            deliver_image(
+                &app,
+                &mut sa,
+                &image_bytes,
+                ImageIntent::DroppedFile {
+                    user_name: &user_name,
                 },
             )
             .await
-            .map_err(|e| format!("添加图片提示台词失败: {}", e))?;
-            tracing::info!("[FileFeed] 原生识图: 图片当轮直发对话模型（不写记忆）。");
-            drop(gs);
-            events::emit_thinking(&app, false);
-            let _ = trigger_ai_response(app, Some(image)).await;
-            return Ok(());
-        }
-        tracing::warn!("[FileFeed] 图片编码失败，回退到旁白转述。");
-    }
-
-    let prompt = format!(
-        "用户（名字是\"{}\"）给你看了一张图片，请你用第三人称叙述把你看到的画面描述给其他AI让他理解用户的图片内容",
-        user_name
-    );
-
-    let analysis = {
-        let mut sa = state.screen_analyzer.lock().await;
-        sa.analyze_image_file(&path, &prompt).await
+        },
+        Err(e) => {
+            tracing::warn!("[FileFeed] 读取图片失败: {e}");
+            ImageDelivery::default()
+        },
     };
 
-    if let Some(narration) = analysis {
+    if let Some(text) = delivery.text {
         let mut gs = game_status.lock().await;
         gs.add_line(
             &state.db,
             LineBase {
-                content: PromptRole::Narrator.build_prompt(&narration),
+                content: PromptRole::Narrator.build_prompt(&text),
                 attribute: LineAttributeExt(LineAttribute::User),
                 display_name: Some("旁白".to_string()),
                 ..Default::default()
@@ -717,23 +730,13 @@ pub async fn feed_image(app: AppHandle, path: String) -> Result<(), String> {
         )
         .await
         .map_err(|e| format!("添加旁白台词失败: {}", e))?;
-        tracing::info!("[FileFeed] 图片分析已注入上下文: {}", path);
+        tracing::info!("[FileFeed] 图片内容已注入上下文: {}", path);
     }
 
     events::emit_thinking(&app, false);
-    let _ = trigger_ai_response(app, None).await;
+    let _ = trigger_ai_response(app, delivery.attach).await;
 
     Ok(())
-}
-
-/// 读取图片文件并转换为原生多模态识图的 data URL（当轮携带，不写记忆）。
-fn read_file_native_data_url(
-    path: &str,
-    compress: NativeImageCompress,
-    auto_compress: bool,
-) -> Option<String> {
-    let bytes = std::fs::read(path).ok()?;
-    image_bytes_to_native_data_url(&bytes, compress, auto_compress)
 }
 
 #[tauri::command]

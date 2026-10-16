@@ -191,7 +191,7 @@ pub fn spawn_hit_test_poll(window: tauri::WebviewWindow) {
 
             // 每 ~2s 重申一次气泡窗置顶：别的窗口抢焦点后它会掉到后面去
             ticks = ticks.wrapping_add(1);
-            if ticks % 40 == 0 {
+            if ticks.is_multiple_of(40) {
                 raise_bubble(&app);
             }
 
@@ -292,18 +292,26 @@ pub fn spawn_hit_test_poll(window: tauri::WebviewWindow) {
 
 /// 两窗共用的宽度基准：视觉上必须一致，否则气泡窗与宠物窗明显错位。
 const WINDOW_W: f64 = 264.0;
-/// 宠物窗高度 = 头像带 210 + 输入带 64（与 constants.ts 的 PET_WINDOW_H_BASE 同步）
-const PET_WINDOW_H: f64 = 274.0;
+/// 顶部留白：给头像圆框外圈的频谱圆环腾地方，头像带因此整体下移一段。
+/// 气泡定位要按它补偿，否则气泡与头像的间距会从 8 变成 34
+/// （与 constants.ts 的 PET_SPECTRUM_TOP_PAD_BASE 同步）
+const PET_TOP_PAD: f64 = 26.0;
+/// 宠物窗高度 = 顶部留白 26 + 头像带 210 + 输入带 64
+/// （与 constants.ts 的 PET_WINDOW_H_BASE 同步）
+const PET_WINDOW_H: f64 = 300.0;
 /// 气泡窗高度 = 气泡带 278 + 长尾余量 10 + 间隙 8
 const BUBBLE_H: f64 = 296.0;
 const BUBBLE_GAP: f64 = 8.0;
 
 /// 按宠物窗当前位置重算气泡窗位置。
 ///
-/// 上置：气泡窗底边落在宠物窗顶边上方 `BUBBLE_GAP` 处；
+/// 上置：气泡窗底边落在头像顶边上方 `BUBBLE_GAP` 处；
 /// 下置：气泡窗顶边落在宠物窗底边下方 `BUBBLE_GAP` 处；
 /// 左/右置：气泡窗贴宠物窗左侧/右侧（长尾水平指向宠物），纵向按 `align` 与宠物窗
-/// 对齐同一条边 —— 贴上边则两窗顶边齐平，贴下边则两窗底边齐平。
+/// 对齐同一条边 —— 贴上边则气泡窗顶边与头像顶边齐平，贴下边则两窗底边齐平。
+///
+/// 窗口顶部有一段专供频谱圆环的留白 `PET_TOP_PAD`，头像盒在它下面；
+/// 凡是以「头像顶边」为参照的分支都要补上这段留白，详见下方注释。
 ///
 /// 用气泡窗/宠物窗**实测**逻辑尺寸而不是常量，这样换缩放倍率时偏移自动跟着变。
 /// 两窗共用同一 scale_factor，逻辑坐标可直接相加。
@@ -337,13 +345,17 @@ fn place_bubble(app: &AppHandle, pet: &tauri::WebviewWindow) {
         .unwrap_or_default();
     let pet_left = f64::from(pos.x) / scale;
     let pet_top = f64::from(pos.y) / scale;
-    // 左右置时的纵向基准：与宠物窗对齐同一条边
+    // 左右置时的纵向基准：与「头像盒」对齐同一条边。
+    // 贴上边对齐的是头像顶边，要补顶部留白；贴下边对齐的是宠物窗底边
+    // （头像底边到窗底恒为输入带高，不受留白影响），不补。
     let side_y = match placement.align {
-        BubbleAlign::Top => pet_top,
+        BubbleAlign::Top => pet_top + PET_TOP_PAD,
         BubbleAlign::Bottom => pet_top + pet_h - bubble_h,
     };
     let (x, y) = match placement.side {
-        BubbleSide::Above => (pet_left, pet_top - bubble_h - BUBBLE_GAP),
+        // 上置：气泡窗底边落在头像顶边上方 BUBBLE_GAP 处
+        BubbleSide::Above => (pet_left, pet_top + PET_TOP_PAD - bubble_h - BUBBLE_GAP),
+        // 下置：留白在顶部，与窗底边无关，公式不变
         BubbleSide::Below => (pet_left, pet_top + pet_h + BUBBLE_GAP),
         BubbleSide::Left => (pet_left - bubble_w - BUBBLE_GAP, side_y),
         BubbleSide::Right => (pet_left + pet_w + BUBBLE_GAP, side_y),
@@ -550,8 +562,9 @@ pub async fn set_pet_mode(
         if enable {
             let scale_val = scale.unwrap_or(1.0);
 
-            // 宠物窗 = 头像带 + 输入带，**不含气泡**：气泡独立成窗，宠物窗顶边因此
-            // 就是头像顶边，可以贴到屏幕最顶。改这里必须同步 components/pet/constants.ts。
+            // 宠物窗 = 顶部留白 + 头像带 + 输入带，**不含气泡**：气泡独立成窗，
+            // 顶部的留白专供频谱圆环，头像顶边在它下面。改这里必须同步
+            // components/pet/constants.ts。
             let width = (WINDOW_W * scale_val) as u32;
             let height = (PET_WINDOW_H * scale_val) as u32;
 

@@ -29,13 +29,38 @@
 
     <div class="flex flex-1 flex-col gap-3 pb-4">
       <!-- 渲染设置项卡片 (复刻原图 1、2 号卡片风格) -->
-      <SettingItem
-        v-for="setting in settings"
-        :key="setting.key"
-        :setting="setting"
-        :is-dark-mode="isDarkMode"
-        @update:value="(value) => (setting.value = value)"
-      />
+      <template v-for="setting in settings" :key="setting.key">
+        <!-- 提醒方式是二选一，SettingItem 只支持 bool/text/textarea/path/number，这里单独渲染 -->
+        <div v-if="setting.key === 'TODO_REMINDER_STYLE'">
+          <label class="text-brand inline-flex items-center font-medium">{{
+            $t("ui.proactivePage.todoReminderStyle")
+          }}</label>
+          <p class="mt-1 mb-2 text-sm text-gray-300">{{ setting.key }}</p>
+          <div class="flex gap-2">
+            <div
+              v-for="option in reminderStyleOptions"
+              :key="option.value"
+              @click="setting.value = option.value"
+              class="cursor-pointer rounded-lg px-4 py-2.5 text-sm transition-colors duration-200"
+              :class="
+                setting.value === option.value
+                  ? 'bg-brand text-white'
+                  : isDarkMode
+                    ? 'border border-slate-700 bg-slate-700/50 text-slate-200 hover:bg-slate-700'
+                    : 'border border-slate-200 bg-slate-100 text-slate-600 hover:bg-slate-200'
+              "
+            >
+              {{ option.label }}
+            </div>
+          </div>
+        </div>
+        <SettingItem
+          v-else
+          :setting="setting"
+          :is-dark-mode="isDarkMode"
+          @update:value="(value) => (setting.value = value)"
+        />
+      </template>
 
       <!-- 保存操作栏：完美复刻你的第3个卡片 (Anchor Logic) 样式 -->
       <div
@@ -80,7 +105,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, reactive } from "vue";
+import { ref, onMounted, reactive, computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { Save } from "lucide-vue-next";
 import { getEnvConfigByKey, saveEnvConfigSettings } from "../../../../api/services/config";
@@ -98,6 +123,11 @@ const saveStatus = reactive({
   message: "",
   color: "#10b981", // 成功颜色
 });
+
+const reminderStyleOptions = computed(() => [
+  { value: "role", label: t("ui.proactivePage.todoReminderStyleRole") },
+  { value: "toast", label: t("ui.proactivePage.todoReminderStyleToast") },
+]);
 
 const saveSettings = async () => {
   const formData: Record<string, string> = {};
@@ -127,6 +157,7 @@ const loadConfig = async () => {
   const configKeys = [
     "ENABLE_PROACTIVE_SYSTEM",
     "MAX_PROACTIVE_TIMES",
+    "PROACTIVE_EXPECTED_INTERVAL_MINUTES",
     "ENABLE_VISUAL_PRECEPTION",
     "SCREEN_WEIGHT",
     "ENABLE_TOPIC_CREATER",
@@ -135,6 +166,9 @@ const loadConfig = async () => {
     "TODO_WEIGHT",
     "ENABLE_SCHEDULE_REMINDER",
     "ENABLE_IMPORTANT_DAY_REMINDER",
+    "FORCE_SCHEDULE_REMINDER",
+    "FORCE_TODO_REMINDER",
+    "TODO_REMINDER_STYLE",
   ];
 
   for (const key of configKeys) {

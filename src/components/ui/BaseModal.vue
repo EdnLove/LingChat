@@ -13,15 +13,24 @@
         <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" @click="close"></div>
 
         <!-- 模态框主体 -->
-        <div class="relative z-10 w-full max-w-md rounded-[2.5rem] bg-white p-8 shadow-2xl">
+        <div
+          class="relative z-10 w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl"
+          :class="isGlass ? 'glass-effect' : 'bg-white'"
+        >
           <!-- 标题栏 -->
           <div class="mb-6 flex items-center justify-between">
-            <h3 class="text-xl font-black tracking-tight text-slate-800">
+            <h3
+              class="text-xl font-black tracking-tight"
+              :class="isGlass ? 'text-brand' : 'text-slate-800'"
+            >
               {{ title }}
             </h3>
             <button
               @click="close"
-              class="p-1 text-slate-400 transition-colors hover:text-slate-600"
+              class="p-1 transition-colors"
+              :class="
+                isGlass ? 'text-white/60 hover:text-white' : 'text-slate-400 hover:text-slate-600'
+              "
             >
               <span class="text-2xl leading-none font-bold">&times;</span>
             </button>
@@ -48,10 +57,19 @@
 </template>
 
 <script setup lang="ts">
-defineProps<{
-  show: boolean;
-  title: string;
-}>();
+import { computed } from "vue";
+
+const props = withDefaults(
+  defineProps<{
+    show: boolean;
+    title: string;
+    /** light = 白色卡片；glass = 深色毛玻璃，与日程面板的卡片/弹窗一致 */
+    theme?: "light" | "glass";
+  }>(),
+  { theme: "light" },
+);
+
+const isGlass = computed(() => props.theme === "glass");
 
 const emit = defineEmits(["close", "confirm"]);
 

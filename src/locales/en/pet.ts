@@ -88,5 +88,10 @@ export default {
     priority: "Priority PRIORITY",
     newGroup: "New Task Group",
     newTask: "New Task",
+    editTask: "Edit Task",
+    reminderOff: "No reminder",
+    reminderMinutes: "{count} min before",
+    reminderHours: "{count} h before",
+    reminderDays: "{count} d before",
   },
 };

@@ -27,7 +27,7 @@
         class="flex w-full flex-col gap-1"
       >
         <span
-          class="text-brand mb-1 block rounded-lg border border-white/10 bg-white/10 px-3.75 py-2.5 text-base font-bold shadow-[0_8px_32px_rgba(0,0,0,0.1),inset_0_1px_1px_rgba(255,255,255,0.1)] backdrop-blur-xl backdrop-saturate-150"
+          class="text-brand mb-1 block rounded-lg border border-white/10 bg-white/10 px-3.75 py-2.5 text-base font-bold shadow-[0_8px_32px_rgba(0,0,0,0.1),inset_0_1px_1px_rgba(255,255,255,0.1)]"
           >{{ catLabel(categoryName) }}</span
         >
         <a
@@ -286,7 +286,10 @@ const saveSettings = async () => {
 
     await loadConfig(false);
   } catch (error: any) {
-    saveStatus.message = t("settings.advanceOther.msg.error", { error: error.message });
+    // 后端命令的错误是字符串，直接取 error.message 会渲染成 "错误: undefined"
+    saveStatus.message = t("settings.advanceOther.msg.error", {
+      error: typeof error === "string" ? error : error.message,
+    });
     saveStatus.colorClass = "text-red-500";
   } finally {
     isLoading.value = false;

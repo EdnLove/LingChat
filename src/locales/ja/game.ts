@@ -10,6 +10,9 @@ export default {
     screenshotAsk: "スクリーンショットで質問",
     screenshotRetake: "クリックで撮り直し、右クリックでキャンセル",
     closeDialog: "会話を閉じる",
+    quickSave: "クイックセーブ",
+    quickLoad: "クイックロード",
+    quickSaveNoSave: "今回のセーブがまだありません。セーブ画面で先に作成してください",
     moreActions: "その他の操作",
     listening: "聞き取り中...",
     inputPlaceholder: "ここにメッセージを入力...",
@@ -54,7 +57,7 @@ export default {
     availableAmbient: "利用可能な環境音",
     spectrum: {
       title: "オーディオスペクトラム",
-      hint: "再生中のBGMと環境音をリアルタイムで取得し、右下に表示します",
+      hint: "再生中のBGMと環境音をリアルタイムで取得し、右下に表示します。ペットモードではアバターの外側にリング状に表示します",
       palette: "配色",
       styleMirror: "ミラー",
       styleBars: "バー",

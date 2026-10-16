@@ -34,8 +34,9 @@ use crate::ai_service::tools::tool_loop::stream_with_tool_loop;
 use crate::ai_service::translator::Translator;
 use crate::ai_service::types::{GameLine, LineAttributeExt, LineBase, LlmMessage};
 use crate::api::data_dir;
+use crate::config::AppConfig;
 use crate::db::entities::line::LineAttribute;
-use crate::utils::prompt::PromptRole;
+use crate::utils::prompt::{PromptRole, RoundReply, correction_texts, scan_reply_shape};
 
 /// MessageGenerator 的业务调用来源。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -121,11 +122,14 @@ impl MessageGenerator {
         // 3. 生成循环（God Agent 激活时可能多轮）
         let mut accumulated = String::new();
         let mut consecutive_npc_rounds: usize = 0;
-        let original_msg = user_message.unwrap_or_default();
+        // 每轮的纠偏输入，供回复后处理使用。按轮记而不是统计整轮 accumulated：
+        // 多人模式下它是多个角色输出的拼接。
+        let mut round_replies: Vec<RoundReply> = Vec::new();
+        let original_msg = user_message.as_deref().unwrap_or_default();
 
         loop {
             // 取当前角色记忆（每轮重新获取，因为 current_role_id 可能已变化）
-            let context = self.get_current_context().await?;
+            let context = self.get_current_context(user_message.as_deref()).await?;
             if context.is_empty() {
                 break;
             }
@@ -136,10 +140,31 @@ impl MessageGenerator {
             } else {
                 None
             };
+            let before_lines = {
+                let gs = self.deps.game_status.lock().await;
+                gs.line_list.len()
+            };
             let round_acc = self
-                .execute_pipeline(context, &original_msg, round_msg_seq)
+                .execute_pipeline(context, original_msg, round_msg_seq)
                 .await?;
             accumulated.push_str(&round_acc);
+            let landed_lines = {
+                let gs = self.deps.game_status.lock().await;
+                gs.line_list[before_lines.min(gs.line_list.len())..]
+                    .iter()
+                    .filter(|l| {
+                        // 与 auto_save::is_real_dialogue 的 assistant 判据一致：
+                        // 工具调用回填的行 sender 为空，不算台词
+                        matches!(l.attribute(), LineAttribute::Assistant)
+                            && l.base.sender_role_id.is_some()
+                    })
+                    .count()
+            };
+            // 形态取自模型原始输出，落地条数取自台词表：翻译覆写只影响行、不影响原文
+            round_replies.push(RoundReply {
+                landed_lines,
+                shapes: scan_reply_shape(&round_acc),
+            });
 
             // 后处理：仅第一轮清理 temp_message
             if consecutive_npc_rounds == 0 {
@@ -160,6 +185,12 @@ impl MessageGenerator {
         // 不阻塞本轮回复的呈现。
         self.maybe_evaluate_affection().await;
 
+        // 回复后处理扩展点（顺序排在好感度评估之后，避免刚插入的提示混进评估快照）：
+        // 新增的回复后处理一律加在 `maybe_correct_reply_shape` 旁边——轻量动作
+        // （插台词等）直接 await，需要 LLM 的动作 spawn 到后台，失败只 warn，
+        // 绝不能影响已经呈现给用户的回复。
+        self.maybe_correct_reply_shape(&round_replies).await;
+
         Ok(accumulated)
     }
 
@@ -167,7 +198,7 @@ impl MessageGenerator {
     /// 通知不会写成玩家台词，避免界面和历史中出现伪造的用户消息。
     #[cfg_attr(not(desktop), allow(dead_code))]
     pub async fn process_notification(&self, notification: String) -> Result<String> {
-        let mut context = self.get_current_context().await?;
+        let mut context = self.get_current_context(None).await?;
         if context.is_empty() {
             return Ok(String::new());
         }
@@ -255,15 +286,47 @@ impl MessageGenerator {
     }
 
     /// Step 2: 根据 current_role_id 获取当前角色的 memory 上下文。
-    async fn get_current_context(&self) -> Result<Vec<LlmMessage>> {
+    async fn get_current_context(&self, user_input: Option<&str>) -> Result<Vec<LlmMessage>> {
         let mut gs = self.deps.game_status.lock().await;
         let Some(rid) = gs.current_role_id else {
             tracing::error!("生成消息的时候没有当前角色，取消生成");
             return Ok(Vec::new());
         };
+        // 今日首聊天气先入列，再取 memory，保证本轮上下文就能看到这条提醒
+        self.inject_weather_first_talk(&mut gs).await;
         let role = gs.get_role(&self.deps.db, rid).await?;
         // 好感度不再逐轮注入上下文；变化时以旁白台词写入历史（见 maybe_evaluate_affection）
-        Ok(role.memory.clone())
+        let mut context = role.memory.clone();
+        // 世界书注入（上游）：随本轮上下文进，不写回记忆
+        if let Some(book) = &role.worldbook {
+            book.inject(&mut context, user_input);
+        }
+        drop(gs);
+        Ok(context)
+    }
+
+    /// 今日首次对话时，往 game_status 添加一条「系统」天气台词。
+    ///
+    /// 以 `add_line` 入列（User 属性，不产生第二条 system 消息）；
+    /// 剧本系来源与编辑器试玩不注入，其余由 `first_talk_reminder`
+    /// 的"每日一次 + 配置开关 + 缓存有货"三重门决定。
+    async fn inject_weather_first_talk(&self, gs: &mut GameStatus) {
+        let script_source = matches!(
+            self.deps.source,
+            GeneratorSource::ScriptAiDialogue | GeneratorSource::ScriptFreeDialogue
+        );
+        let allowed = !script_source && !self.deps.is_preview;
+        if let Some(reminder) =
+            crate::ai_service::tools::weather::first_talk_reminder(&self.deps.app, gs, allowed)
+        {
+            let line = LineBase {
+                content: PromptRole::Narrator.build_prompt(&reminder),
+                attribute: LineAttributeExt(LineAttribute::User),
+                display_name: Some("系统".to_string()),
+                ..Default::default()
+            };
+            let _ = gs.add_line(&self.deps.db, line).await;
+        }
     }
 
     /// Step 3: 启动 LLM 流管道，统一处理 thinking emit 与错误分发。
@@ -445,6 +508,67 @@ impl MessageGenerator {
         });
     }
 
+    /// 回复纠偏：上一轮回复的格式要素（情绪标签 / 正文 / 日语翻译）缺失、
+    /// 台词数量越界、动作分布异常或情绪标签过长时，各插一条系统提示台词，
+    /// 提醒模型下一轮修正。
+    ///
+    /// 只对自由对话 / 主动对话生效：入场问候天然只有一两句，会被「正常」档误判过短；
+    /// 剧本模式的节奏由剧本作者控制，不插提示（判据与好感度评估一致）。
+    /// 这里只追加台词，直接 await；插台词失败只记日志，不能反向报错。
+    async fn maybe_correct_reply_shape(&self, round_replies: &[RoundReply]) {
+        if !matches!(
+            self.deps.source,
+            GeneratorSource::UserChat | GeneratorSource::Proactive
+        ) {
+            return;
+        }
+
+        // 角色系统的第二语言输出开关决定系统提示词里有没有「日语翻译」那一行，
+        // 缺了它才是格式错误（配置读取与天气首聊同款，每轮一次、代价可忽略）
+        let expect_translation = AppConfig::load(&self.deps.app)
+            .map(|config| config.llm_output_sec_lang)
+            .unwrap_or(false);
+
+        let mut gs = self.deps.game_status.lock().await;
+        if gs.script_status.is_some() {
+            return;
+        }
+
+        // 每类问题只取首个命中的轮次（多人模式下一次回复含多个角色的输出，
+        // 逐轮插入会把提示堆一片）；什么都没产出的轮次（模型只调了工具）不参与判据。
+        let mode = gs.reply_length_mode();
+        let texts = round_replies
+            .iter()
+            .filter(|round| round.landed_lines > 0 || !round.shapes.is_empty())
+            .find_map(|round| {
+                let texts = correction_texts(mode, round, expect_translation);
+                (!texts.is_empty()).then_some(texts)
+            })
+            .unwrap_or_default();
+
+        // 同一条提示紧邻重复就不再插：跨过本轮刚产出的台词回头看一行，
+        // 命中即说明上一轮已经提醒过同样的问题（隔轮重复是有意的：模型不听就该再提醒）
+        let lookback = round_replies
+            .iter()
+            .map(|round| round.landed_lines)
+            .sum::<usize>()
+            + 2;
+        for text in texts {
+            let content = PromptRole::System.build_prompt(&text);
+            let duplicated =
+                gs.line_list.iter().rev().take(lookback).any(|l| {
+                    matches!(l.attribute(), LineAttribute::User) && l.base.content == content
+                });
+            if duplicated {
+                continue;
+            }
+
+            if let Err(e) = gs.add_system_hint_line(&self.deps.db, &text).await {
+                tracing::warn!("[ReplyShape] 写入回复形态纠偏提示失败: {e:#}");
+            }
+        }
+    }
+
     async fn run_pipeline(
         &self,
         context: Vec<LlmMessage>,
@@ -511,6 +635,10 @@ impl MessageGenerator {
         // 由最终句（is_final）的 consumer 快照并挂载到台词行与前端响应。
         let thinking_buf = Arc::new(Mutex::new(String::new()));
 
+        // 句子序号 → 台词表行下标。工具闭环回填时用它抹掉「前导台词」先落的行：
+        // 同一段原文已经在带 tool_call 的助手行里，留着就是同一句话说两遍。
+        let sentence_lines: Arc<Mutex<Vec<(usize, usize)>>> = Arc::new(Mutex::new(Vec::new()));
+
         // publisher：按索引顺序 emit 到前端（并在推进到栅栏索引时回 ack）
         let app = self.deps.app.clone();
         let publisher = tokio::spawn(async move {
@@ -531,9 +659,11 @@ impl MessageGenerator {
             let publish_tx = publish_tx.clone();
             let user_message = user_message.clone();
             let thinking_buf = thinking_buf.clone();
+            let sentence_lines = sentence_lines.clone();
             consumer_tasks.push(tokio::spawn(async move {
                 // 句子处理仅需最小依赖集；llm / 工具等不在消费端使用。
-                let sdeps = SentenceDeps::from(&deps);
+                let mut sdeps = SentenceDeps::from(&deps);
+                sdeps.sentence_lines = Some(sentence_lines.clone());
                 loop {
                     let item = {
                         let mut rx = sentence_rx.lock().await;
@@ -563,6 +693,7 @@ impl MessageGenerator {
                     let resp = match consume_sentence(
                         &sdeps,
                         sentence,
+                        Some(index),
                         &user_message,
                         is_final,
                         user_message_seq,
@@ -610,6 +741,7 @@ impl MessageGenerator {
 
         // 流已消费完毕，工具消息收集完整：回填到助手回复之前的位置
         let tool_msgs = std::mem::take(&mut *tool_messages.lock().await);
+        let completed_turn = published_final || (!output.sent_final && !tool_msgs.is_empty());
         if !tool_msgs.is_empty() {
             let mut gs = self.deps.game_status.lock().await;
             // 试玩代号守卫：试玩中止后丢弃迟到回填，与 add_assistant_line 行为一致
@@ -617,6 +749,23 @@ impl MessageGenerator {
                 gs.role_manager.invalidate_memory_history();
                 let insert_pos = tool_insert_pos.min(gs.line_list.len());
                 let perceived: Vec<i32> = gs.present_role_ids.iter().copied().collect();
+
+                if !output.preamble_indices.is_empty() {
+                    let doomed: Vec<usize> = {
+                        let ledger = sentence_lines.lock().await;
+                        ledger
+                            .iter()
+                            .filter(|(sentence, _)| output.preamble_indices.contains(sentence))
+                            .map(|(_, line)| *line)
+                            .collect()
+                    };
+                    // 从后往前删，前面的下标才不会被自己挤动
+                    for index in doomed.into_iter().rev() {
+                        if index < gs.line_list.len() {
+                            gs.line_list.remove(index);
+                        }
+                    }
+                }
 
                 for msg in tool_msgs.iter().rev() {
                     let (attribute, content, tool_call) = match msg.role.as_str() {
@@ -654,6 +803,14 @@ impl MessageGenerator {
             }
         }
 
+        if completed_turn {
+            let mut gs = self.deps.game_status.lock().await;
+            if gs.preview_generation == self.deps.generation {
+                gs.refresh_memories_after_completed_turn(&self.deps.db)
+                    .await?;
+            }
+        }
+
         // 空回复兜底：模型流没有任何正文时，主动通知前端并重置状态，
         // 否则界面会一直停在「思考中」
         if acc.trim().is_empty() {
@@ -688,6 +845,7 @@ impl MessageGenerator {
 /// 栅栏与回复共用同一个索引空间：publisher 只有在推进到栅栏索引（即所有更小索引
 /// 都已处理完，包括被丢弃的 `None` 结果）之后才会回 ack，从而保证"前导台词的
 /// `ai:reply` 已 emit"严格先于"工具事件 emit"。
+#[allow(clippy::large_enum_variant)]
 pub(super) enum PublishItem {
     Reply {
         index: usize,
@@ -773,6 +931,12 @@ pub struct SentenceDeps {
     /// 试玩代号（写入守卫用）。非试玩时传入当前值即可，守卫恒等。
     pub generation: u64,
     pub is_preview: bool,
+    /// 「这一句正文落成了台词表第几行」的台账（句子序号 → 行下标）。
+    ///
+    /// 工具闭环下前导台词只做呈现，生成结束后要按台账把它先落的那些行抹掉
+    /// （同一段原文已经在带 `tool_call` 的助手行里）。非生成路径（剧本固定台词）
+    /// 传 `None`：那边没有句子序号，也不存在要抹的行。
+    pub sentence_lines: Option<Arc<Mutex<Vec<(usize, usize)>>>>,
 }
 
 impl From<&GeneratorDeps> for SentenceDeps {
@@ -784,6 +948,7 @@ impl From<&GeneratorDeps> for SentenceDeps {
             db: d.db.clone(),
             generation: d.generation,
             is_preview: d.is_preview,
+            sentence_lines: None,
         }
     }
 }
@@ -804,6 +969,7 @@ pub struct ReplyOverrides {
 pub(crate) async fn consume_sentence(
     deps: &SentenceDeps,
     sentence: String,
+    sentence_index: Option<usize>,
     user_message: &str,
     is_final: bool,
     user_message_seq: Option<u32>,
@@ -843,7 +1009,7 @@ pub(crate) async fn consume_sentence(
     }
 
     // 4. 写入 GameStatus
-    add_assistant_line(deps, &response).await?;
+    add_assistant_line(deps, &response, sentence_index).await?;
 
     // 会话代号复核（与 add_assistant_line 内守卫一致）：若本句写入已被丢弃，
     // 说明读档/切角色/清对话已切换会话（旧流式任务游离），前端也已切到新会话——
@@ -1041,10 +1207,11 @@ async fn build_reply_response(
 }
 
 /// Step D: 将 assistant LINE 写入 GameStatus。
-async fn add_assistant_line(deps: &SentenceDeps, response: &ReplyResponse) -> Result<()> {
-    // 试玩代号守卫：试玩任务被中止后，游离的 consumer 任务仍会带着旧代号继续
-    // 生成句子。此时 GameStatus 可能已还原回自由对话，写入会把试玩台词漏进
-    // 自由对话的上下文与历史。捕获代号与当前值不一致即丢弃整条（含记忆同步）。
+async fn add_assistant_line(
+    deps: &SentenceDeps,
+    response: &ReplyResponse,
+    sentence_index: Option<usize>,
+) -> Result<()> {
     {
         let gs = deps.game_status.lock().await;
         if gs.preview_generation != deps.generation {
@@ -1072,5 +1239,10 @@ async fn add_assistant_line(deps: &SentenceDeps, response: &ReplyResponse) -> Re
     };
     let mut gs = deps.game_status.lock().await;
     gs.add_line(&deps.db, line).await?;
+    // 台账：这一句落成了哪一行。工具闭环回填时按它抹掉「前导台词」先落的行。
+    // 记录与写入同在一把锁里，另一个 consumer 插不进来，行下标不会错位。
+    if let (Some(ledger), Some(index)) = (&deps.sentence_lines, sentence_index) {
+        ledger.lock().await.push((index, gs.line_list.len() - 1));
+    }
     Ok(())
 }

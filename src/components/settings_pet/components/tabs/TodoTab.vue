@@ -149,7 +149,8 @@
             <div
               v-for="todo in globalPendingTodos"
               :key="'global-' + todo.id"
-              class="relative flex items-center justify-between overflow-hidden rounded-xl border p-4 shadow-sm transition-colors duration-300"
+              @click="openEdit(todo)"
+              class="relative flex cursor-pointer items-center justify-between overflow-hidden rounded-xl border p-4 shadow-sm transition-colors duration-300"
               :class="
                 isDarkMode ? 'border-slate-700 bg-slate-800/80' : 'border-slate-200 bg-slate-50'
               "
@@ -201,6 +202,15 @@
                   >
                     {{ todo.text }}
                   </p>
+                  <div
+                    v-if="todo.deadline"
+                    class="mt-1 flex items-center gap-1 font-mono text-[10px] font-bold"
+                    :class="isOverdue(todo) ? 'text-red-400' : 'text-sky-500'"
+                  >
+                    <CalendarClock class="h-3 w-3" />
+                    <span>{{ formatDeadline(todo.deadline) }}</span>
+                    <BellRing v-if="todo.remindBeforeMinutes" class="h-3 w-3" />
+                  </div>
                 </div>
               </div>
             </div>
@@ -283,7 +293,8 @@
           <div
             v-for="(todo, idx) in activeTodoGroup.todos"
             :key="'detail-todo-' + todo.id"
-            class="group relative flex items-center justify-between overflow-hidden rounded-xl border p-4 shadow-sm transition-colors duration-300"
+            @click="openEdit(todo)"
+            class="group relative flex cursor-pointer items-center justify-between overflow-hidden rounded-xl border p-4 shadow-sm transition-colors duration-300"
             :class="[
               isDarkMode ? 'border-slate-700 bg-slate-800/80' : 'border-slate-200 bg-slate-50',
               todo.completed ? 'opacity-50' : '',
@@ -335,6 +346,15 @@
                     "
                   />
                 </div>
+                <div
+                  v-if="todo.deadline"
+                  class="mt-1 flex items-center gap-1 font-mono text-[10px] font-bold"
+                  :class="isOverdue(todo) ? 'text-red-400' : 'text-sky-500'"
+                >
+                  <CalendarClock class="h-3 w-3" />
+                  <span>{{ formatDeadline(todo.deadline) }}</span>
+                  <BellRing v-if="todo.remindBeforeMinutes" class="h-3 w-3" />
+                </div>
               </div>
             </div>
 
@@ -357,7 +377,7 @@
       @close="showModal = false"
       @confirm="confirmCreate"
     >
-      <template v-if="activePage === 'todo_groups'">
+      <template v-if="modalMode === 'group'">
         <div class="space-y-2">
           <label
             class="font-mono text-xs font-bold tracking-wider"
@@ -428,6 +448,61 @@
               </button>
             </div>
           </div>
+
+          <!-- 截止时间（可选） -->
+          <div
+            class="flex items-center gap-3 rounded-lg border p-3"
+            :class="
+              isDarkMode ? 'border-slate-700 bg-slate-800/50' : 'border-slate-200 bg-slate-50'
+            "
+          >
+            <CalendarClock
+              class="h-4 w-4 shrink-0"
+              :class="isDarkMode ? 'text-slate-400' : 'text-slate-500'"
+            />
+            <input
+              v-model="formData.deadline"
+              type="datetime-local"
+              class="min-w-0 flex-1 border-none bg-transparent text-sm outline-none"
+              :class="isDarkMode ? 'text-slate-200' : 'text-slate-700'"
+            />
+            <button
+              v-if="formData.deadline"
+              @click="formData.deadline = ''"
+              class="shrink-0 text-slate-400 hover:text-red-400"
+            >
+              <Cross class="h-4 w-4" />
+            </button>
+          </div>
+
+          <!-- 提前提醒（可选，依赖截止时间） -->
+          <div
+            class="flex items-center gap-3 rounded-lg border p-3"
+            :class="
+              isDarkMode ? 'border-slate-700 bg-slate-800/50' : 'border-slate-200 bg-slate-50'
+            "
+          >
+            <BellRing
+              class="h-4 w-4 shrink-0"
+              :class="
+                formData.deadline
+                  ? isDarkMode
+                    ? 'text-slate-400'
+                    : 'text-slate-500'
+                  : 'text-slate-300'
+              "
+            />
+            <select
+              v-model="formData.remindBeforeMinutes"
+              :disabled="!formData.deadline"
+              class="min-w-0 flex-1 border-none bg-transparent text-sm outline-none disabled:text-slate-400"
+              :class="[isDarkMode ? 'select-dark text-slate-200' : 'text-slate-700']"
+            >
+              <option v-for="opt in reminderOptions" :key="String(opt.value)" :value="opt.value">
+                {{ opt.label }}
+              </option>
+            </select>
+          </div>
         </div>
       </template>
     </BaseModal>
@@ -449,6 +524,8 @@ import {
   Check,
   ArrowLeft,
   Cross,
+  CalendarClock,
+  BellRing,
 } from "lucide-vue-next";
 import { getSchedules, saveSchedules } from "../../../../api/services/schedule";
 import BaseModal from "@/components/ui/BaseModal.vue";
@@ -468,7 +545,9 @@ const activePage = ref<"todo_detail" | "todo_groups">("todo_groups");
 interface TodoItem {
   id: number;
   text: string;
-  deadline?: string;
+  deadline?: string | null;
+  /** 截止前多少分钟提醒；null / 缺省表示不提醒 */
+  remindBeforeMinutes?: number | null;
   priority: number;
   completed: boolean;
 }
@@ -559,25 +638,27 @@ const globalCompletedTodos = computed(() => {
   return list;
 });
 
+/** 按 gid 还原原始条目对象（全局视图传来的是副本，详情视图是原始引用） */
+const resolveOriginal = (
+  todo: TodoItem | TodoItemWithGroup,
+  gid?: string | null,
+): TodoItem | undefined => {
+  const targetGid = gid ?? (todo as TodoItemWithGroup).gid ?? selectedTodoGroupId.value;
+  if (!targetGid) return undefined;
+  return todoGroups.value[targetGid]?.todos.find((t) => t.id === todo.id);
+};
+
 const completeTodo = (todo: TodoItem | TodoItemWithGroup) => {
-  const todoWithGid = todo as TodoItemWithGroup;
-  const gid = todoWithGid.gid || selectedTodoGroupId.value;
-  if (gid && todoGroups.value[gid]) {
-    const targetTodo = todoGroups.value[gid].todos.find((t) => t.id === todo.id);
-    if (targetTodo) {
-      targetTodo.completed = true;
-    }
+  const targetTodo = resolveOriginal(todo);
+  if (targetTodo) {
+    targetTodo.completed = true;
   }
 };
 
 const undoComplete = (todo: TodoItem | TodoItemWithGroup) => {
-  const todoWithGid = todo as TodoItemWithGroup;
-  const gid = todoWithGid.gid || selectedTodoGroupId.value;
-  if (gid && todoGroups.value[gid]) {
-    const targetTodo = todoGroups.value[gid].todos.find((t) => t.id === todo.id);
-    if (targetTodo) {
-      targetTodo.completed = false;
-    }
+  const targetTodo = resolveOriginal(todo);
+  if (targetTodo) {
+    targetTodo.completed = false;
   }
 };
 
@@ -600,25 +681,82 @@ const selectTodoGroup = (id: string) => {
 };
 
 const showModal = ref(false);
+/** 弹窗场景。不能只看 activePage：分组总览页也能点开待办条目做编辑。 */
+const modalMode = ref<"group" | "task">("task");
+const editingId = ref<number | null>(null);
+const editingGid = ref<string | null>(null);
 const formData = reactive({
   groupTitle: "",
   todoText: "",
   priority: 1,
+  /** datetime-local 的原生格式：YYYY-MM-DDTHH:mm，空串表示未设 */
+  deadline: "",
+  remindBeforeMinutes: null as number | null,
 });
+
+const reminderOptions = computed(() => [
+  { value: null as number | null, label: t("pet.todo.reminderOff") },
+  { value: 5, label: t("pet.todo.reminderMinutes", { count: 5 }) },
+  { value: 15, label: t("pet.todo.reminderMinutes", { count: 15 }) },
+  { value: 30, label: t("pet.todo.reminderMinutes", { count: 30 }) },
+  { value: 60, label: t("pet.todo.reminderHours", { count: 1 }) },
+  { value: 1440, label: t("pet.todo.reminderDays", { count: 1 }) },
+]);
+
+/** 归一化为 datetime-local 能回显的格式，兼容 AI 写入的自由字符串 */
+const toLocalInput = (raw?: string | null): string => {
+  if (!raw) return "";
+  const normalized = raw.trim().replace(" ", "T").slice(0, 16);
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(normalized) ? normalized : "";
+};
+
+const formatDeadline = (raw?: string | null): string => {
+  const local = toLocalInput(raw);
+  return local ? local.slice(5).replace("T", " ") : "";
+};
+
+const isOverdue = (todo: TodoItem): boolean => {
+  const local = toLocalInput(todo.deadline);
+  if (!local || todo.completed) return false;
+  return new Date(local).getTime() < Date.now();
+};
 
 const modalTitle = computed(() => {
-  return activePage.value === "todo_groups" ? t("pet.todo.newGroup") : t("pet.todo.newTask");
+  if (modalMode.value === "group") return t("pet.todo.newGroup");
+  return editingId.value !== null ? t("pet.todo.editTask") : t("pet.todo.newTask");
 });
 
-const handleCreate = () => {
+const resetForm = () => {
   formData.groupTitle = "";
   formData.todoText = "";
   formData.priority = 1;
+  formData.deadline = "";
+  formData.remindBeforeMinutes = null;
+  editingId.value = null;
+  editingGid.value = null;
+};
+
+const handleCreate = () => {
+  resetForm();
+  modalMode.value = activePage.value === "todo_groups" ? "group" : "task";
+  showModal.value = true;
+};
+
+/** 打开编辑弹窗。gid 用于定位条目所属分组。 */
+const openEdit = (todo: TodoItem | TodoItemWithGroup, gid?: string) => {
+  resetForm();
+  modalMode.value = "task";
+  editingId.value = todo.id;
+  editingGid.value = gid ?? (todo as TodoItemWithGroup).gid ?? selectedTodoGroupId.value;
+  formData.todoText = todo.text;
+  formData.priority = todo.priority;
+  formData.deadline = toLocalInput(todo.deadline);
+  formData.remindBeforeMinutes = todo.remindBeforeMinutes ?? null;
   showModal.value = true;
 };
 
 const confirmCreate = () => {
-  if (activePage.value === "todo_groups") {
+  if (modalMode.value === "group") {
     if (!formData.groupTitle.trim()) return;
     const newId = "t" + Date.now();
     todoGroups.value[newId] = {
@@ -627,7 +765,20 @@ const confirmCreate = () => {
     };
   } else {
     if (!formData.todoText.trim()) return;
-    if (selectedTodoGroupId.value) {
+    const deadline = formData.deadline || null;
+    // 没有截止时间的提醒没有意义
+    const remindBeforeMinutes = deadline ? formData.remindBeforeMinutes : null;
+    if (editingId.value !== null) {
+      // 编辑已有任务
+      const target = resolveOriginal({ id: editingId.value } as TodoItem, editingGid.value);
+      if (target) {
+        target.text = formData.todoText;
+        target.priority = formData.priority;
+        target.deadline = deadline;
+        target.remindBeforeMinutes = remindBeforeMinutes;
+      }
+    } else if (selectedTodoGroupId.value) {
+      // 新建任务
       const group = todoGroups.value[selectedTodoGroupId.value];
       if (group) {
         group.todos.push({
@@ -635,11 +786,14 @@ const confirmCreate = () => {
           text: formData.todoText,
           priority: formData.priority,
           completed: false,
+          deadline,
+          remindBeforeMinutes,
         });
       }
     }
   }
   showModal.value = false;
+  resetForm();
 };
 
 defineExpose({ handleCreate });

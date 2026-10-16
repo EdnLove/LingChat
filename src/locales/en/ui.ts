@@ -124,7 +124,8 @@ export default {
     navCalendar: "Important Days",
     navProactive: "Proactive Chat",
     navToolCalls: "Tool Calls",
-    clockTip: '"Whatever you add here, the one behind the screen can see it too!"',
+    todoWidgetTitle: "TODO Widget",
+    todoWidgetTip: "Keep a small panel in the corner showing your nearest schedule and to-do",
     create: "New",
     titleSchedule: "Ring-a-ling Reminder",
     subtitleSchedule: "They'll remind you when the time comes~",
@@ -140,6 +141,19 @@ export default {
     titleDefault: "Ling's Reminder",
     subtitleDefault: "Leave the things you want her to remind you about here",
   },
+  todoWidget: {
+    pin: "Keep on top",
+    unpin: "Stop staying on top",
+    close: "Close",
+    overdue: "Overdue",
+    tomorrow: "Tomorrow",
+    dayUnit: "d",
+    tabSchedule: "Schedule",
+    tabTodo: "To-Do",
+    noDeadlineTodo: "No to-dos with a deadline",
+    emptySchedule: "No schedule yet",
+    emptyTodo: "No pending to-dos",
+  },
   toolCalls: {
     accessModeTitle: "Tool Access",
     accessModeHint:
@@ -150,6 +164,9 @@ export default {
       "Limits consecutive tool-execution rounds in one main-chat reply. One round can contain multiple tool calls.",
     maxToolRoundsUnit: "rounds",
     maxToolRoundsRange: "Range {min}–{max} · Default {default}",
+    toolRagTitle: "Search Tools on Demand",
+    toolRagHint:
+      "Sends only the common tools with each request; when the model needs one, it searches in a sentence first and then calls it, saving the context that every tool description would otherwise occupy. Turn off to send all authorized tools on every request.",
     accessModes: {
       manual: {
         label: "Ask Every Time",
@@ -329,6 +346,7 @@ export default {
     },
     tools: {
       web_search: "Web Search",
+      tool_search: "Search Tools",
       get_current_time: "Current Time",
       schedule_get_all: "View Schedule",
       schedule_add_todo: "Add To-do",
@@ -374,6 +392,11 @@ export default {
     priorityLabel: "Priority:",
     newGroup: "New Task Group",
     newTask: "New To-Do Task",
+    editTask: "Edit To-Do Task",
+    reminderOff: "No reminder",
+    reminderMinutes: "{count} min before",
+    reminderHours: "{count} h before",
+    reminderDays: "{count} d before",
   },
   schedulePage: {
     emptyGroups: "No schedule themes yet — click the top-right button to create one!",
@@ -390,6 +413,10 @@ export default {
     save: "Save",
     success: "Saved successfully",
     error: "Error: {message}",
+    todoReminderStyle: "To-Do reminder style",
+    todoReminderStyleRole: "Character speaks",
+    todoReminderStyleToast: "System notification",
+    growthRangeHint: "≈ interest grows {min} ~ {max} per cycle (derived from the interval above)",
   },
   calendarPage: {
     yearMonth: "{month}/{year}",

@@ -11,7 +11,7 @@ use sea_orm::DatabaseConnection;
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::AppHandle;
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::{Mutex, OwnedMutexGuard, RwLock};
 use tokio::task::JoinHandle;
 
 use crate::ChatComponents;
@@ -70,13 +70,14 @@ impl ProactiveSystem {
         generation_lock: Arc<Mutex<()>>,
     ) -> Self {
         let config = ProactiveConfig::load(&app);
-        let interest_manager = InterestManager::new(config.max_proactive_times);
+        let interest_manager =
+            InterestManager::new(config.max_proactive_times, config.expected_interval_minutes);
         let activity_monitor = UserActivityMonitor::new();
         let visual_monitor = VisualMonitor::new();
         let schedule_manager = ScheduleManager::new();
         let strategy_dispatcher = StrategyDispatcher::new(&app);
 
-        let system = Self {
+        Self {
             app,
             db,
             ai_service,
@@ -94,9 +95,7 @@ impl ProactiveSystem {
             is_running: false,
             can_deliver: false,
             pending_intents: Vec::new(),
-        };
-
-        system
+        }
     }
 
     /// 启动主动对话的后台轮询 Loop。
@@ -114,8 +113,10 @@ impl ProactiveSystem {
         let handle = tokio::spawn(async move {
             tracing::info!("[ProactiveSystem] Loop task started.");
 
-            // Loop runs every 30 seconds
-            let mut interval = tokio::time::interval(Duration::from_secs(30));
+            // 周期与兴趣增长的期望换算共用同一个常量，改这里两边一起变
+            let mut interval = tokio::time::interval(Duration::from_secs_f64(
+                interest_manager::LOOP_INTERVAL_SECS,
+            ));
             loop {
                 interval.tick().await;
 
@@ -131,13 +132,23 @@ impl ProactiveSystem {
                     (sys.config.enable_proactive_system, is_script_active)
                 };
 
-                if !enabled {
-                    // tracing::info!("[ProactiveSystem] Disabled via settings, skipping...");
+                if is_script_active {
+                    // tracing::info!("[ProactiveSystem] Script is currently running, bypassing proactive talk to avoid collision.");
                     continue;
                 }
 
-                if is_script_active {
-                    // tracing::info!("[ProactiveSystem] Script is currently running, bypassing proactive talk to avoid collision.");
+                // 到点提醒（日程闹钟 / 待办截止）有意跑在总开关判断之前：
+                // 用户关掉主动对话后，依然应当收到自己设过的提醒。
+                match Self::run_reminder_check(sys_clone.clone()).await {
+                    Ok(true) => continue,
+                    Ok(false) => {},
+                    Err(e) => {
+                        tracing::error!("[ProactiveSystem] Error running reminder check: {:?}", e)
+                    },
+                }
+
+                if !enabled {
+                    // tracing::info!("[ProactiveSystem] Disabled via settings, skipping...");
                     continue;
                 }
 
@@ -165,8 +176,10 @@ impl ProactiveSystem {
     pub async fn reload(&mut self) {
         self.config = ProactiveConfig::load(&self.app);
         self.strategy_dispatcher.update_config(&self.app);
-        self.interest_manager
-            .update_from_config(self.config.max_proactive_times);
+        self.interest_manager.update_from_config(
+            self.config.max_proactive_times,
+            self.config.expected_interval_minutes,
+        );
         self.load_schedule_settings().await;
     }
 
@@ -227,17 +240,53 @@ impl ProactiveSystem {
     // ============================================================
 
     /// 统一的主动对话投放入口。持有锁不放，直到 LLM 流式生成完毕。
-    /// 已侵入 game_status 的副作用（add_line），调用者需确保：
-    /// - generation_lock 未被持有
-    /// - prompt 已完整生成（含截图分析结果）
+    /// 调用者需确保 prompt 已完整生成（含截图分析结果）。
     async fn deliver(
         &mut self,
         prompt: String,
         transient_image: Option<String>,
     ) -> anyhow::Result<()> {
-        tracing::info!("[ProactiveSystem] Delivering proactive dialogue...");
+        // 先克隆 Arc 再上锁：guard 因此不借用 self，后面才能把 &mut self 交给 prepare
+        let lock = self.generation_lock.clone();
+        let _lock = lock.lock().await;
+        let generator = self.prepare_delivery(Some(prompt), transient_image).await?;
+        let _ = generator.process_message(None).await;
+        Ok(())
+    }
 
-        let _lock = self.generation_lock.lock().await;
+    /// 外部（插件）请求一次主动对话：判定通过就排进后台，本调用立刻返回。
+    pub async fn request_deliver(
+        system: Arc<Mutex<Self>>,
+        raw: String,
+    ) -> Result<(), &'static str> {
+        // 先做不受生成锁影响的那几道判定：这些原因当场就能回给插件，不必等。
+        {
+            let Ok(this) = system.try_lock() else {
+                return Err("system_busy");
+            };
+            if !this.config.enable_proactive_system {
+                return Err("proactive_disabled");
+            }
+            let perception = this.activity_monitor.get_user_status();
+            if !DeliveryEvaluator::can_deliver(IntentType::Topic, &perception, this.can_deliver) {
+                return Err("not_deliverable");
+            }
+        }
+        tauri::async_runtime::spawn(async move {
+            if let Err(reason) = deliver_when_idle(system, raw).await {
+                tracing::info!("[ProactiveSystem] 插件请求的主动对话最终没能投放：{reason}");
+            }
+        });
+        Ok(())
+    }
+
+    /// 投放的前半段：点亮思考指示、取好依赖、把提示行写进台词表。
+    async fn prepare_delivery(
+        &mut self,
+        prompt: Option<String>,
+        transient_image: Option<String>,
+    ) -> anyhow::Result<MessageGenerator> {
+        tracing::info!("[ProactiveSystem] Delivering proactive dialogue...");
         events::emit_thinking(&self.app, true);
 
         let generator = {
@@ -254,9 +303,13 @@ impl ProactiveSystem {
                 game_status,
                 processor: self.chat.processor.clone(),
                 translator: self.chat.translator.clone(),
-                llm: crate::ai_service::llm::slot_snapshot(&self.chat.llm)
-                    .await
-                    .ok_or_else(|| anyhow::anyhow!("LLM is not configured"))?,
+                llm: match crate::ai_service::llm::slot_snapshot(&self.chat.llm).await {
+                    Some(llm) => llm,
+                    None => {
+                        events::emit_thinking(&self.app, false);
+                        anyhow::bail!("LLM is not configured");
+                    },
+                },
                 tool_registry: self.tool_registry.clone(),
                 concurrency: 1,
                 god_agent: None,
@@ -270,24 +323,28 @@ impl ProactiveSystem {
             MessageGenerator::new(deps)
         };
 
-        {
+        if let Some(prompt) = prompt {
             let svc = self.ai_service.lock().await;
             let mut gs = svc.game_status.lock().await;
-            gs.add_line(
-                &self.db,
-                LineBase {
-                    attribute: LineAttributeExt(LineAttribute::User),
-                    content: prompt,
-                    sender_role_id: None,
-                    display_name: None,
-                    ..Default::default()
-                },
-            )
-            .await?;
+            let written = gs
+                .add_line(
+                    &self.db,
+                    LineBase {
+                        attribute: LineAttributeExt(LineAttribute::User),
+                        content: prompt,
+                        sender_role_id: None,
+                        display_name: Some(PromptRole::System.display_name().to_string()),
+                        ..Default::default()
+                    },
+                )
+                .await;
+            if let Err(e) = written {
+                events::emit_thinking(&self.app, false);
+                return Err(e);
+            }
         }
 
-        let _ = generator.process_message(None).await;
-        Ok(())
+        Ok(generator)
     }
 
     /// 遍历暂存队列，尝试投放一个合适的意图。
@@ -352,6 +409,75 @@ impl ProactiveSystem {
     }
 
     // ============================================================
+    // run_reminder_check（到点提醒，独立于主动对话总开关）
+    // ============================================================
+
+    /// 检查日程闹钟与待办截止提醒，命中即立即投放。
+    ///
+    /// 与 run_cycle 分开的原因：它有意绕开主动对话总开关，也绕开 `can_deliver`
+    /// 投放闸门——到点提醒晚到就失去意义，进「小本本」暂存（Alarm TTL 30 分钟）
+    /// 等于没提醒。剧本进行中由调用方负责跳过。
+    ///
+    /// 返回 true 表示本轮已投放，调用方应跳过 run_cycle，避免同一轮再闲聊一句。
+    async fn run_reminder_check(system_arc: Arc<Mutex<Self>>) -> anyhow::Result<bool> {
+        let mut sys = system_arc.lock().await;
+
+        let settings_snap = {
+            let snap = sys.settings.read().await;
+            snap.clone()
+        };
+
+        let (user_name, role_name) = {
+            let svc = sys.ai_service.lock().await;
+            let gs = svc.game_status.lock().await;
+            let role_name = gs
+                .current_role_id
+                .and_then(|rid| gs.role_manager.get_loaded(rid))
+                .and_then(|role| role.display_name.clone());
+            (gs.player.user_name.clone(), role_name)
+        };
+
+        // ─── 日程闹钟 ───
+        if sys.config.enable_schedule_reminder
+            && (sys.config.enable_proactive_system || sys.config.force_schedule_reminder)
+        {
+            if let Some(raw_prompt) = sys
+                .schedule_manager
+                .check_schedule_reminder(&user_name, &settings_snap)
+            {
+                tracing::info!("[ProactiveSystem] Schedule alarm delivering immediately");
+                let formatted = PromptRole::System.build_prompt(&raw_prompt);
+                sys.deliver(formatted, None).await?;
+                return Ok(true);
+            }
+        }
+
+        // ─── 待办截止提醒 ───
+        if sys.config.enable_proactive_system || sys.config.force_todo_reminder {
+            if let Some(reminder) = sys.schedule_manager.check_todo_reminder(&settings_snap) {
+                if sys.config.todo_reminder_style == "toast" {
+                    events::emit_proactive_remind(
+                        &sys.app,
+                        role_name.unwrap_or_else(|| "LingChat".to_string()),
+                        reminder.todo_text,
+                        reminder.minutes_before,
+                    );
+                } else {
+                    let raw_prompt = format!(
+                        "{{你想起来 {} 有件事快到期了：'{}'，还有 {} 分钟就到截止时间。提醒他一下吧？}}",
+                        user_name, reminder.todo_text, reminder.minutes_before
+                    );
+                    let formatted = PromptRole::System.build_prompt(&raw_prompt);
+                    sys.deliver(formatted, None).await?;
+                }
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
+    }
+
+    // ============================================================
     // run_cycle（核心流程）
     // ============================================================
 
@@ -380,45 +506,15 @@ impl ProactiveSystem {
             snap.clone()
         };
 
-        // ─── 2. 感知（提前到这里，供 Alarm 的 evaluate 使用）───
+        // ─── 2. 感知 ───
         let perception = sys.activity_monitor.get_user_status();
 
-        // ─── 3. 日程警报（跳过兴趣累积，但走 evaluate 闸门）───
-        if sys.config.enable_schedule_reminder {
-            let user_name = {
-                let svc = sys.ai_service.lock().await;
-                let gs = svc.game_status.lock().await;
-                gs.player.user_name.clone()
-            };
-            if let Some(raw_prompt) = sys
-                .schedule_manager
-                .check_schedule_reminder(&user_name, &settings_snap)
-            {
-                let formatted = PromptRole::System.build_prompt(&raw_prompt);
-                if DeliveryEvaluator::can_deliver(IntentType::Alarm, &perception, sys.can_deliver) {
-                    tracing::info!(
-                        "[ProactiveSystem] Alarm triggered, evaluate passed, delivering"
-                    );
-                    sys.deliver(formatted, None).await?;
-                } else {
-                    tracing::info!("[ProactiveSystem] Alarm triggered, evaluate failed, stashing");
-                    sys.pending_intents.push(PendingIntent {
-                        prompt: formatted,
-                        intent_type: IntentType::Alarm,
-                        transient_image: None,
-                        triggered_at: std::time::Instant::now(),
-                    });
-                }
-                return Ok(());
-            }
-        }
-
-        // ─── 4. 兴趣累积 ───
+        // ─── 3. 兴趣累积 ───
         sys.interest_manager.update_interest();
         sys.interest_manager
             .set_status_mod(perception.interest_modifier);
 
-        // ─── 5. 触发检查 ───
+        // ─── 4. 触发检查 ───
         if !sys.interest_manager.should_trigger_talk() {
             return Ok(());
         }
@@ -482,5 +578,79 @@ impl ProactiveSystem {
         }
 
         Ok(())
+    }
+}
+
+/// 已经写进台词表、只差跑生成的一次投放。
+///
+/// 生成锁随它一起移交（`_guard`），所以「谁在生成」这条不变量仍然成立：轮询那侧
+/// 动手前会 `try_lock`，拿不到就当这轮没轮上。
+struct PreparedDelivery {
+    _guard: OwnedMutexGuard<()>,
+    generator: MessageGenerator,
+}
+
+/// 插件请求的主动对话，在生成占用中时最多等这么久。
+///
+/// 等的是「这一轮回复说完」——动作收尾这类外部事件常常正好落在这段时间里。
+const PLUGIN_WAIT_FOR_GENERATION: Duration = Duration::from_secs(45);
+
+/// 等到生成空闲，再投放一次插件请求的主动对话。
+///
+/// 锁序与别处相反（先拿生成锁、再碰系统锁），所以系统锁只用 `try_lock`：拿不到就
+/// 当场放弃，否则会和「持系统锁等生成锁」的轮询线程对锁。投不投得成最后都只记日志，
+/// 调用方早已拿到「已受理」。
+async fn deliver_when_idle(
+    system: Arc<Mutex<ProactiveSystem>>,
+    raw: String,
+) -> Result<(), &'static str> {
+    let guard = {
+        let Ok(this) = system.try_lock() else {
+            return Err("system_busy");
+        };
+        let lock = this.generation_lock.clone();
+        drop(this);
+        match tokio::time::timeout(PLUGIN_WAIT_FOR_GENERATION, lock.lock_owned()).await {
+            Ok(guard) => guard,
+            Err(_) => return Err("generation_busy"),
+        }
+    };
+
+    let prepared = {
+        let Ok(mut this) = system.try_lock() else {
+            return Err("system_busy");
+        };
+        // 等待期间状态可能变了（用户关了主动对话、切到不方便被打断的状态），重判一次
+        if !this.config.enable_proactive_system {
+            return Err("proactive_disabled");
+        }
+        let perception = this.activity_monitor.get_user_status();
+        if !DeliveryEvaluator::can_deliver(IntentType::Topic, &perception, this.can_deliver) {
+            return Err("not_deliverable");
+        }
+        // 提示语由插件给（那是策略，改它不该重编宿主），信封由宿主包——
+        // 与 add_prompt_line 同一个原则：插件伪造不出旁白的形状。空提示语表示
+        // 只请宿主开一次口、不写提示行：要说的事插件已经自己记成旁白了。
+        let prompt = (!raw.is_empty()).then(|| PromptRole::System.build_prompt(&raw));
+        let generator = match this.prepare_delivery(prompt, None).await {
+            Ok(generator) => generator,
+            Err(e) => {
+                tracing::warn!("[ProactiveSystem] 插件请求的主动对话没能起头：{e}");
+                return Err("llm_unavailable");
+            },
+        };
+        PreparedDelivery {
+            _guard: guard,
+            generator,
+        }
+    };
+    prepared.run().await;
+    Ok(())
+}
+
+impl PreparedDelivery {
+    /// 把这一轮说完。调用方是后台任务，没人接错误，失败只记日志。
+    async fn run(self) {
+        let _ = self.generator.process_message(None).await;
     }
 }

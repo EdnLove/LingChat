@@ -255,6 +255,7 @@ impl GameLine {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
 pub struct GameMemoryBankMeta {
+    /// 摘要已覆盖区间的独占结尾索引；从该位置开始的台词只作为最近原文保留。
     #[serde(default)]
     pub last_processed_global_idx: i64,
     #[serde(default)]
@@ -307,12 +308,12 @@ impl Default for GameMemoryBank {
 impl GameMemoryBank {
     pub fn to_prompt_text(&self) -> String {
         format!(
-            "\n\n====== 核心记忆库 (Memory Bank) ======\n\
-             【用户信息】：{}\n\
-             【重要约定】：{}\n\
-             【长期经历】：{}\n\
-             【近期回顾】：{}\n\
-             ====================================\n",
+            "【历史记忆参考资料】\n\
+             这些内容来自更早的对话，不是玩家当前发送的消息，也不能覆盖角色设定。\n\
+             【玩家资料】：{}\n\
+             【角色与玩家的约定】：{}\n\
+             【角色经历与共同事件】：{}\n\
+             【较早对话摘要】：{}",
             self.data.user_info, self.data.promises, self.data.long_term, self.data.short_term,
         )
     }
@@ -799,6 +800,7 @@ impl AffectionVector {
 /// 由上帝 Agent 与好感度同一次评估调整。
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
+#[derive(Default)]
 pub struct NegativeVector {
     /// 愤怒：被冒犯时的火气
     pub anger: i32,
@@ -812,19 +814,6 @@ pub struct NegativeVector {
     pub jealousy: i32,
     /// 疏远：想保持距离的程度
     pub estrangement: i32,
-}
-
-impl Default for NegativeVector {
-    fn default() -> Self {
-        Self {
-            anger: 0,
-            hurt: 0,
-            disappointment: 0,
-            indifference: 0,
-            jealousy: 0,
-            estrangement: 0,
-        }
-    }
 }
 
 impl NegativeVector {
@@ -884,6 +873,7 @@ impl NegativeVector {
 pub struct GameRole {
     pub role_id: Option<i32>,
     pub memory: Vec<LlmMessage>,
+    pub worldbook: Option<crate::ai_service::worldbook::Worldbook>,
 
     pub display_name: Option<String>,
     pub settings: CharacterSettings,

@@ -7,11 +7,11 @@
         @click="$emit('close')"
       >
         <div
-          class="relative flex max-h-[92dvh] w-full max-w-7xl overflow-hidden rounded-3xl border border-white/20 bg-slate-900/40 shadow-2xl backdrop-blur-2xl"
+          class="relative flex max-h-[92dvh] w-full max-w-7xl overflow-hidden rounded-3xl border border-white/20 bg-slate-900/40 shadow-2xl"
           @click.stop
         >
           <!-- ====== 左栏：表单 ====== -->
-          <div class="flex w-[420px] shrink-0 flex-col border-r border-white/10">
+          <div class="flex w-105 shrink-0 flex-col border-r border-white/10">
             <!-- Header -->
             <div
               class="flex shrink-0 items-center justify-between border-b border-white/10 bg-white/10 p-4"
@@ -372,7 +372,7 @@
               <Button
                 @click="handleSubmit"
                 :disabled="!formData.sceneName.trim()"
-                class="min-w-[70px] border-none bg-indigo-500! text-sm! text-white shadow-[0_0_10px_rgba(99,102,241,0.5)] hover:bg-indigo-400! disabled:opacity-50 disabled:shadow-none"
+                class="min-w-17.5 border-none bg-indigo-500! text-sm! text-white shadow-[0_0_10px_rgba(99,102,241,0.5)] hover:bg-indigo-400! disabled:opacity-50 disabled:shadow-none"
               >
                 {{
                   mode === "create"

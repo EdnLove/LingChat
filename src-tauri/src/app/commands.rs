@@ -1,16 +1,4 @@
 //! 全部 Tauri 命令的注册表。
-//!
-//! 一个 Tauri 应用只能有**一处** `.invoke_handler()`——`generate_handler!` 返回的是
-//! 不可组合的匿名闭包，无法从多次宏调用拼出来。因此全部命令集中在此文件，
-//! 按领域用注释分组，保持"一处看全"。
-//!
-//! `generate_handler!` 内的路径在**调用点**展开，所以顶部这行 `use` 把
-//! `api::` / `ai_service::` 等拉到本模块作用域，使下面 234 行清单与原先在
-//! `lib.rs` 中逐字一致（无需改成 `ling_chat_main::api::…`）。
-//!
-//! 注意：`exit_app` 定义在本文件末尾而非 `api/`。这是对「command 放 api/」约定的
-//! 有意例外——它是进程生命周期命令，没有对应的 `config/` 业务逻辑，且与注册表
-//! 同文件时可保持清单里的裸 `exit_app` 条目不变。
 
 use ling_chat_main::{ai_service, api, cast, lan_sync, resource_sync, utils};
 use ling_chat_plugins as plugins;
@@ -25,6 +13,7 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
         plugins::commands::plugin_list,
         plugins::commands::plugin_set_enabled,
         plugins::commands::plugin_save_config,
+        plugins::commands::plugin_line_shown,
         plugins::commands::plugin_reload,
         plugins::commands::plugin_delete,
         plugins::commands::plugin_resources,
@@ -56,10 +45,21 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
         api::font::list_imported_fonts,
         api::font::delete_imported_font,
         api::character::get_character_list,
+        api::character_create::create_character,
         api::character::get_role_info,
         api::character::get_role_settings,
+        api::character::editor::begin_character_edit,
+        api::character::editor::discard_character_edit,
+        api::character::editor::commit_character_edit,
         api::character::get_character_file,
         api::character::get_avatar_file,
+        api::character::avatars::list_character_avatars,
+        api::character::avatars::write_character_avatar,
+        api::character::avatars::delete_character_avatar,
+        api::character::costumes::list_character_costumes,
+        api::character::costumes::manage_character_costume,
+        api::character::voice::read_character_reference_audio,
+        api::character::voice::preview_character_voice,
         api::character::select_clothes,
         api::character::update_role_settings,
         api::character::delete_character,
@@ -80,7 +80,12 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
         api::scene::update_scene,
         api::scene::delete_scene,
         api::scene::select_scene,
+        api::scene::select_background_effect,
         api::scene::set_scene_awareness,
+        api::scene::set_scene_location_type,
+        api::scene::get_weather_sync_config,
+        api::scene::set_weather_city,
+        api::scene::set_weather_auto_sync,
         api::scene::clear_empty_scenes,
         api::scene::move_scene_to_category,
         api::music::get_music_list,
@@ -114,6 +119,8 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
         api::affection::get_affection,
         api::chat::send_chat_message,
         api::chat::send_system_message,
+        api::chat::get_reply_length_mode,
+        api::chat::set_reply_length_mode,
         api::chat::rollback_conversation,
         api::chat::generate_line_voice,
         api::chat::feed_image,
@@ -133,6 +140,7 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
         api::script::list_scripts,
         api::script::list_standalone_scripts,
         api::script::start_script,
+        api::script::stop_script,
         api::script::script_submit_input,
         api::script::script_submit_choice,
         // ── 剧本编辑器 ──
@@ -152,6 +160,7 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
         api::script_editor::editor_upload_editor_bg,
         api::script_editor::editor_upload_editor_bg_data,
         api::script_editor::editor_create_character,
+        api::script_editor::editor_update_character,
         api::script_editor::editor_list_global_assets,
         api::script_editor::editor_list_asset_files,
         api::script_editor::editor_delete_asset,
@@ -173,7 +182,9 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
         api::script_editor::agent::editor_agent_delete_conversation,
         api::script_editor::agent::editor_agent_rename_conversation,
         api::script_editor::agent::editor_agent_get_messages,
+        api::script_editor::agent::editor_agent_resolve_script_key,
         api::script_editor::agent::editor_agent_clear_conversation,
+        api::script_editor::agent::editor_agent_list_artifacts,
         api::script_editor::agent::editor_agent_start_chat,
         api::script_editor::agent::editor_agent_stop_chat,
         api::script_editor::agent::editor_agent_rewind,
@@ -184,6 +195,7 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
         api::schedule::get_schedules,
         api::schedule::save_schedules,
         api::schedule::reload_proactive_system,
+        api::schedule::preview_proactive_interest_range,
         api::proactive_set_can_deliver,
         api::tool_settings::get_tool_settings,
         api::tool_settings::get_tool_runtime_info,

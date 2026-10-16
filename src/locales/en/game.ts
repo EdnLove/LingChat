@@ -11,6 +11,9 @@ export default {
     screenshotAsk: "Ask with Screenshot",
     screenshotRetake: "Click to retake the screenshot, right-click to cancel",
     closeDialog: "Close Chat",
+    quickSave: "Quick Save",
+    quickLoad: "Quick Load",
+    quickSaveNoSave: "No save in this session yet — create one on the save page first",
     moreActions: "More Actions",
     listening: "Listening...",
     inputPlaceholder: "Type your message here...",
@@ -55,7 +58,7 @@ export default {
     availableAmbient: "Available Ambient Sounds",
     spectrum: {
       title: "Audio Spectrum",
-      hint: "Samples the background music and ambient sounds in real time, shown at the bottom right",
+      hint: "Samples the background music and ambient sounds in real time, shown at the bottom right; in pet mode it rings the avatar",
       palette: "Palette",
       styleMirror: "Mirror",
       styleBars: "Bars",

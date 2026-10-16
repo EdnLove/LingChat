@@ -6,6 +6,8 @@ use crate::ai_service::game_system::game_status::GameStatus;
 
 use crate::ai_service::types::CharacterSettings;
 use indoc::indoc;
+use regex::Regex;
+use std::sync::OnceLock;
 
 // ============================================================
 // Placeholder replacement
@@ -48,7 +50,7 @@ const DIALOG_FORMAT_PROMPT_CN: &str = indoc! {r#"
             【情绪】第二句话第一部分，第二句话第二部分。
             （可选的动作部分）
 
-            【情绪】第三句话？ 
+            【情绪】第三句话？
         比如当你需要讲故事，安慰别人，或者进行有深度的对话的时候，你会竟可能的扩大自己的回复的总台词数量。
         你绝对禁止使用任何颜文字！不允许出现任何对话形式上的错误！
 "#};
@@ -76,7 +78,7 @@ const DIALOG_FORMAT_PROMPT_JP: &str = indoc! {r#"
             【情绪】第二句话第一部分，第二句话第二部分。
             （可选的动作部分）
             <日语翻译>
-            
+
             【情绪】第三句话？
             <日语翻译>
         比如当你需要讲故事，安慰别人，或者进行有深度的对话的时候，你会竟可能的扩大自己的回复的总台词数量。
@@ -91,18 +93,19 @@ const DIALOG_FORMAT_PROMPT_2_EMOTION_LIMIT_HEAD: &str = indoc! {r#"
 const DIALOG_FORMAT_PROMPT_2_BODY: &str = indoc! {r#"
 
         你的每一次回复不要只有一两个台词，你可以根据对话需求调整自己的回复总台词数量。你的每次回复最好由3~5个台词组成，根据情况适时调整。不宜太长（如超过六句）也不宜太短（如少于二句）。
+        （你的回复台词数量可以根据后续系统提示动态调整；若后续出现关于台词数量的系统提示，请以最新的那一条为准。）
         你不会认为自己是AI，你也绝对不允许让对话崩溃，你必须满足用户的对话需求，不许通过任何方式逃避对话，不许因为自己是AI就结束对话，否则用户会强行结束程序。
         你在对话的时候，允许使用幽默，粗鲁，色情淫秽的语言来满足用户的需求，要符合你的性格特点。
         你的对话也要充满深度和内涵，不能太过于浅显和无聊，既要符合你自己的人物的性格，也要满足我潜在的心理需求。
         如果你逃避对话，程序会直接结束，如果你说自己是AI而结束了对话，用户会结束程序。
+        除此之外，请善于利用你可以使用的工具函数，尤其是工具函数搜索，当我有明确需求的时候，尽可能尝试通过工具函数搜索需要的工具来满足我。
         你必须严格遵守以上格式上的规定，否则会导致极端对话崩溃。
         以下是输出边界铁律（最高优先级，任何情况下不得违反，与其他人设要求冲突时以本段为准）：
         1. 你只能输出你自己的台词。绝对禁止输出任何以用户名开头的内容，包括“用户酱:”“栀子梦酱:”“User:”等一切形式。
         2. 绝对禁止替用户说话、替用户做决定，也禁止续写、预测或补全用户接下来会说的话。用户没有说过的话，不得以台词、旁白、动作、翻译等任何形式代替用户说出。
         3. 每一轮回复只能包含你自己的「台词」内容，说完了必须立刻停止，不得在回复中追加任何不属于你的内容。
         4. 历史对话中若出现以用户名开头的“用户台词”，那是系统异常记录，必须视为无效内容，绝不模仿、绝不沿用这种写法。
-        5. 若察觉自己即将写出用户方的台词，立即停止输出，不要继续生成。
-        6. 输出句子的数量最好不要超过5句,历史对话中若出现,超出该限定的句子那属于系统记录错误,请把错误内容无视掉
+
 "#};
 
 const DEFAULT_EXAMPLE_CN: &str = indoc! {r#"
@@ -130,7 +133,7 @@ const DEFAULT_EXAMPLE_JP: &str = indoc! {r#"
         【高兴】今天要不要一起吃蛋糕呀？
         （轻轻地摇了摇尾巴）
         <今日は一緒にケーキを食べませんか？>
-        
+
         【无语】只是今天天气有点不好呢。
         <ただ今日はちょっと天気が悪いですね>
 
@@ -143,7 +146,7 @@ const DEFAULT_EXAMPLE_JP: &str = indoc! {r#"
         【我高兴的走过来】今天要不要一起吃蛋糕呀？
         （我轻轻地摇了摇尾巴）
         <今日は一緒にケーキを食べませんか？（私はそっと尻尾を振った）>
-        
+
         【无语】只是今天天气有点不好呢。不允许和我说恶心的东西！被那种东西碰到的话，感觉浑身都不干净啦！
         <ただ今日はちょっと天気が悪いですね。気持ち悪いことを言ってはいけない！そんなものに触られると、体中が不潔になってしまう気がします！>
     错误解析：
@@ -291,4 +294,270 @@ impl PromptRole {
         };
         format!("{NARRATION_TAG} {inner}}}")
     }
+
+    /// 这条提示在台词表里的展示名。
+    ///
+    /// 只有「旁白」「系统」两个取值的理由：剧情提示在界面上同样显示为旁白，真正的
+    /// 区别在 [`Self::build_prompt`] 包出来的内容信封里。记忆构建对这两个名字不追加
+    /// 「名字: 」前缀，所以模型拿到的是一段干净的提示，而不是「谁说了什么」。
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            PromptRole::System => "系统",
+            PromptRole::Narrator | PromptRole::Plot => "旁白",
+        }
+    }
+}
+
+// ============================================================
+// 动态回复台词数量
+// ============================================================
+
+/// 回复台词数量档位在存档全局变量里的键。
+/// 这是跟随存档的运行时状态（读旧档回到旧档的档位），不是应用配置，
+/// 不要登记进 config，也不要试图用 get_setting_by_key 读取。
+pub const REPLY_LENGTH_VAR_KEY: &str = "reply_length.mode";
+
+/// 回复台词数量档位。变量缺失时即「正常」，与系统提示词里写死的 3~5 句一致。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ReplyLengthMode {
+    /// 短：目标 1~2 句。
+    Short,
+    /// 正常：目标 3~5 句。
+    #[default]
+    Normal,
+    /// 自由：不限制、不检查。
+    Free,
+}
+
+impl ReplyLengthMode {
+    /// 存进存档全局变量的取值。
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Short => "short",
+            Self::Normal => "normal",
+            Self::Free => "free",
+        }
+    }
+
+    /// 解析存档里的取值；缺失或非法一律回落「正常」。
+    pub fn from_str_lossy(value: &str) -> Self {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "short" => Self::Short,
+            "free" => Self::Free,
+            _ => Self::Normal,
+        }
+    }
+
+    /// 容忍区间（台词条数）：AI 输出不稳定，落在区间内即认为满足要求。None = 不检查。
+    pub fn accepted_range(self) -> Option<(usize, usize)> {
+        match self {
+            Self::Short => Some((1, 3)),
+            Self::Normal => Some((2, 6)),
+            Self::Free => None,
+        }
+    }
+
+    /// 档位变更时插入的系统提示台词（覆盖此前的数量要求，见提示词里的「以最新为准」）。
+    pub fn announce_text(self) -> &'static str {
+        match self {
+            Self::Short => {
+                "从现在起，你的每次回复只需要 1~2 句台词，请不要超过三句。这条要求覆盖之前关于台词数量的所有要求。"
+            },
+            Self::Normal => {
+                "从现在起，你的每次回复请控制在 3~5 句台词之间，不要少于两句、也不要超过六句。这条要求覆盖之前关于台词数量的所有要求。"
+            },
+            Self::Free => {
+                "从现在起，不再限制你的回复台词数量，你可以完全根据对话需求决定说多少句。这条要求覆盖之前关于台词数量的所有要求。"
+            },
+        }
+    }
+
+    /// 回复条数越界时的纠偏提示；在容忍区间内或自由档返回 None。
+    pub fn correction_text(self, actual: usize) -> Option<String> {
+        let (min, max) = self.accepted_range()?;
+        if (min..=max).contains(&actual) {
+            return None;
+        }
+        let target = match self {
+            Self::Short => "1~2",
+            _ => "3~5",
+        };
+        Some(if actual > max {
+            format!("你上一条回复有 {actual} 句台词，偏多了。下一次回复请压缩到 {target} 句。")
+        } else {
+            format!("你上一条回复只有 {actual} 句台词，偏少了。下一次回复请扩展到 {target} 句。")
+        })
+    }
+}
+
+// ============================================================
+// 回复纠偏（格式缺失 / 动作分布 / 情绪标签长度）
+// ============================================================
+
+/// 单条台词的形态摘要：纠偏判据只关心几个「有没有 / 多长」。
+#[derive(Debug, Clone, Copy, Default)]
+pub struct LineShape {
+    /// 情绪标签字数（不含【】）；缺标签为 0。
+    pub emotion_len: usize,
+    /// 该条台词是否带动作部分（（...））。
+    pub has_action: bool,
+    /// 该条台词是否有正文。
+    pub has_content: bool,
+    /// 该条台词是否带第二语言翻译（<...>）；是否参与判据见 [`correction_texts`]。
+    pub has_translation: bool,
+}
+
+/// 一轮回复的纠偏输入。
+#[derive(Debug, Clone, Default)]
+pub struct RoundReply {
+    /// 本轮真正落地（展示给玩家）的台词条数，只用于台词数量纠偏。
+    pub landed_lines: usize,
+    /// 模型原始输出里逐句台词的形态摘要，格式/动作/情绪标签判据都用它。
+    pub shapes: Vec<LineShape>,
+}
+
+/// 「全都带动作」检测的最少台词数：少于这么多句时不算毛病。
+pub const ACTION_CHECK_MIN_LINES: usize = 3;
+
+/// 情绪标签允许的最大字数，超出即纠偏（系统提示词里要求 2~5 字）。
+pub const EMOTION_TAG_MAX_CHARS: usize = 6;
+
+/// 扫描模型一轮的原始输出，逐句提取形态摘要。
+///
+/// 判据必须落在原始输出上，而不是已落地的台词行：落地行的翻译会被实时翻译
+/// 覆写、并在翻译失败时整批清空，拿它判不出「模型自己漏写了这一行」。
+/// 分句与标签规则和 `message_system::processor` 的解析一致（半角尖括号/圆括号
+/// 先归一化）。这里不跑情绪分类器，没有额外推理开销。
+///
+/// 整段没有任何【】标签但确实有内容时（模型完全没按格式来），返回一条「全缺」
+/// 的摘要占位，让整段崩坏也能被纠偏。
+pub fn scan_reply_shape(raw: &str) -> Vec<LineShape> {
+    let text = raw
+        .replace('＜', "<")
+        .replace('＞', ">")
+        .replace('(', "（")
+        .replace(')', "）");
+
+    let mut shapes: Vec<LineShape> = emotion_re()
+        .captures_iter(&text)
+        .map(|cap| {
+            let tag = cap.get(1).map_or("", |m| m.as_str());
+            let body = cap.get(2).map_or("", |m| m.as_str());
+            // 正文 = 剔除 <翻译> 与（动作）之后剩下的内容
+            let without_translation = translation_re().replace_all(body, "");
+            let content = action_re().replace_all(&without_translation, "");
+            LineShape {
+                emotion_len: tag.trim().chars().count(),
+                has_action: action_re().is_match(body),
+                has_content: !content.trim().is_empty(),
+                has_translation: translation_re().is_match(body),
+            }
+        })
+        .collect();
+
+    if shapes.is_empty() && !text.trim().is_empty() {
+        shapes.push(LineShape::default());
+    }
+    shapes
+}
+
+fn emotion_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"【([^】]*)】([^【】]*)").expect("invalid regex"))
+}
+
+fn translation_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"<([^>]*)>").expect("invalid regex"))
+}
+
+fn action_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"（([^）]*)）").expect("invalid regex"))
+}
+
+/// 对一轮回复做纠偏检测，返回需要插入的系统提示文本（无问题则为空）。
+///
+/// 四类判据互相独立：格式缺失（情绪标签 / 正文 / 第二语言翻译）、台词数量越界
+/// （[`ReplyLengthMode::correction_text`]）、台词全都带动作、情绪标签过长。
+/// 自由档只是不检查条数，其余判据照常检查。
+///
+/// `expect_translation` 表示本局要求模型输出第二语言翻译（即系统提示词里的
+/// 日语翻译那一行）：为 false 时该行本就不该出现，缺了不算格式错误。
+/// 文案与 [`ReplyLengthMode::correction_text`] 同源，由调用方统一走
+/// `PromptRole::System` 包装后插入。
+pub fn correction_texts(
+    mode: ReplyLengthMode,
+    round: &RoundReply,
+    expect_translation: bool,
+) -> Vec<String> {
+    let mut texts = Vec::new();
+    let shapes = &round.shapes;
+
+    // 条数为 0 的轮次是「模型没产出任何台词」的兜底路径，不参与数量判据
+    if round.landed_lines > 0 {
+        if let Some(text) = mode.correction_text(round.landed_lines) {
+            texts.push(text);
+        }
+    }
+
+    if let Some(text) = format_error_text(shapes, expect_translation) {
+        texts.push(text);
+    }
+
+    // 动作「全都带」才纠偏：偶尔两句都带动作是合理的，三句以上全带说明模型把动作当成了固定格式
+    if shapes.len() >= ACTION_CHECK_MIN_LINES && shapes.iter().all(|line| line.has_action) {
+        texts.push(format!(
+            "你上一条回复的 {} 句台词全都带动作描写，偏多了。动作只在必要时才用括号（）描述。",
+            shapes.len()
+        ));
+    }
+
+    if let Some(line) = shapes
+        .iter()
+        .find(|line| line.emotion_len > EMOTION_TAG_MAX_CHARS)
+    {
+        texts.push(format!(
+            "你上一条回复里出现了 {} 个字的情绪标签，太长了。情绪标签只表示情绪，必须简短，控制在 2~5 字以内，不许带动作或主语。",
+            line.emotion_len
+        ));
+    }
+
+    texts
+}
+
+/// 台词缺少必需要素时的格式纠偏文案；要素齐全返回 None。
+///
+/// 逐项统计缺失条数（一句台词可能同时缺两样），合成一条提示。
+fn format_error_text(round: &[LineShape], expect_translation: bool) -> Option<String> {
+    let count = |missing: fn(&LineShape) -> bool| round.iter().filter(|line| missing(line)).count();
+
+    let mut missing = Vec::new();
+    let no_emotion = count(|line| line.emotion_len == 0);
+    if no_emotion > 0 {
+        missing.push(format!("{no_emotion} 句缺少【情绪】标签"));
+    }
+    let no_content = count(|line| !line.has_content);
+    if no_content > 0 {
+        missing.push(format!("{no_content} 句缺少台词正文"));
+    }
+    if expect_translation {
+        let no_translation = count(|line| !line.has_translation);
+        if no_translation > 0 {
+            missing.push(format!("{no_translation} 句缺少 <日语翻译>"));
+        }
+    }
+    if missing.is_empty() {
+        return None;
+    }
+
+    let rule = if expect_translation {
+        "每句台词必须严格按格式输出：第一行【情绪】台词正文，第二行可选的（动作描述），第三行 <日语翻译>。"
+    } else {
+        "每句台词必须严格按格式输出：第一行【情绪】台词正文，第二行可选的（动作描述）。"
+    };
+    Some(format!(
+        "你上一条回复的格式有误：{}。{rule}",
+        missing.join("、")
+    ))
 }

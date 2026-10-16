@@ -88,7 +88,7 @@
         max="3000"
         step="100"
         v-model.number="localSettings.vad_silence_ms"
-        class="shadow-glass focus:border-brand focus:ring-brand/20 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white backdrop-blur-xl backdrop-saturate-150 transition-all duration-200 focus:ring-2 focus:outline-none"
+        class="shadow-glass focus:border-brand focus:ring-brand/20 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white transition-all duration-200 focus:ring-2 focus:outline-none"
       />
       <p class="mt-1.5 block text-sm text-gray-300">{{ t("settings.asr.vadSilenceHint") }}</p>
     </section>
@@ -102,7 +102,7 @@
         max="2000"
         step="100"
         v-model.number="localSettings.energy_warmup_ms"
-        class="shadow-glass focus:border-brand focus:ring-brand/20 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white backdrop-blur-xl backdrop-saturate-150 transition-all duration-200 focus:ring-2 focus:outline-none"
+        class="shadow-glass focus:border-brand focus:ring-brand/20 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white transition-all duration-200 focus:ring-2 focus:outline-none"
       />
       <p class="mt-1.5 block text-sm text-gray-300">{{ t("settings.asr.energyWarmupHint") }}</p>
     </section>
@@ -158,7 +158,7 @@
       }}</label>
       <select
         v-model="activeServiceKey"
-        class="shadow-glass focus:border-brand focus:ring-brand/20 mb-4 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-sky-400 backdrop-blur-xl backdrop-saturate-150 transition-all duration-200 focus:ring-2 focus:outline-none"
+        class="shadow-glass focus:border-brand focus:ring-brand/20 mb-4 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-sky-400 transition-all duration-200 focus:ring-2 focus:outline-none"
       >
         <optgroup v-for="g in serviceGroups" :key="g.provider.id" :label="g.provider.display_name">
           <option v-for="item in g.items" :key="item.key" :value="item.key">
@@ -189,7 +189,7 @@
           <div v-if="field.key === 'model' && asrStore.models.length > 0" class="flex gap-2">
             <select
               v-model="providerCfgRecord[field.key]"
-              class="shadow-glass focus:border-brand focus:ring-brand/20 flex-1 rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-sky-400 backdrop-blur-xl backdrop-saturate-150 transition-all duration-200 focus:ring-2 focus:outline-none"
+              class="shadow-glass focus:border-brand focus:ring-brand/20 flex-1 rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-sky-400 transition-all duration-200 focus:ring-2 focus:outline-none"
             >
               <option v-for="m in asrStore.models" :key="m.id" :value="m.id">
                 {{ m.display_name }}
@@ -208,7 +208,7 @@
             v-else-if="field.kind === 'password'"
             type="password"
             v-model="providerCfgRecord[field.key]"
-            class="shadow-glass focus:border-brand focus:ring-brand/20 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white backdrop-blur-xl backdrop-saturate-150 transition-all duration-200 focus:ring-2 focus:outline-none"
+            class="shadow-glass focus:border-brand focus:ring-brand/20 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white transition-all duration-200 focus:ring-2 focus:outline-none"
           />
           <!-- 按地域分存的密码框（API Key）：只显示当前地域的那一个，
                值绑定到 provider_configs[id].api_keys[当前地域] -->
@@ -217,14 +217,14 @@
             type="password"
             v-model="activeApiKey"
             :placeholder="field.placeholder"
-            class="shadow-glass focus:border-brand focus:ring-brand/20 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white backdrop-blur-xl backdrop-saturate-150 transition-all duration-200 focus:ring-2 focus:outline-none"
+            class="shadow-glass focus:border-brand focus:ring-brand/20 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white transition-all duration-200 focus:ring-2 focus:outline-none"
           />
           <input
             v-else-if="field.kind === 'number'"
             type="number"
             v-model="providerCfgRecord[field.key]"
             :placeholder="field.placeholder"
-            class="shadow-glass focus:border-brand focus:ring-brand/20 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white backdrop-blur-xl backdrop-saturate-150 transition-all duration-200 focus:ring-2 focus:outline-none"
+            class="shadow-glass focus:border-brand focus:ring-brand/20 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white transition-all duration-200 focus:ring-2 focus:outline-none"
           />
           <label
             v-else-if="field.kind === 'boolean'"
@@ -240,7 +240,7 @@
           <select
             v-else-if="field.kind === 'select'"
             v-model="providerCfgRecord[field.key]"
-            class="shadow-glass focus:border-brand focus:ring-brand/20 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-sky-400 backdrop-blur-xl backdrop-saturate-150 transition-all duration-200 focus:ring-2 focus:outline-none"
+            class="shadow-glass focus:border-brand focus:ring-brand/20 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-sky-400 transition-all duration-200 focus:ring-2 focus:outline-none"
           >
             <option v-for="opt in field.options ?? []" :key="opt.value" :value="opt.value">
               {{ opt.label }}
@@ -251,7 +251,7 @@
             type="text"
             v-model="providerCfgRecord[field.key]"
             :placeholder="field.placeholder"
-            class="shadow-glass focus:border-brand focus:ring-brand/20 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white backdrop-blur-xl backdrop-saturate-150 transition-all duration-200 focus:ring-2 focus:outline-none"
+            class="shadow-glass focus:border-brand focus:ring-brand/20 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white transition-all duration-200 focus:ring-2 focus:outline-none"
           />
           <!-- 字段说明：后端每个 config_field 都带 hint，此前模板从未渲染（一直不可见）。
                地域、端点这类「不看说明一定填错」的字段依赖它 -->

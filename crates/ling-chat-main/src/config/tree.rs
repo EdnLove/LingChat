@@ -55,7 +55,7 @@ pub fn build_config_tree(app: &AppHandle) -> ConfigTree {
                             &app_defaults.llm_output_sec_lang.to_string(),
                         ),
                         description:
-                            "LLM_OUTPUT_SEC_LANG — 是否允许输出第二语言（关闭后仅输出中文）"
+                            "是否允许输出第二语言（关闭后仅输出中文）"
                                 .to_string(),
                         setting_type: "bool".to_string(),
                     },
@@ -66,7 +66,7 @@ pub fn build_config_tree(app: &AppHandle) -> ConfigTree {
                             keys::CONSUMERS,
                             &app_defaults.consumers.to_string(),
                         ),
-                        description: "COMSUMERS — 并发消费者数量（增大可加速流式输出，默认 3）"
+                        description: "并发消费者数量（增大可加速流式输出，默认 3）"
                             .to_string(),
                         setting_type: "text".to_string(),
                     },
@@ -90,7 +90,7 @@ pub fn build_config_tree(app: &AppHandle) -> ConfigTree {
                             &app_defaults.no_emotion_limit_prompt.to_string(),
                         ),
                         description:
-                            "NO_EMOTION_LIMIT_PROMPT — 解除 emotion 数量限制（可能增加 token 消耗）"
+                            "解除 emotion 数量限制（可能增加 token 消耗）"
                                 .to_string(),
                         setting_type: "bool".to_string(),
                     },
@@ -101,7 +101,7 @@ pub fn build_config_tree(app: &AppHandle) -> ConfigTree {
                             keys::LLM_AUTO_COMPRESS_IMAGE,
                             &app_defaults.auto_compress_image.to_string(),
                         ),
-                        description: "AUTO_COMPRESS_IMAGE — 图片超过端点大小限制（32 MiB / 单边 8192px）时自动压缩后再发送，作用于所有携带图片的 LLM 请求；关闭后不再做该检查，超限图片按原样直发、可能被服务端拒绝"
+                        description: "图片超过端点大小限制（32 MiB / 单边 8192px）时自动压缩后再发送，作用于所有携带图片的 LLM 请求；关闭后不再做该检查，超限图片按原样直发、可能被服务端拒绝"
                             .to_string(),
                         setting_type: "bool".to_string(),
                     },
@@ -132,8 +132,7 @@ pub fn build_config_tree(app: &AppHandle) -> ConfigTree {
                         keys::TRANSLATE_ENABLE,
                         &app_defaults.enable_translate.to_string(),
                     ),
-                    description: "ENABLE_TRANSLATE — 启用 AI 翻译（将中文对话翻译为第二语言）"
-                        .to_string(),
+                    description: "启用 AI 翻译（将中文对话翻译为第二语言）".to_string(),
                     setting_type: "bool".to_string(),
                 }],
             },
@@ -165,7 +164,7 @@ pub fn build_config_tree(app: &AppHandle) -> ConfigTree {
                             &app_defaults.enable_time_sense.to_string(),
                         ),
                         description:
-                            "USE_TIME_SENSE — 启用时间感知（根据上下文时间添加系统提醒）"
+                            "启用时间感知（根据上下文时间添加系统提醒）"
                                 .to_string(),
                         setting_type: "bool".to_string(),
                     },
@@ -176,7 +175,63 @@ pub fn build_config_tree(app: &AppHandle) -> ConfigTree {
                             keys::ENABLE_EMOTION_CLASSIFIER,
                             &app_defaults.enable_emotion_classifier.to_string(),
                         ),
-                        description: "ENABLE_EMOTION_CLASSIFIER — 启用情感分类器（ONNX 模型，用于自动标注对话 emotion）".to_string(),
+                        description: "启用情感分类器（ONNX 模型，用于自动标注对话 emotion）".to_string(),
+                        setting_type: "bool".to_string(),
+                    },
+                    ConfigSetting {
+                        key: keys::WEATHER_CITY.to_string(),
+                        value: read_setting(app, keys::WEATHER_CITY, &app_defaults.weather_city),
+                        description: "天气查询的手动城市（填写后 AI 即可感知该城市的实时天气并联动换装/场景/特效）".to_string(),
+                        setting_type: "text".to_string(),
+                    },
+                    ConfigSetting {
+                        key: keys::WEATHER_FIRST_TALK.to_string(),
+                        value: read_setting(
+                            app,
+                            keys::WEATHER_FIRST_TALK,
+                            &app_defaults.weather_first_talk.to_string(),
+                        ),
+                        description: "今日首次对话时注入一条天气提醒（默认关闭；关闭时天气完全由 AI 按需调用 query_weather 感知；剧本模式与编辑器试玩从不触发）".to_string(),
+                        setting_type: "bool".to_string(),
+                    },
+                    ConfigSetting {
+                        key: keys::WEATHER_AUTO_SYNC.to_string(),
+                        value: read_setting(
+                            app,
+                            keys::WEATHER_AUTO_SYNC,
+                            &app_defaults.weather_auto_sync.to_string(),
+                        ),
+                        description: "WEATHER_AUTO_SYNC — 自动同步现实天气到天气特效层（需配置 WEATHER_CITY；设置页手动或 AI 工具切换天气特效时自动关闭）".to_string(),
+                        setting_type: "bool".to_string(),
+                    },
+                    ConfigSetting {
+                        key: keys::AI_AUTO_CLOTHES.to_string(),
+                        value: read_setting(
+                            app,
+                            keys::AI_AUTO_CLOTHES,
+                            &app_defaults.ai_auto_clothes.to_string(),
+                        ),
+                        description: "允许 AI 自动换装（在角色卡手动选过服装后自动关闭；关闭后 AI 的换装请求一律不执行，恢复需重新打开此开关）".to_string(),
+                        setting_type: "bool".to_string(),
+                    },
+                    ConfigSetting {
+                        key: keys::AI_AUTO_SCENE.to_string(),
+                        value: read_setting(
+                            app,
+                            keys::AI_AUTO_SCENE,
+                            &app_defaults.ai_auto_scene.to_string(),
+                        ),
+                        description: "允许 AI 自动切换场景（在设置中手动选过场景后自动关闭；关闭后 AI 的切景请求一律不执行，恢复需重新打开此开关）".to_string(),
+                        setting_type: "bool".to_string(),
+                    },
+                    ConfigSetting {
+                        key: keys::AI_AUTO_EFFECT.to_string(),
+                        value: read_setting(
+                            app,
+                            keys::AI_AUTO_EFFECT,
+                            &app_defaults.ai_auto_effect.to_string(),
+                        ),
+                        description: "允许 AI 自动切换粒子特效（手动选过特效后自动关闭；关闭后 AI 的特效切换请求一律不执行，恢复需重新打开此开关）".to_string(),
                         setting_type: "bool".to_string(),
                     },
                 ],
@@ -196,7 +251,8 @@ pub fn build_config_tree(app: &AppHandle) -> ConfigTree {
                             keys::AUTO_SAVE_ENABLED,
                             &app_defaults.auto_save_enabled.to_string(),
                         ),
-                        description: "AUTO_SAVE_ENABLED — 是否启用自动存档（关闭后定时与退出存档均不再写入）".to_string(),
+                        description: "是否启用自动存档（关闭后定时与退出存档均不再写入）"
+                            .to_string(),
                         setting_type: "bool".to_string(),
                     },
                     ConfigSetting {
@@ -206,7 +262,8 @@ pub fn build_config_tree(app: &AppHandle) -> ConfigTree {
                             keys::AUTO_SAVE_INTERVAL_SECS,
                             &app_defaults.auto_save_interval_secs.to_string(),
                         ),
-                        description: "AUTO_SAVE_INTERVAL_SECS — 自动存档间隔（秒，30–3600，默认 300，改后即时生效）".to_string(),
+                        description: "自动存档间隔（秒，30–3600，默认 300，改后即时生效）"
+                            .to_string(),
                         setting_type: "number".to_string(),
                     },
                 ],
@@ -227,7 +284,7 @@ pub fn build_config_tree(app: &AppHandle) -> ConfigTree {
                             &app_defaults.use_persistent_memory.to_string(),
                         ),
                         description:
-                            "USE_PERSISTENT_MEMORY — 开启后记忆会自动压缩，减少 token 消耗"
+                            "开启后记忆会自动压缩，减少 token 消耗"
                                 .to_string(),
                         setting_type: "bool".to_string(),
                     },
@@ -238,7 +295,7 @@ pub fn build_config_tree(app: &AppHandle) -> ConfigTree {
                             keys::MEMORY_UPDATE_INTERVAL,
                             &app_defaults.memory_update_interval.to_string(),
                         ),
-                        description: "MEMORY_UPDATE_INTERVAL — 触发记忆摘要的可见台词数（1–10000，默认 250，重启生效）"
+                        description: "触发记忆摘要的可见台词数（1–10000，默认 250，重启生效）"
                             .to_string(),
                         setting_type: "text".to_string(),
                     },
@@ -249,7 +306,7 @@ pub fn build_config_tree(app: &AppHandle) -> ConfigTree {
                             keys::MEMORY_RECENT_WINDOW,
                             &app_defaults.memory_recent_window.to_string(),
                         ),
-                        description: "MEMORY_RECENT_WINDOW — 压缩后保留的该角色最近可见台词数（0–10000，默认 30，重启生效）"
+                        description: "压缩后保留的该角色最近可见台词数（0–10000，默认 30，重启生效）"
                             .to_string(),
                         setting_type: "text".to_string(),
                     },
@@ -260,7 +317,7 @@ pub fn build_config_tree(app: &AppHandle) -> ConfigTree {
                             keys::MEMORY_INJECT_CONTINUE_USER,
                             &app_defaults.memory_inject_continue_user.to_string(),
                         ),
-                        description: "MEMORY_INJECT_CONTINUE_USER — 上下文窗口内没有玩家（user）消息时（工具调用挤满窗口等情况），裁切到下一条 assistant 并在其前面注入一条 user「继续」，兼容要求首条消息为 user 的 provider（如 Gemini）；关闭则只裁切、不注入（重启生效）"
+                        description: "上下文窗口内没有玩家（user）消息时（工具调用挤满窗口等情况），裁切到下一条 assistant 并在其前面注入一条 user「继续」，兼容要求首条消息为 user 的 provider（如 Gemini）；关闭则只裁切、不注入（重启生效）"
                             .to_string(),
                         setting_type: "bool".to_string(),
                     },
@@ -272,7 +329,7 @@ pub fn build_config_tree(app: &AppHandle) -> ConfigTree {
                             &app_defaults.memory_short_term_max_chars.to_string(),
                         ),
                         description:
-                            "MEMORY_SHORT_TERM_MAX_CHARS — 近期回顾长度上限（字符数，默认 500，0 不截断）"
+                            "近期回顾语义压缩目标（字符数，默认 500，0 不限制；不会直接截断）"
                                 .to_string(),
                         setting_type: "text".to_string(),
                     },
@@ -284,7 +341,7 @@ pub fn build_config_tree(app: &AppHandle) -> ConfigTree {
                             &app_defaults.memory_long_term_max_chars.to_string(),
                         ),
                         description:
-                            "MEMORY_LONG_TERM_MAX_CHARS — 长期经历长度上限（字符数，默认 2000，0 不截断）"
+                            "长期经历语义压缩目标（字符数，默认 2000，0 不限制；不会直接截断）"
                                 .to_string(),
                         setting_type: "text".to_string(),
                     },
@@ -296,7 +353,7 @@ pub fn build_config_tree(app: &AppHandle) -> ConfigTree {
                             &app_defaults.memory_user_info_max_chars.to_string(),
                         ),
                         description:
-                            "MEMORY_USER_INFO_MAX_CHARS — taの信息长度上限（字符数，默认 800，0 不截断）"
+                            "玩家资料语义压缩目标（字符数，默认 800，0 不限制；不会直接截断）"
                                 .to_string(),
                         setting_type: "text".to_string(),
                     },
@@ -308,7 +365,7 @@ pub fn build_config_tree(app: &AppHandle) -> ConfigTree {
                             &app_defaults.memory_promises_max_chars.to_string(),
                         ),
                         description:
-                            "MEMORY_PROMISES_MAX_CHARS — 重要约定长度上限（字符数，默认 800，0 不截断）"
+                            "重要约定语义压缩目标（字符数，默认 800，0 不限制；不会直接截断）"
                                 .to_string(),
                         setting_type: "text".to_string(),
                     },
@@ -328,9 +385,7 @@ pub fn build_config_tree(app: &AppHandle) -> ConfigTree {
                         keys::DISABLE_SPLASH_ANIMATION,
                         &app_defaults.disable_splash_animation.to_string(),
                     ),
-                    description:
-                        "DISABLE_SPLASH_ANIMATION — 关闭首次启动的开屏动画（猫爪加载动画）"
-                            .to_string(),
+                    description: "关闭首次启动的开屏动画（猫爪加载动画）".to_string(),
                     setting_type: "bool".to_string(),
                 }],
             },
@@ -520,24 +575,21 @@ pub fn build_config_tree(app: &AppHandle) -> ConfigTree {
                     ConfigSetting {
                         key: keys::LOG_ENABLE.to_string(),
                         value: read_setting(app, keys::LOG_ENABLE, "true"),
-                        description:
-                            "LOG_ENABLE — 是否将运行日志写入文件（位于 data/log/app/ 目录）"
-                                .to_string(),
+                        description: "是否将运行日志写入文件（位于 data/log/app/ 目录）"
+                            .to_string(),
                         setting_type: "bool".to_string(),
                     },
                     ConfigSetting {
                         key: keys::LOG_RETENTION_DAYS.to_string(),
                         value: read_setting(app, keys::LOG_RETENTION_DAYS, "10"),
-                        description:
-                            "LOG_RETENTION_DAYS — 日志文件保留天数，超过的旧文件在启动时自动清理"
-                                .to_string(),
+                        description: "日志文件保留天数，超过的旧文件在启动时自动清理".to_string(),
                         setting_type: "text".to_string(),
                     },
                     ConfigSetting {
                         key: keys::LOG_LLM_REQUEST_BODY.to_string(),
                         value: read_setting(app, keys::LOG_LLM_REQUEST_BODY, "false"),
                         description:
-                            "LOG_LLM_REQUEST_BODY — 记录每次 LLM 请求的完整请求体 JSON 到 data/log/llm/ 目录（默认关闭）"
+                            "记录每次 LLM 请求的完整请求体 JSON 到 data/log/llm/ 目录（默认关闭）"
                                 .to_string(),
                         setting_type: "bool".to_string(),
                     },
@@ -545,7 +597,7 @@ pub fn build_config_tree(app: &AppHandle) -> ConfigTree {
                         key: keys::LOG_GENAI_DEBUG.to_string(),
                         value: read_setting(app, keys::LOG_GENAI_DEBUG, "false"),
                         description:
-                            "LOG_GENAI_DEBUG — 开启 genai SDK 的调试日志（含请求/响应细节，保存后即时生效，默认关闭）"
+                            "开启 genai SDK 的调试日志（含请求/响应细节，保存后即时生效，默认关闭）"
                                 .to_string(),
                         setting_type: "bool".to_string(),
                     },
@@ -578,7 +630,7 @@ pub fn build_config_tree(app: &AppHandle) -> ConfigTree {
                             keys::ENABLE_PROACTIVE_SYSTEM,
                             &proactive_defaults.enable_proactive_system.to_string(),
                         ),
-                        description: "ENABLE_PROACTIVE_SYSTEM — 是否启用主动对话系统".to_string(),
+                        description: "是否启用主动对话系统".to_string(),
                         setting_type: "bool".to_string(),
                     },
                     ConfigSetting {
@@ -588,9 +640,20 @@ pub fn build_config_tree(app: &AppHandle) -> ConfigTree {
                             keys::MAX_PROACTIVE_TIMES,
                             &proactive_defaults.max_proactive_times.to_string(),
                         ),
-                        description: "MAX_PROACTIVE_TIMES — 在用户响应之前，能主动对话的次数"
-                            .to_string(),
+                        description: "在用户响应之前，能主动对话的次数".to_string(),
                         setting_type: "text".to_string(),
+                    },
+                    ConfigSetting {
+                        key: keys::PROACTIVE_EXPECTED_INTERVAL_MINUTES.to_string(),
+                        value: read_setting(
+                            app,
+                            keys::PROACTIVE_EXPECTED_INTERVAL_MINUTES,
+                            &proactive_defaults.expected_interval_minutes.to_string(),
+                        ),
+                        description: "两次主动搭话之间的期望间隔（分钟，1–60）：数值越小越频繁，\
+                                      程序据此反推每轮兴趣值的增长随机范围"
+                            .to_string(),
+                        setting_type: "number".to_string(),
                     },
                 ],
             },
@@ -610,9 +673,7 @@ pub fn build_config_tree(app: &AppHandle) -> ConfigTree {
                             keys::ENABLE_VISUAL_PRECEPTION,
                             &proactive_defaults.enable_visual_perception.to_string(),
                         ),
-                        description:
-                            "ENABLE_VISUAL_PRECEPTION — 是否允许主动视觉感知桌面画面（偷看屏幕）"
-                                .to_string(),
+                        description: "是否允许主动视觉感知桌面画面（偷看屏幕）".to_string(),
                         setting_type: "bool".to_string(),
                     },
                     ConfigSetting {
@@ -622,9 +683,8 @@ pub fn build_config_tree(app: &AppHandle) -> ConfigTree {
                             keys::SCREEN_WEIGHT,
                             &proactive_defaults.screen_weight.to_string(),
                         ),
-                        description:
-                            "SCREEN_WEIGHT — 视觉模式触发权重（越大越容易偷看屏幕聊天，默认 30）"
-                                .to_string(),
+                        description: "视觉模式触发权重（越大越容易偷看屏幕聊天，默认 30）"
+                            .to_string(),
                         setting_type: "text".to_string(),
                     },
                 ],
@@ -644,7 +704,7 @@ pub fn build_config_tree(app: &AppHandle) -> ConfigTree {
                             keys::ENABLE_TOPIC_CREATER,
                             &proactive_defaults.enable_topic_creator.to_string(),
                         ),
-                        description: "ENABLE_TOPIC_CREATER — 允许自主寻找并开启新话题".to_string(),
+                        description: "允许自主寻找并开启新话题".to_string(),
                         setting_type: "bool".to_string(),
                     },
                     ConfigSetting {
@@ -654,7 +714,7 @@ pub fn build_config_tree(app: &AppHandle) -> ConfigTree {
                             keys::TOPIC_WEIGHT,
                             &proactive_defaults.topic_weight.to_string(),
                         ),
-                        description: "TOPIC_WEIGHT — 随机话题触发权重（默认 60）".to_string(),
+                        description: "随机话题触发权重（默认 60）".to_string(),
                         setting_type: "text".to_string(),
                     },
                     ConfigSetting {
@@ -664,9 +724,7 @@ pub fn build_config_tree(app: &AppHandle) -> ConfigTree {
                             keys::ENABLE_TODO_PRECEPTION,
                             &proactive_defaults.enable_todo_perception.to_string(),
                         ),
-                        description:
-                            "ENABLE_TODO_PRECEPTION — 允许在闲暇时自动读取未完成 TODO 并温和提醒"
-                                .to_string(),
+                        description: "允许在闲暇时自动读取未完成 TODO 并温和提醒".to_string(),
                         setting_type: "bool".to_string(),
                     },
                     ConfigSetting {
@@ -676,7 +734,7 @@ pub fn build_config_tree(app: &AppHandle) -> ConfigTree {
                             keys::TODO_WEIGHT,
                             &proactive_defaults.todo_weight.to_string(),
                         ),
-                        description: "TODO_WEIGHT — TODO 提醒触发权重（默认 10）".to_string(),
+                        description: "TODO 提醒触发权重（默认 10）".to_string(),
                         setting_type: "text".to_string(),
                     },
                     ConfigSetting {
@@ -686,8 +744,7 @@ pub fn build_config_tree(app: &AppHandle) -> ConfigTree {
                             keys::ENABLE_SCHEDULE_REMINDER,
                             &proactive_defaults.enable_schedule_reminder.to_string(),
                         ),
-                        description: "ENABLE_SCHEDULE_REMINDER — 启用强日程日程报时弹窗提醒"
-                            .to_string(),
+                        description: "启用强日程日程报时弹窗提醒".to_string(),
                         setting_type: "bool".to_string(),
                     },
                     ConfigSetting {
@@ -697,10 +754,39 @@ pub fn build_config_tree(app: &AppHandle) -> ConfigTree {
                             keys::ENABLE_IMPORTANT_DAY_REMINDER,
                             &proactive_defaults.enable_important_day_reminder.to_string(),
                         ),
-                        description:
-                            "ENABLE_IMPORTANT_DAY_REMINDER — 启用重要节日与特殊日子暖心提醒"
-                                .to_string(),
+                        description: "启用重要节日与特殊日子暖心提醒".to_string(),
                         setting_type: "bool".to_string(),
+                    },
+                    ConfigSetting {
+                        key: keys::FORCE_SCHEDULE_REMINDER.to_string(),
+                        value: read_setting(
+                            app,
+                            keys::FORCE_SCHEDULE_REMINDER,
+                            &proactive_defaults.force_schedule_reminder.to_string(),
+                        ),
+                        description: "日程到点时无视主动对话总开关，强制提醒".to_string(),
+                        setting_type: "bool".to_string(),
+                    },
+                    ConfigSetting {
+                        key: keys::FORCE_TODO_REMINDER.to_string(),
+                        value: read_setting(
+                            app,
+                            keys::FORCE_TODO_REMINDER,
+                            &proactive_defaults.force_todo_reminder.to_string(),
+                        ),
+                        description: "待办截止提醒无视主动对话总开关，强制提醒".to_string(),
+                        setting_type: "bool".to_string(),
+                    },
+                    ConfigSetting {
+                        key: keys::TODO_REMINDER_STYLE.to_string(),
+                        value: read_setting(
+                            app,
+                            keys::TODO_REMINDER_STYLE,
+                            &proactive_defaults.todo_reminder_style,
+                        ),
+                        description: "待办截止提醒的方式：role 角色提醒 / toast 弹窗消息提醒"
+                            .to_string(),
+                        setting_type: "text".to_string(),
                     },
                 ],
             },
@@ -726,7 +812,7 @@ pub fn build_config_tree(app: &AppHandle) -> ConfigTree {
                     key: keys::AFFECTION_ENABLED.to_string(),
                     value: read_setting(app, keys::AFFECTION_ENABLED, "true"),
                     description:
-                        "AFFECTION_ENABLED — 好感度系统总开关（关闭后上帝 Agent 立即停止评估情感、不写情感状态旁白，好感度面板隐藏）"
+                        "好感度系统总开关（关闭后上帝 Agent 立即停止评估情感、不写情感状态旁白，好感度面板隐藏）"
                             .to_string(),
                     setting_type: "bool".to_string(),
                 }],

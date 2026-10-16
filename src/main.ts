@@ -30,12 +30,14 @@ initializeEventProcessors();
 
 // 投屏窗口是独立 webview：不注册驱动事件队列的全局监听（ai:reply 等），
 // 台词由主窗口镜像（cast:mirror）驱动，只注册投屏需要的即时状态事件。
+// 气泡窗与 TODO 小组件同样不参与事件队列，各自只挂自己需要的事件。
 const windowKind = new URLSearchParams(window.location.search).get("window");
 const isCastWindow = windowKind === "cast";
 const isBubbleWindow = windowKind === "bubble";
+const isTodoWidgetWindow = windowKind === "todo_widget";
 if (isCastWindow) {
   initializeCastWindowListeners();
-} else if (!isBubbleWindow) {
+} else if (!isBubbleWindow && !isTodoWidgetWindow) {
   initializeTauriEventListeners();
 }
 
@@ -59,6 +61,11 @@ if (isCastWindow) {
 // 气泡窗口：桌宠模式下由宠物窗创建，只画气泡，不参与事件队列
 if (isBubbleWindow) {
   router.replace("/bubble");
+}
+
+// TODO 小组件：由主窗口创建，只画倒计时与清单，不参与事件队列
+if (isTodoWidgetWindow) {
+  router.replace("/todo-widget");
 }
 
 app.mount("#app");

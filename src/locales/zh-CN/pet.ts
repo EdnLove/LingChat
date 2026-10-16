@@ -84,5 +84,10 @@ export default {
     priority: "优先级 PRIORITY",
     newGroup: "新建任务组",
     newTask: "新建待办任务",
+    editTask: "编辑待办任务",
+    reminderOff: "不提醒",
+    reminderMinutes: "提前 {count} 分钟",
+    reminderHours: "提前 {count} 小时",
+    reminderDays: "提前 {count} 天",
   },
 };

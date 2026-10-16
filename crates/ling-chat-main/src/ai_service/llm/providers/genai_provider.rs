@@ -400,6 +400,9 @@ impl GenaiProvider {
             .map_err(|e| anyhow!("genai 流式请求失败: {e}"))?;
         let mut inner = stream_resp.stream;
 
+        // 流式已逐块发过思考时，End 里那份「完整思考」不能再发，否则拼接成 X+X。
+        let mut saw_reasoning_delta = false;
+
         let output = async_stream::try_stream! {
             while let Some(event) = inner.next().await {
                 match event.map_err(|e| anyhow!("genai 流式事件错误: {e}"))? {
@@ -408,13 +411,17 @@ impl GenaiProvider {
                         yield LlmChunk::Content(chunk.content);
                     }
                     ChatStreamEvent::ReasoningChunk(chunk) if !chunk.content.is_empty() => {
+                        saw_reasoning_delta = true;
                         yield LlmChunk::Reasoning(chunk.content);
                     }
                     ChatStreamEvent::Chunk(_) | ChatStreamEvent::ReasoningChunk(_) => {}
                     ChatStreamEvent::End(end) => {
-                        if let Some(reasoning) = end.captured_reasoning_content.clone() {
-                            if !reasoning.is_empty() {
-                                yield LlmChunk::Reasoning(reasoning);
+                        // 只给累计值、不给分片的提供商才补发
+                        if !saw_reasoning_delta {
+                            if let Some(reasoning) = end.captured_reasoning_content.clone() {
+                                if !reasoning.is_empty() {
+                                    yield LlmChunk::Reasoning(reasoning);
+                                }
                             }
                         }
                         // 先取走用量与停止原因（captured_into_tool_calls 会移动 end）
@@ -549,5 +556,61 @@ impl LlmProvider for GenaiProvider {
             tool_calls,
             usage,
         })
+    }
+}
+
+#[cfg(test)]
+mod worldbook_tests {
+    use super::*;
+    use crate::ai_service::worldbook::Worldbook;
+
+    #[test]
+    fn worldbook_dynamic_reference_stays_out_of_provider_system() {
+        let provider = GenaiProvider {
+            client: GenaiClient::builder().build(),
+            model: "test".into(),
+            provider: "openai".into(),
+            temperature: None,
+            top_p: None,
+            enable_thinking: false,
+            reasoning_effort: None,
+            is_minimax: false,
+        };
+        let book: Worldbook = serde_yaml::from_str(
+            "entries: [{id: core, activation: {type: always}, content: 常驻资料}, {id: family, activation: {type: keyword, keys: [家庭]}, content: 动态家庭资料}]",
+        )
+        .unwrap();
+        let memory = vec![
+            LlmMessage::system("角色设定"),
+            LlmMessage::user("历史问题"),
+            LlmMessage::assistant("历史回复"),
+            LlmMessage::user("当前问题"),
+        ];
+        let mut hit = memory.clone();
+        let mut miss = memory.clone();
+        book.inject(&mut hit, Some("家庭"));
+        book.inject(&mut miss, Some("你好"));
+        let hit = provider.build_chat_request(&hit, None).unwrap();
+        let miss = provider.build_chat_request(&miss, None).unwrap();
+        assert_eq!(hit.system, miss.system);
+        assert!(hit.system.as_deref().unwrap().contains("常驻资料"));
+        assert!(!hit.system.as_deref().unwrap().contains("动态家庭资料"));
+        assert_eq!(
+            serde_json::to_value(&hit.messages[..2]).unwrap(),
+            serde_json::to_value(&miss.messages[..2]).unwrap(),
+        );
+        assert!(
+            hit.messages
+                .last()
+                .unwrap()
+                .content
+                .first_text()
+                .unwrap()
+                .contains("动态家庭资料")
+        );
+        assert_eq!(
+            miss.messages.last().unwrap().content.first_text(),
+            Some("当前问题")
+        );
     }
 }

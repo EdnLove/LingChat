@@ -30,6 +30,21 @@ pub mod event_names {
     pub const AI_TOOL_CALL_PROGRESS_END: &str = "ai:tool_call_progress_end";
     /// 强制将前端状态重置为 `input`。
     pub const STATUS_RESET: &str = "status:reset";
+    /// 主动对话系统请求前端弹出系统通知（待办截止提醒的「弹窗消息提醒」方式）。
+    pub const PROACTIVE_REMIND: &str = "proactive:remind";
+}
+
+/// 待办截止提醒的系统通知载荷。
+/// 文案由前端按当前语言组装，这里只传结构化数据。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProactiveRemindResponse {
+    /// 通知标题，取当前角色显示名。
+    pub title: String,
+    /// 待办内容。
+    pub todo_text: String,
+    /// 提前分钟数。
+    pub minutes_before: i32,
 }
 
 // ============================================================

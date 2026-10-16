@@ -1,6 +1,7 @@
 pub mod affection;
 pub mod asr;
 pub mod config;
+pub mod embedding;
 pub mod emotion;
 pub mod game_system;
 pub mod god_agent;
@@ -14,3 +15,4 @@ pub mod tools;
 pub mod translator;
 pub mod tts;
 pub mod types;
+pub mod worldbook;

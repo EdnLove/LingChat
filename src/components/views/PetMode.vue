@@ -55,6 +55,7 @@ import {
   BUBBLE_WINDOW_H_BASE,
   CHAT_BASE_H,
   CHAT_BASE_PB,
+  PET_SPECTRUM_TOP_PAD_BASE,
   PET_WINDOW_H_BASE,
   WINDOW_WIDTH_BASE,
 } from "../pet/constants";
@@ -102,6 +103,8 @@ const appStyleVars = computed(() => ({
   "--app-height": px(PET_WINDOW_H_BASE),
   "--avatar-size": px(AVATAR_BAND_BASE),
   "--chat-h": px(CHAT_BASE_H),
+  // 顶部频谱留白：头像带整体下移，输入带仍贴窗口底边（box-sizing 为 border-box，不会撑高窗口）
+  paddingTop: px(PET_SPECTRUM_TOP_PAD_BASE),
 }));
 
 const PET_BUBBLE_SIDE_EVENT = "pet-bubble-side-changed";
@@ -169,7 +172,8 @@ const sideRooms = computed(() => {
   const bubbleW = WINDOW_WIDTH_BASE * scale.value;
   const bubbleH = BUBBLE_WINDOW_H_BASE * scale.value;
   return {
-    above: petTopCss.value - workTopCss.value - bubbleH - gap,
+    // 上置气泡贴在「头像顶边」上方，顶部留白要算进这段占用
+    above: petTopCss.value + AVATAR_INSET_Y_BASE * scale.value - workTopCss.value - bubbleH - gap,
     below: workBottomCss.value - (petTopCss.value + petHeightCss.value) - bubbleH - gap,
     left: petLeftCss.value - workLeftCss.value - bubbleW - gap,
     right: workRightCss.value - (petLeftCss.value + petWidthCss.value) - bubbleW - gap,
@@ -181,6 +185,8 @@ const ABOVE_MIN_ROOM_BASE = 88; // 上方至少留这么多才继续上置 ≈ �
 const CORNER_BAND_BASE = 32; // 头像离屏幕边多近才算「贴住这条边」
 const HYSTERESIS_BASE = 48; // 反向切换多让出这么多，避免停在边界上反复横跳
 const AVATAR_INSET_X_BASE = (WINDOW_WIDTH_BASE - AVATAR_BAND_BASE) / 2;
+// 头像带在窗口内的纵向偏移 = 顶部频谱留白（窗口顶边已不再是头像顶边）
+const AVATAR_INSET_Y_BASE = PET_SPECTRUM_TOP_PAD_BASE;
 
 // 默认始终上置；只有缩在屏幕角上才侧置，上方连单行台词都放不下才下置
 const bubbleSide = computed<BubbleSide>(() => {
@@ -199,8 +205,8 @@ const bubbleSide = computed<BubbleSide>(() => {
 
   const avatarLeft = petLeftCss.value + AVATAR_INSET_X_BASE * s;
   const avatarRight = petLeftCss.value + petWidthCss.value - AVATAR_INSET_X_BASE * s;
-  const avatarTop = petTopCss.value;
-  const avatarBottom = petTopCss.value + AVATAR_BAND_BASE * s;
+  const avatarTop = petTopCss.value + AVATAR_INSET_Y_BASE * s;
+  const avatarBottom = avatarTop + AVATAR_BAND_BASE * s;
   const band = (CORNER_BAND_BASE + (sidePlaced ? HYSTERESIS_BASE : 0)) * s;
   const atLeftEdge = avatarLeft - workLeftCss.value <= band;
   const atRightEdge = workRightCss.value - avatarRight <= band;
@@ -209,7 +215,7 @@ const bubbleSide = computed<BubbleSide>(() => {
 
   if ((atLeftEdge || atRightEdge) && (atTopEdge || atBottomEdge) && sideFits) return roomierSide;
 
-  const aboveRoom = petTopCss.value - workTopCss.value;
+  const aboveRoom = avatarTop - workTopCss.value;
   const aboveMinRoom = ABOVE_MIN_ROOM_BASE * s + (current === "above" ? 0 : hysteresis);
   if (aboveRoom < aboveMinRoom) {
     if (rooms.below >= 0) return "below";
@@ -242,7 +248,8 @@ const bubbleAlignInset = computed(() => {
   if (bubbleAlign.value === "bottom") {
     return Math.max(0, petTopCss.value + petHeightCss.value - workBottomCss.value);
   }
-  return Math.max(0, workTopCss.value - petTopCss.value);
+  // 左右置贴上边时气泡顶边对齐头像顶边，溢出量要从头像顶算起
+  return Math.max(0, workTopCss.value - (petTopCss.value + AVATAR_INSET_Y_BASE * scale.value));
 });
 
 const syncBubblePlacement = async () => {

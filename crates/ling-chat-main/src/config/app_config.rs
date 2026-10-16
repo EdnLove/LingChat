@@ -105,6 +105,23 @@ pub struct AppConfig {
     pub enable_time_sense: bool,
     #[serde(default = "default_enable_emotion_classifier")]
     pub enable_emotion_classifier: bool,
+    /// 天气工具的手动城市（最高优先级；空 = 未配置）
+    #[serde(default)]
+    pub weather_city: String,
+    /// 今日首次对话时是否注入天气提醒（剧本模式/编辑器试玩从不注入）。
+    /// 默认关闭：平时天气只由模型按需调用 query_weather 感知，不做任何主动注入。
+    #[serde(default)]
+    pub weather_first_talk: bool,
+    /// 自动同步现实天气到天气特效层（需配置 weather_city；手动或 AI 切换天气特效时自动关闭）。
+    #[serde(default)]
+    pub weather_auto_sync: bool,
+    // ---- AI 自动切换（手动优先锁；用户手动设置后翻 false，设置页可改回） ----
+    #[serde(default = "default_true")]
+    pub ai_auto_clothes: bool,
+    #[serde(default = "default_true")]
+    pub ai_auto_scene: bool,
+    #[serde(default = "default_true")]
+    pub ai_auto_effect: bool,
 
     // ---- 功能开关（记忆系统） ----
     #[serde(default = "default_true")]
@@ -117,7 +134,7 @@ pub struct AppConfig {
     /// 默认开启：genai 不做消息规范化，Gemini 等 provider 要求首条为 user。
     #[serde(default = "default_true")]
     pub memory_inject_continue_user: bool,
-    // 记忆段长度上限（字符数，0 = 不截断）：决定压缩喂给 LLM 的旧内容与运行时注入上下文的长度
+    // 记忆段语义压缩目标（字符数，0 = 不限制）：超出后交给 LLM 重新压缩，不做字符截断
     #[serde(default = "default_memory_short_term_max_chars")]
     pub memory_short_term_max_chars: u32,
     #[serde(default = "default_memory_long_term_max_chars")]
@@ -156,6 +173,12 @@ impl Default for AppConfig {
             enable_translate: default_enable_translate(),
             enable_time_sense: default_enable_time_sense(),
             enable_emotion_classifier: default_enable_emotion_classifier(),
+            weather_city: String::new(),
+            weather_first_talk: false,
+            weather_auto_sync: false,
+            ai_auto_clothes: true,
+            ai_auto_scene: true,
+            ai_auto_effect: true,
             use_persistent_memory: true,
             memory_update_interval: default_memory_update_interval(),
             memory_recent_window: default_memory_recent_window(),
@@ -258,6 +281,16 @@ impl AppConfig {
                 keys::ENABLE_EMOTION_CLASSIFIER,
                 default.enable_emotion_classifier,
             ),
+            weather_city: get_string(&store, keys::WEATHER_CITY).unwrap_or_default(),
+            weather_first_talk: get_bool(
+                &store,
+                keys::WEATHER_FIRST_TALK,
+                default.weather_first_talk,
+            ),
+            weather_auto_sync: get_bool(&store, keys::WEATHER_AUTO_SYNC, default.weather_auto_sync),
+            ai_auto_clothes: get_bool(&store, keys::AI_AUTO_CLOTHES, default.ai_auto_clothes),
+            ai_auto_scene: get_bool(&store, keys::AI_AUTO_SCENE, default.ai_auto_scene),
+            ai_auto_effect: get_bool(&store, keys::AI_AUTO_EFFECT, default.ai_auto_effect),
             use_persistent_memory: get_bool(
                 &store,
                 keys::USE_PERSISTENT_MEMORY,
@@ -325,5 +358,14 @@ impl AppConfig {
             ),
             tts: TtsConfig::from_store(Some(&store)),
         })
+    }
+
+    /// 手动优先落锁：用户手动设置了服装/场景/特效时，关闭对应的 AI 自动切换
+    /// 开关（写入 settings.json，设置页可见、可重新打开）。
+    pub fn lock_auto_switch(app: &AppHandle, key: &str) {
+        if let Ok(store) = app.store(super::STORE_FILE) {
+            store.set(key.to_string(), serde_json::Value::Bool(false));
+            let _ = store.save();
+        }
     }
 }

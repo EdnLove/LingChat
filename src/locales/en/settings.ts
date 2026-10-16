@@ -46,6 +46,10 @@ export default {
     },
   },
   adventure: {
+    lock: {
+      title: "Cannot Start Scenario",
+      running: "Another scenario is already running. Please finish it first.",
+    },
     standalone: {
       title: "Standalone Scenarios",
       empty: "No standalone scenarios yet",
@@ -127,12 +131,14 @@ export default {
       editTitleTip: "Double-click to edit the save title",
       untitled: "Untitled Save",
       noMessage: "No dialogue recorded yet",
+      current: "Current",
     },
     action: {
       reading: "Loading...",
       load: "Load Save",
       saving: "Saving...",
       overwrite: "Overwrite Save",
+      update: "Update Save",
       deleting: "Deleting...",
       delete: "Delete Save",
     },
@@ -155,6 +161,8 @@ export default {
         "Overwriting this save will discard its previous progress. Overwrite anyway?",
       overwriteSuccessTitle: "Saved",
       overwriteSuccessMsg: "Save overwritten",
+      updateSuccessTitle: "Updated",
+      updateSuccessMsg: "Save updated",
       overwriteFailTitle: "Save Failed",
       deleteConfirm: "Are you sure you want to delete this save? This cannot be undone.",
       deleteSuccessTitle: "Deleted",
@@ -230,30 +238,24 @@ export default {
     },
     fields: {
       llm: {
-        output_sec_lang:
-          "LLM_OUTPUT_SEC_LANG — Allow outputting a second language (when off, only Chinese is output)",
+        output_sec_lang: "Allow outputting a second language (when off, only Chinese is output)",
         consumers:
-          "COMSUMERS — Number of concurrent consumers (increase to speed up streaming output, default 3)",
+          "Number of concurrent consumers (increase to speed up streaming output, default 3)",
         timeout_secs:
           "LLM request idle timeout (seconds) — max wait for the first response and between adjacent stream events (10–3600)",
-        no_emotion_limit_prompt:
-          "NO_EMOTION_LIMIT_PROMPT — Lift the emotion count limit (may increase token usage)",
+        no_emotion_limit_prompt: "Lift the emotion count limit (may increase token usage)",
       },
       translate: {
-        enable:
-          "ENABLE_TRANSLATE — Enable AI translation (translates Chinese dialogue into the second language)",
+        enable: "Enable AI translation (translates Chinese dialogue into the second language)",
       },
       features: {
-        enable_time_sense:
-          "USE_TIME_SENSE — Enable time awareness (adds system reminders based on contextual time)",
+        enable_time_sense: "Enable time awareness (adds system reminders based on contextual time)",
         enable_emotion_classifier:
-          "ENABLE_EMOTION_CLASSIFIER — Enable the emotion classifier (ONNX model, auto-tags dialogue emotions)",
-        use_persistent_memory:
-          "USE_PERSISTENT_MEMORY — Auto-compress memory; restart after saving to apply",
-        memory_update_interval:
-          "MEMORY_UPDATE_INTERVAL — Visible lines that trigger a summary (1–10000; default 250)",
+          "Enable the emotion classifier (ONNX model, auto-tags dialogue emotions)",
+        use_persistent_memory: "Auto-compress memory; restart after saving to apply",
+        memory_update_interval: "Visible lines that trigger a summary (1–10000; default 250)",
         memory_recent_window:
-          "MEMORY_RECENT_WINDOW — Recent role-visible lines kept after compression (0–10000; default 30)",
+          "Recent role-visible lines kept after compression (0–10000; default 30)",
       },
       tts: {
         simple_vits_api_url: "Simple-Vits-API address (VITS adapter)",
@@ -277,33 +279,29 @@ export default {
           "Paste your GitHub Token (no permissions needed; only used to call the GraphQL API). Leave empty to use the REST API, which cannot fetch exact upvote counts (👍 reaction count will be used instead). Create a token at: https://github.com/settings/tokens",
       },
       log: {
-        enable:
-          "LOG_ENABLE — Whether to write runtime logs to files (in the data/log/app/ directory)",
+        enable: "Whether to write runtime logs to files (in the data/log/app/ directory)",
         retention_days:
-          "LOG_RETENTION_DAYS — Days to keep log files; older files are cleaned up automatically at startup",
+          "Days to keep log files; older files are cleaned up automatically at startup",
         llm_request_body:
-          "LOG_LLM_REQUEST_BODY — Log the full request body JSON of every LLM request to the data/log/llm/ directory (off by default)",
+          "Log the full request body JSON of every LLM request to the data/log/llm/ directory (off by default)",
         genai_debug:
-          "LOG_GENAI_DEBUG — Enable genai SDK debug logs (request/response details; takes effect immediately on save, off by default)",
+          "Enable genai SDK debug logs (request/response details; takes effect immediately on save, off by default)",
       },
-      ENABLE_PROACTIVE_SYSTEM:
-        "ENABLE_PROACTIVE_SYSTEM — Whether to enable the proactive chat system",
-      MAX_PROACTIVE_TIMES:
-        "MAX_PROACTIVE_TIMES — How many times the AI can chat proactively before the user responds",
+      ENABLE_PROACTIVE_SYSTEM: "Whether to enable the proactive chat system",
+      MAX_PROACTIVE_TIMES: "How many times the AI can chat proactively before the user responds",
+      PROACTIVE_EXPECTED_INTERVAL_MINUTES:
+        "Expected interval between proactive chats in minutes, 1–60: smaller means more frequent. The per-cycle interest growth range is derived from it",
       ENABLE_VISUAL_PRECEPTION:
-        "ENABLE_VISUAL_PRECEPTION — Allow proactive visual perception of the desktop (peeking at your screen)",
+        "Allow proactive visual perception of the desktop (peeking at your screen)",
       SCREEN_WEIGHT:
-        "SCREEN_WEIGHT — Trigger weight for visual mode (higher = more likely to peek at your screen and chat, default 30)",
-      ENABLE_TOPIC_CREATER:
-        "ENABLE_TOPIC_CREATER — Allow proactively finding and starting new topics",
-      TOPIC_WEIGHT: "TOPIC_WEIGHT — Trigger weight for random topics (default 60)",
+        "Trigger weight for visual mode (higher = more likely to peek at your screen and chat, default 30)",
+      ENABLE_TOPIC_CREATER: "Allow proactively finding and starting new topics",
+      TOPIC_WEIGHT: "Trigger weight for random topics (default 60)",
       ENABLE_TODO_PRECEPTION:
-        "ENABLE_TODO_PRECEPTION — Allow auto-reading unfinished TODOs when idle and gently reminding you",
-      TODO_WEIGHT: "TODO_WEIGHT — Trigger weight for TODO reminders (default 10)",
-      ENABLE_SCHEDULE_REMINDER:
-        "ENABLE_SCHEDULE_REMINDER — Enable schedule reminders with popup time announcements",
-      ENABLE_IMPORTANT_DAY_REMINDER:
-        "ENABLE_IMPORTANT_DAY_REMINDER — Enable heartwarming reminders for holidays and special days",
+        "Allow auto-reading unfinished TODOs when idle and gently reminding you",
+      TODO_WEIGHT: "Trigger weight for TODO reminders (default 10)",
+      ENABLE_SCHEDULE_REMINDER: "Enable schedule reminders with popup time announcements",
+      ENABLE_IMPORTANT_DAY_REMINDER: "Enable heartwarming reminders for holidays and special days",
     },
   },
   workshop: {
@@ -385,6 +383,9 @@ export default {
       chatCount: "Chat {count} times",
       prereqAdventure: "Complete the prerequisite adventure",
       achievement: "Unlock a specific achievement",
+    },
+    lock: {
+      scriptRunning: "A scenario is currently running",
     },
   },
   characterInfo: {
@@ -730,6 +731,12 @@ export default {
       delete: "Delete",
       edit: "Edit Scene",
       noDescription: "No description (selecting it won't trigger narration)",
+      location: {
+        indoor: "Indoor",
+        outdoor: "Outdoor",
+        unknown: "Unknown",
+        editTitle: "Click to cycle indoor/outdoor tag",
+      },
       tip: "Tip",
       noDescriptionTip:
         'The scene "{name}" has no description; selecting it won\'t trigger scene narration',
@@ -799,6 +806,9 @@ export default {
       snow: "Snow",
       blizzard: "Blizzard",
       fog: "Fog",
+      city: "City",
+      cityPlaceholder: "e.g. Chengdu",
+      autoSync: "Real-weather Sync",
     },
     animation: {
       switchTitle: "Animation Switches",
@@ -868,10 +878,6 @@ export default {
     sample: {
       title: "Display Text Sample",
       demo: "Ling Chat: Testing text display speed",
-    },
-    inlineMotion: {
-      title: "Inline Action Text",
-      desc: "When on, action text displays together with the dialogue — no extra click needed",
     },
     mergeLine: {
       title: "Merge Line Threshold",

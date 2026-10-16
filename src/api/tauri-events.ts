@@ -6,6 +6,9 @@ import type { ScriptEventType } from "../types";
 import { useAdventureStore } from "../stores/modules/adventure";
 import { useUIStore } from "../stores/modules/ui/ui";
 import { useGameStore } from "../stores/modules/game";
+import { useSettingsStore } from "../stores/modules/settings";
+import { isWeatherEffect } from "@/components/game/standard/particles";
+import { setWeatherAutoSync } from "./services/scene";
 import { applyWebInitData } from "../stores/modules/game/actions";
 import { i18n } from "@/locales";
 import { useScriptEditorStore } from "../stores/modules/script-editor";
@@ -24,6 +27,7 @@ import type { VadEvent } from "../api/services/asr";
 import type { SceneInfo } from "./services/scene";
 import type { WebInitData } from "./services/game-info";
 import { getAffection, type AffectionChangedPayload } from "./services/affection";
+import { sendSystemNotification } from "@/composables/useSedentaryReminder";
 
 function asEvent(
   payload: unknown,
@@ -274,6 +278,30 @@ export function initializeTauriEventListeners() {
     }
   });
 
+  // 待办截止提醒的「弹窗消息提醒」方式：后端只给结构化数据，文案在此按当前语言组装
+  listen<{ title: string; todoText: string; minutesBefore: number }>(
+    "proactive:remind",
+    (event) => {
+      const { title, todoText, minutesBefore } = event.payload;
+      const body =
+        minutesBefore >= 1440
+          ? i18n.global.t("stores.proactiveReminder.daysLater", {
+              text: todoText,
+              count: Math.round(minutesBefore / 1440),
+            })
+          : minutesBefore >= 60
+            ? i18n.global.t("stores.proactiveReminder.hoursLater", {
+                text: todoText,
+                count: Math.round(minutesBefore / 60),
+              })
+            : i18n.global.t("stores.proactiveReminder.minutesLater", {
+                text: todoText,
+                count: minutesBefore,
+              });
+      void sendSystemNotification(title, body);
+    },
+  );
+
   // === ASR events ===
   // 注意：useAsrStore() 必须在回调内调用 —— initializeTauriEventListeners
   // 在 app.use(pinia) 之前被 main.ts 调用，顶层调用 store 会抛
@@ -470,6 +498,46 @@ export function initializeTauriEventListeners() {
 
   // === LLM 工具事件（场景 / 换装） ===
 
+  // ambient:effect 按来源落层：
+  //   layer=weather —— 天气自动同步，只写天气层
+  //   source=manual —— 设置页/桌宠手动选择，只写对应层
+  //   其余为 AI 工具调用，只写对应层；动了天气层时关闭天气自动同步
+  listen("ambient:effect", (event) => {
+    const payload = event.payload as {
+      type: string;
+      effect: string;
+      duration?: number;
+      layer?: string;
+      source?: string;
+    };
+    console.log("[Tauri] 收到 ambient:effect", payload);
+    const settings = useSettingsStore();
+    if (payload.source === "manual") {
+      if (isWeatherEffect(payload.effect)) {
+        settings.setWeatherEffect(payload.effect);
+      } else {
+        settings.setBackgroundEffect(payload.effect);
+      }
+      return;
+    }
+    if (payload.layer === "weather") {
+      settings.setWeatherEffect(payload.effect);
+      return;
+    }
+    // AI 动了天气层 → 天气同步自动关闭；none 清除两层
+    if (isWeatherEffect(payload.effect) || payload.effect === "None") {
+      setWeatherAutoSync(false).catch((e) => console.warn("setWeatherAutoSync 失败:", e));
+    }
+    if (isWeatherEffect(payload.effect)) {
+      settings.setWeatherEffect(payload.effect);
+    } else if (payload.effect === "None") {
+      settings.setBackgroundEffect("None");
+      settings.setWeatherEffect("None");
+    } else {
+      settings.setBackgroundEffect(payload.effect);
+    }
+  });
+
   listen("scene:switch", (event) => {
     const payload = event.payload as { type: string; scene: SceneInfo };
     console.log("[Tauri] 收到 scene:switch", payload);
@@ -498,6 +566,13 @@ export function initializeTauriEventListeners() {
     applyWebInitData(useGameStore().$state, event.payload as WebInitData);
     eventQueue.clear();
     eventQueue.resume();
+  });
+
+  // 插件请求切换「自动模式」（plugin_host.set_auto_mode）：插件接上外部程序后会把主界面
+  // 切进自动逐句推进——玩家在那边（游戏里、投屏端）腾不出手点对话框。该模式不落盘，
+  // 也不会因为插件断开而自动还原，插件要还原得自己再请求一次。
+  listen<{ enabled: boolean }>("plugin:auto-mode", (event) => {
+    useUIStore().autoMode = !!event.payload?.enabled;
   });
 
   console.log(

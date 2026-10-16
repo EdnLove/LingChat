@@ -2,7 +2,12 @@
   <div class="main-box">
     <!-- 主界面始终渲染，加载动画期间在后台初始化 -->
     <FreeModeTools />
-    <FullAccessWarning />
+    <div class="main-status-panel">
+      <div class="main-status-row">
+        <StatusInfoBar />
+      </div>
+      <FullAccessWarning />
+    </div>
     <GameBackground></GameBackground>
     <!-- <GameAvatar ref="gameAvatarRef" @audio-ended="handleAudioFinished" />  -->
     <GameRolesStage
@@ -51,6 +56,7 @@
 <script setup lang="ts">
 import { getEnvConfigByKey } from "@/api/services/config";
 import FreeModeTools from "@/components/tools/FreeModeTools.vue";
+import StatusInfoBar from "@/components/tools/StatusInfoBar.vue";
 import ToolActivityStatus from "@/components/tools/ToolActivityStatus.vue";
 import { eventQueue } from "@/core/events/event-queue";
 import { onMounted, ref } from "vue";
@@ -180,6 +186,28 @@ const {
   justify-content: flex-end;
   align-items: center;
   overflow: hidden;
+}
+
+.main-status-panel {
+  position: fixed;
+  top: calc(15px + var(--safe-area-inset-top));
+  left: 50%;
+  z-index: 1001;
+  display: flex;
+  width: min(44rem, calc(100vw - 2rem));
+  transform: translateX(-50%);
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.main-status-row {
+  display: flex;
+  /* 窄屏隐藏时间、天气时，仍为两侧导航按钮保留第一行。 */
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
 }
 
 #menu-panel {
