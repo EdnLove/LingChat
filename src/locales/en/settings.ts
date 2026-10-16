@@ -497,7 +497,8 @@ export default {
     },
     gsvEmo: {
       title: "GSV Emotion Reference Voice",
-      description: "When enabled, switches the reference audio & text in real time by emotion category (surprised / happy / fearful / sad / angry / neutral); when disabled, the gsv_voice_filename / gsv_voice_text above are used.",
+      description:
+        "When enabled, the reference audio and text switch by emotion category (surprised / happy / fearful / sad / angry / neutral). Only categories with both an audio path and text take effect; the rest keep using the gsv_voice_filename / gsv_voice_text above.",
       enable: "Enabled",
       disable: "Disabled",
       voiceFile: "Reference voice file",

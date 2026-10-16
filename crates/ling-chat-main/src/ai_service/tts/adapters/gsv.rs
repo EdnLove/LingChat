@@ -12,7 +12,8 @@ use tokio::time::{Duration, sleep};
 use crate::ai_service::tts::adapters::http_client;
 use crate::ai_service::tts::provider::TtsAdapter;
 
-/// GSV 六情绪参考语音的分类名（与立绘系统的情绪文件命名约定一致）。
+/// GSV 六情绪参考语音的分类名，同时是 `gsv_emo_texts` / `gsv_emo_voice_files`
+/// 的配置键。
 pub const GSV_EMO_CATEGORIES: [&str; 6] = ["吃惊", "开心", "恐惧", "难过", "生气", "中立"];
 
 /// 把情绪映射到六分类。映射已与 `utils/prompt.rs` 的提示词情绪清单对齐：
@@ -135,8 +136,8 @@ impl TtsAdapter for GsvAdapter {
         // GPT-SoVITS so Windows ROCm does not crash after the first segment.
         let _request_guard = self.request_lock.lock().await;
         self.ensure_model_loaded().await?;
-        // 六情绪开关开启时按当前片段情绪分类实时切换参考语音与文本（复用立绘
-        // 系统的分类思路）；该分类未配置完整时回退到默认 gsv_voice_* 配置。
+        // 开关开启时按当前片段的情绪分类切换参考语音与文本；该分类在配置里
+        // 没填全（不在 emo_prompts 表中）时回退默认 gsv_voice_* 配置。
         let category = gsv_emo_category(emo);
         let (ref_audio_path, prompt_text, prompt_lang) = self
             .emo_prompts

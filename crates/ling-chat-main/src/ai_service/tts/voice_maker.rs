@@ -17,7 +17,7 @@ use crate::ai_service::tts::adapters::aivis::AivisAdapter;
 use crate::ai_service::tts::adapters::bv2::Bv2Adapter;
 use crate::ai_service::tts::adapters::cosyvoice::CosyvoiceAdapter;
 use crate::ai_service::tts::adapters::fish_s2::FishS2Adapter;
-use crate::ai_service::tts::adapters::gsv::{GsvAdapter, GSV_EMO_CATEGORIES};
+use crate::ai_service::tts::adapters::gsv::{GSV_EMO_CATEGORIES, GsvAdapter};
 use crate::ai_service::tts::adapters::indextts::IndexTtsAdapter;
 use crate::ai_service::tts::adapters::opentts::OpenTtsAdapter;
 use crate::ai_service::tts::adapters::sbv2::Sbv2Adapter;
@@ -117,10 +117,7 @@ fn gsv_prompt_language(prompt_text: &str) -> &'static str {
 /// `set_tts_settings` 共用本函数，保证“判定可用”与“合成可用”的条件一致。
 /// 参考音频路径按上游约定**原样透传**，由 GPT-SoVITS 服务器按其自身
 /// 文件系统解析（可能是远程机器），不做本地目录拼接。
-fn resolve_gsv_category(
-    cfg: &VoiceModel,
-    cat: &str,
-) -> Option<(String, String, String)> {
+fn resolve_gsv_category(cfg: &VoiceModel, cat: &str) -> Option<(String, String, String)> {
     let text = cfg
         .gsv_emo_texts
         .as_ref()
@@ -225,16 +222,18 @@ impl VoiceMaker {
         let sbv2 = non_empty(&cfg.sbv2_speaker_id) && non_empty(&cfg.sbv2_name);
         let bv2 = non_empty(&cfg.bv2_speaker_id);
         let sbv2api = non_empty(&cfg.sbv2api_name) && non_empty(&cfg.sbv2api_speaker_id);
-        // 六情绪开关开启后，至少一个分类的参考文本与音频路径都非空才算可用，
-        // 与合成时构建 emo_prompts 的条件保持一致，避免“判定可用但合成报错”。
-        let gsv = if cfg.gsv_emo_enabled.unwrap_or(false) {
-            GSV_EMO_CATEGORIES
-                .iter()
-                .any(|cat| resolve_gsv_category(cfg, cat).is_some())
-        } else {
-            (non_empty(&cfg.gsv_voice_filename) && non_empty(&cfg.gsv_voice_text))
-                || (non_empty(&cfg.gsv_gpt_model_name) && non_empty(&cfg.gsv_sovits_model_name))
-        };
+        // 旧参考配置：单一参考语音/文本，或仅指定了模型权重
+        let gsv_legacy = (non_empty(&cfg.gsv_voice_filename) && non_empty(&cfg.gsv_voice_text))
+            || (non_empty(&cfg.gsv_gpt_model_name) && non_empty(&cfg.gsv_sovits_model_name));
+        // 六情绪开关开启后，至少一个分类的参考文本与音频路径都非空才额外算可用，
+        // 判定条件与合成时构建 emo_prompts 的一致，避免出现“判定可用但合成报错”。
+        // 未填全的分类在合成时回退 gsv_legacy，所以开关不能取消旧配置的可用性，
+        // 否则开关一开而分类还没填全，原本能出声的角色会连适配器都建不出来。
+        let gsv = gsv_legacy
+            || (cfg.gsv_emo_enabled.unwrap_or(false)
+                && GSV_EMO_CATEGORIES
+                    .iter()
+                    .any(|cat| resolve_gsv_category(cfg, cat).is_some()));
         let aivis = non_empty(&cfg.aivis_model_uuid);
         // OpenTTS 可用性：角色级 voice 优先，全局 TTS 配置兜底，任一非空即可用
         let opentts =
@@ -396,12 +395,12 @@ impl VoiceMaker {
                         match resolve_gsv_category(cfg, cat) {
                             Some((path, text, lang)) => {
                                 emo_prompts.insert(cat.to_string(), (path, text, lang));
-                            }
+                            },
                             None => {
                                 tracing::warn!(
                                     "GSV 六情绪分类 {cat} 缺少参考文本或音频路径，合成时将回退默认配置"
                                 );
-                            }
+                            },
                         }
                     }
                 }

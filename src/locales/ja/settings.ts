@@ -478,7 +478,8 @@ export default {
     },
     gsvEmo: {
       title: "GSV 感情参照音声",
-      description: "オンにすると感情分類（驚き/喜び/恐怖/悲しみ/怒り/中立）ごとに参照音声とテキストをリアルタイムで切り替えます。オフの場合は上の gsv_voice_filename / gsv_voice_text を使用します。",
+      description:
+        "オンにすると感情分類（驚き/喜び/恐怖/悲しみ/怒り/中立）ごとに参照音声とテキストを切り替えます。音声パスとテキストの両方を入力した分類のみ有効で、残りの分類は上の gsv_voice_filename / gsv_voice_text を使用します。",
       enable: "オン",
       disable: "オフ",
       voiceFile: "参照音声ファイル",

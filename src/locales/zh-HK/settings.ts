@@ -470,7 +470,8 @@ export default {
     },
     gsvEmo: {
       title: "GSV 情緒參考語音",
-      description: "開啟後按情緒分類（吃驚/開心/恐懼/難過/生氣/中立）即時切換參考語音與文本；關閉時使用上面的 gsv_voice_filename / gsv_voice_text。",
+      description:
+        "開啟後按情緒分類（吃驚/開心/恐懼/難過/生氣/中立）切換參考語音與文本。音頻路徑同文本都填咗嘅分類先會生效，未填全嘅分類照用上面嘅 gsv_voice_filename / gsv_voice_text。",
       enable: "已開啟",
       disable: "已關閉",
       voiceFile: "參考語音檔案",
