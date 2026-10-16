@@ -190,7 +190,7 @@ export function useRoleAvatar(options: UseRoleAvatarOptions): UseRoleAvatarApi {
 
   /**
    * 情绪气泡：先置 false → nextTick 置 true，重触发 CSS 过渡。
-   * 连续两次相同情绪时也要重播（两次的图片 URL 相同，光换样式不会重播）。
+   * 演出版号要求重播时，即使两次图片 URL 相同，也要重新触发过渡。
    */
   const showEmotionBubble = (image: string, className: string) => {
     currentBubbleImageUrl.value = image;
