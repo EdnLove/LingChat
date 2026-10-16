@@ -9,7 +9,7 @@ export interface ImageProfile {
 
 const profiles = new Map<string, ImageProfile>();
 
-/** Cache small alpha masks, not decoded full-size character images. */
+/** 只缓存缩小的透明度轮廓，避免长期保留完整立绘的解码数据。 */
 export function imageProfile(url: string, image: HTMLImageElement): ImageProfile | null {
   const cached = profiles.get(url);
   if (cached) {
@@ -39,11 +39,12 @@ export function imageProfile(url: string, image: HTMLImageElement): ImageProfile
     if (profiles.size > CACHE_LIMIT) profiles.delete(profiles.keys().next().value!);
     return profile;
   } catch {
-    // Cross-origin images without readable pixels still render via an instant swap.
+    // 跨域图片无法读取像素时仍可显示，换图时保守使用瞬切。
     return null;
   }
 }
 
+/** 不透明背景保留渐变；立绘取景或透明轮廓差异较大时瞬切，避免双姿势重叠。 */
 export function needsInstantSwap(before: ImageProfile | null, after: ImageProfile | null): boolean {
   if (!before || !after) return true;
   if (before.opaque && after.opaque) return false;
@@ -54,5 +55,6 @@ export function needsInstantSwap(before: ImageProfile | null, after: ImageProfil
     intersection += Math.min(before.alpha[i], after.alpha[i]);
     union += Math.max(before.alpha[i], after.alpha[i]);
   }
+  // 轮廓重合度低于 94% 视为不同姿势；全透明图片不参与除法。
   return union > 0 && intersection / union < 0.94;
 }

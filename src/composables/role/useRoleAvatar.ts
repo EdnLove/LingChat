@@ -235,8 +235,8 @@ export function useRoleAvatar(options: UseRoleAvatarOptions): UseRoleAvatarApi {
         config.animation !== "none" &&
         activeAnimationClass.value === config.animation
       ) {
-        // Restart a shared CSS motion before resolving the next portrait, so its
-        // first visible frame already has the new reaction. Keep the old image.
+        // 连续使用同一种 CSS 动作时，先保留旧立绘并完成动作重置，再解析下一姿势，
+        // 确保新立绘首次显示时已经带上本次动作。
         activeAnimationClass.value = "normal";
         await nextTick();
         await new Promise<void>((resolve) => {
