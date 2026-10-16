@@ -853,10 +853,6 @@ export default {
       title: "テキストサンプル",
       demo: "Ling Chat: テキスト表示速度のテスト",
     },
-    inlineMotion: {
-      title: "インライン動作テキスト",
-      desc: "有効にすると、動作テキストがセリフと同時に表示され、再クリックは不要です",
-    },
     mergeLine: {
       title: "セリフ結合閾値",
       unit: "文字（0=無効）",

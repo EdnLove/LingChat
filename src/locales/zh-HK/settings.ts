@@ -837,10 +837,6 @@ export default {
       title: "顯示文字樣本",
       demo: "Ling Chat: 測試文字顯示速度",
     },
-    inlineMotion: {
-      title: "內聯動作文字",
-      desc: "開咗之後動作文字會同台詞一齊顯示，唔使撳第二次",
-    },
     mergeLine: {
       title: "對白合併閾值",
       unit: "字（0=關閉）",

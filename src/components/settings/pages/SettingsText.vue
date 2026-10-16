@@ -70,16 +70,7 @@
         <Text :speed="textSpeedSample">{{ $t("settings.text.sample.demo") }}</Text>
       </MenuItem>
 
-      <MenuItem :title="$t('settings.text.inlineMotion.title')" size="small">
-        <template #header>
-          <AlignJustify :size="20" />
-        </template>
-        <Toggle :checked="settingsStore.text.inlineMotionText" @change="toggleInlineMotionText">
-          {{ $t("settings.text.inlineMotion.desc") }}
-        </Toggle>
-      </MenuItem>
-
-      <!-- 台词合并阈值：同角色连续短句自动合并续打（仅内联动作文本模式生效）；0=关闭 -->
+      <!-- 台词合并阈值：同角色连续短句自动合并续打；0=关闭 -->
       <MenuItem :title="$t('settings.text.mergeLine.title')" size="small">
         <template #header>
           <AlignJustify :size="20" />
@@ -1108,10 +1099,6 @@ const textSpeedChange = (data: number) => {
 
 const voiceSound = (data: boolean) => {
   settingsStore.update("audio.chatEffectSound", data);
-};
-
-const toggleInlineMotionText = (data: boolean) => {
-  settingsStore.update("text.inlineMotionText", data);
 };
 
 const toggleSedentaryReminder = (data: boolean) => {

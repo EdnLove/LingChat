@@ -869,10 +869,6 @@ export default {
       title: "Display Text Sample",
       demo: "Ling Chat: Testing text display speed",
     },
-    inlineMotion: {
-      title: "Inline Action Text",
-      desc: "When on, action text displays together with the dialogue — no extra click needed",
-    },
     mergeLine: {
       title: "Merge Line Threshold",
       unit: "chars (0=off)",

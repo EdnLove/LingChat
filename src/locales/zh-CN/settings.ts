@@ -1026,10 +1026,6 @@ export default {
       title: "显示文字样本",
       demo: "Ling Chat: 测试文本显示速度",
     },
-    inlineMotion: {
-      title: "内联动作文本",
-      desc: "开启后动作文本将与台词同时显示，无需二次点击",
-    },
     mergeLine: {
       title: "台词合并阈值",
       unit: "字（0=关闭）",

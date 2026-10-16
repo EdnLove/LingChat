@@ -21,7 +21,7 @@ export class EventQueue {
     }
 
     // 台词合并判定：新 reply 到达时，若当前展示的 i 句仍在展示、同角色、够短、
-    // 内联模式开启、且队列无挡路事件（i+1 就是下一条要处理的）→ 武装，
+    // 且队列无挡路事件（i+1 就是下一条要处理的）→ 武装，
     // 由 MainChat 在 i 展示完成时自动续打（merge 优先于 AUTO）、GameDialog 走追加路径。
     // 「i 仍在展示」的判据：
     //   - 非 AUTO：只看瞬时打字/音频状态（i 展示期间到达才合并）——保持原语义。
@@ -37,7 +37,6 @@ export class EventQueue {
         ? this.getState().isWaitingForUser
         : dialogueMerge.isTyping || dialogueMerge.isAudioPlaying;
       if (
-        settings.text.inlineMotionText &&
         settings.text.mergeLineThreshold > 0 &&
         stillShowing &&
         event.roleId === gameStore.currentInteractRoleId &&
