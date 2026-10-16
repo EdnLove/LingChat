@@ -157,6 +157,34 @@ def run(ctx):
 - 顶层定义（import、函数、常量）在**沙箱拦截之前**执行；`import os/subprocess/shutil/pathlib/ctypes/sysconfig` 会直接抛 `ImportError`，这些模块被置为不可用。
 - 每次执行都会**新建**解释器，脚本里的全局状态不跨调用保留。
 
+### 拆成多个文件
+
+脚本可以 `import` **同目录**里的其他 `.py` 文件，把大表格、措辞、工具分开写：
+
+```
+data/plugins/<id>/
+├── manifest.toml
+├── main.py      # 入口：manifest 里声明的那个脚本
+├── tables.py    # 被 main.py import 的兄弟模块
+└── describe.py
+```
+
+```python
+# main.py
+from tables import BLOCK_NAMES
+from describe import describe_block
+
+def run(ctx):
+    return {"ok": True, "text": describe_block(BLOCK_NAMES, ctx["args"]["id"])}
+```
+
+- 只认**顶层单段模块名**：`import tables`、`from tables import X` 可以；`import tables.sub`、相对导入、带 `__init__.py` 的包目录都不支持。
+- 只能 import **自己这个插件目录**里的文件；别的插件的文件不在搜索路径上，`..`、`/`、`\` 这类路径片段也不是模块名。
+- 兄弟模块之间可以互相 import，顺序由 Python 自己按需决定。
+- 读那份源码的是**宿主**（脚本仍然拿不到文件系统，见「沙箱与限制」），所以兄弟模块里也不能碰文件。
+- 每次调用仍然新建解释器：兄弟模块与入口脚本一起重新执行一遍，模块级状态同样不跨调用保留；插件目录里也不会生成 `__pycache__`。
+- 名字撞上宿主已提供的模块（`plugin_host`、`sys` 这类）时，以宿主的为准。
+
 ### ctx 注入的字段（工具）
 
 | 字段               | 类型     | 说明                                                                |
@@ -961,7 +989,7 @@ def run(ctx):
 
 - 禁用的顶层模块：`os`、`subprocess`、`shutil`、`pathlib`、`ctypes`、`sysconfig`
 - 环境变量只有 manifest `[[env]]` 白名单内的会注入 `ctx["env"]`
-- 脚本无法直接写文件系统、启动子进程、加载系统库；读也只有一个口子——`read_data_file`，且只能读 manifest `read` 声明过的 `data/` 子目录（未声明 = 一律拒绝，见「读游戏素材」一节）。
+- 脚本无法直接写文件系统、启动子进程、加载系统库；读也只有一个口子——`read_data_file`，且只能读 manifest `read` 声明过的 `data/` 子目录（未声明 = 一律拒绝，见「读游戏素材」一节）。唯一相关的能力是 `import` 同目录的兄弟模块（见「拆成多个文件」）：那份源码由宿主读进解释器，脚本自己依然碰不到文件。
 - 网络出站：`http_get` / `http_post` 可发往任意 URL；WebSocket client 连接受 manifest `ws_allow` 白名单约束（省略 `ws_allow` = 允许全网段），且脚本只能操作自己在 `[[ws]]` 里声明过的连接。
 - 每次调用新建解释器，无跨调用状态；超时（`timeout_ms`，上限 120000ms）后执行结果作废、本次调用终止。
 - **注意**：超时无法强制中断脚本所在的阻塞线程，死循环可能残留占用线程直至进程退出，插件作者（和你们的agent）应避免写死循环。
