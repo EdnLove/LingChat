@@ -12,7 +12,7 @@
       <div class="overflow-y-auto">
         <!-- 标题栏 -->
         <div class="mb-2 flex items-baseline">
-          <!-- 角色名称 + 副标题：两者一起切换，旧标题向上滑出、新标题从上方滑入 -->
+          <!-- 角色名称 + 副标题 -->
           <Transition name="title-slide">
             <div
               :key="titleSubtitleKey"
@@ -47,9 +47,9 @@
             </Transition>
           </div>
 
-          <!-- 操作按钮组配置 -->
+          <!-- 操作按钮组 -->
           <div class="ml-auto flex min-w-0 items-baseline">
-            <!-- 桌面端：直接显示所有操作按钮 -->
+            <!-- 桌面端 -->
             <template v-if="!isMobile">
               <!-- 操作按钮组 -->
               <div
@@ -77,7 +77,7 @@
                     @click="openHistory"
                   ></Button>
 
-                  <!-- 语音输入按钮（auto_listen 开启时变为关闭开关） -->
+                  <!-- 语音输入按钮 -->
                   <Button
                     type="nav"
                     :icon="micIconName"
@@ -207,15 +207,14 @@
           </div>
         </Transition>
 
-        <!-- 分割线：青蓝色发光线条，亮段从左向右流动（同源桌宠外框 sweep-glow-ring） -->
+        <!-- 分割线 -->
         <div class="dialog-divider-glow my-1.5"></div>
 
         <!-- 输入区 -->
         <div
           class="my-1.25 flex min-h-10 w-full resize-none flex-col border-none bg-transparent text-xl font-bold whitespace-pre-line text-white transition-all duration-300 outline-none"
         >
-          <!-- AI 回复显示区（仅回应状态可见；标准/内联模式共用，逐字符淡入+上浮）。
-               两子容器：台词区白字 + 动作区灰字，颜色由容器决定，字符只负责动画 span -->
+          <!-- AI 回复显示区（仅回应状态可见）：台词区白字 + 动作区灰字 -->
           <div
             v-show="currentStatus === 'responding'"
             ref="inlineDisplayRef"
@@ -224,9 +223,9 @@
             @keydown.enter.exact.prevent="sendOrContinue"
             @click="sendOrContinue"
           >
-            <!-- 台词区：白字（内联模式台词 / 标准模式正文） -->
+            <!-- 台词区：白字 -->
             <div ref="dialogueLineRef" class="whitespace-pre-line text-white"></div>
-            <!-- 动作区：灰字；标准模式两段式动作阶段为斜体小字 -->
+            <!-- 动作区：灰字 -->
             <div
               ref="motionLineRef"
               class="whitespace-pre-line text-[#9ca3af]"
@@ -234,7 +233,7 @@
             ></div>
           </div>
 
-          <!-- 输入框 textarea（非回应状态：思考/输入/展示阶段） -->
+          <!-- 输入框 textarea（非回应状态） -->
           <textarea
             v-show="currentStatus !== 'responding'"
             id="inputMessage"
@@ -244,11 +243,11 @@
             v-model="inputMessage"
             @keydown.enter.exact.prevent="sendOrContinue"
             @paste="onPasteImage"
-            :readonly="!isInputEnabled"
+            :readonly="!inputEnabled"
           ></textarea>
         </div>
       </div>
-      <!-- 发送按钮（内层右侧外部） -->
+      <!-- 发送按钮 -->
       <button
         id="sendButton"
         class="absolute right-0 bottom-0 translate-x-full cursor-pointer rounded-[5px] border-none bg-transparent px-2 py-2 font-[inherit] text-sm font-bold text-[#04bcff] transition-all duration-300 text-shadow-[inherit] hover:bg-transparent hover:text-[rgba(136,255,251,0.827)] disabled:cursor-not-allowed disabled:bg-[#333] disabled:opacity-70"
@@ -303,7 +302,6 @@ const { isHidden, hide, handleWheelHistory } = useDialogInteraction({
   },
 });
 
-// 移动端按钮折叠状态（但是基于长宽比判断）
 const isMobile = ref(uiStore.aspectRatio <= 1);
 const showMobileMenu = ref(false);
 // 同步给 ASR 模块：移动端菜单展开时禁用语音输入（§1.5）
@@ -317,15 +315,11 @@ const titleSubtitleKey = computed(
   () => `${uiStore.showCharacterTitle}|${uiStore.showCharacterSubtitle}`,
 );
 
-// 语音输入：useAsrInput 统一两种触发源（mic 按钮 / 自动监听），
-// 替换上游的 Web Speech API 实现（状态为模块级单例，GameRolesStage 等共享）
 const asrInput = useAsrInput();
 
 // 三层麦克风语义（功能开关 / 手动录音 / 总闸禁用）—— 与桌宠共用同一实现
 const { micEnabled, micTitle, micIconName, toggleRecording } = useMicControl();
 
-// 截图状态改用共享 composable（桌宠早已在用），不再各自维护一套 listen + refs。
-// 失败提示由调用方提供：桌宠侧静默，主界面弹 alert。
 const {
   hasScreenshot,
   screenshotBase64,
@@ -406,13 +400,10 @@ const currentDisplayedText = ref("");
 const dialogueLineRef = ref<HTMLDivElement | null>(null);
 const motionLineRef = ref<HTMLDivElement | null>(null);
 
-// 台词合并显示的分段模型（唯一事实来源）：台词/动作按序排列，颜色由容器 CSS 决定
-// （台词区白、动作区灰），普通台词自带换行不再干扰分色。
 type DisplaySegment = { kind: "dialogue" | "motion"; text: string };
 let segments: DisplaySegment[] = [];
 
 // 把一句台词构造成分段：内联模式台词+动作两段都进，标准模式只进台词段
-// （动作由两段式单独处理，见 continueDialog）。
 function buildSegments(line: string): DisplaySegment[] {
   const segs: DisplaySegment[] = [{ kind: "dialogue", text: line }];
   if (settingsStore.text.inlineMotionText && uiStore.showCharacterMotionText) {
@@ -421,8 +412,6 @@ function buildSegments(line: string): DisplaySegment[] {
   return segs;
 }
 
-// charReveal 只负责「打字内容」：内联模式=台词段（动作段由独立动作打字机负责）；
-// 标准模式=全部段（动作由 continueDialog Phase 2 走 charReveal 打字）。台词段间空格已在 append 时烙进段文本。
 function typedText(segs: DisplaySegment[] = segments): string {
   if (settingsStore.text.inlineMotionText) {
     return segs
@@ -433,11 +422,6 @@ function typedText(segs: DisplaySegment[] = segments): string {
   return segs.map((s) => s.text).join("");
 }
 
-// 动作区第二打字机（仅内联模式）：动作文本独立逐字打字，保留打字机效果。
-// 单独一个 TypeWriter + charReveal，不混进台词打字机流——replace 模式「旧动作被
-// 清掉」使文本非单调变化，单流 charReveal 的 prev 前缀去重无法处理。append 用
-// append() 接续（| 分隔），replace 用 stop + start 清空重打。
-// soundUrls=[] 避免动作打字重复播对话音效。
 const motionReveal = createCharRevealWriter({
   charHtml: charRevealCharHtml,
 });
@@ -461,10 +445,6 @@ function stopMotionTyping() {
   motionWriter?.clear();
 }
 
-// 链式合并：刚追加的这行（appendedLine，仅聊天文本）若仍够短、且队头下一条是
-// 同角色短句回复，就继续武装——使 MainChat 在这行展示完成后自动推进下一条也走
-// 追加路径。解决快速连发时 i+2/i+3 在 i+1 处理前就入队、被 addEvent 的队列守卫
-// 挡住、导致最多只融合两句的问题。
 function rearmNextMerge(appendedLine: string) {
   if (!settingsStore.text.inlineMotionText || settingsStore.text.mergeLineThreshold <= 0) {
     return;
@@ -489,8 +469,6 @@ function rearmNextMerge(appendedLine: string) {
   dialogueMerge.armedRoleId = next.roleId;
 }
 
-// 逐字符淡入+上浮渲染器。颜色不再由字符决定，改由 route 把字符插到对应容器；
-// append 续打时下标在整个累积文本上连续，route 按全局下标累计偏移定位。
 const charReveal = createCharRevealWriter({
   charHtml: charRevealCharHtml,
   route: (index) => {
@@ -505,11 +483,6 @@ const charReveal = createCharRevealWriter({
     }
     return dialogueLineRef.value;
   },
-  // 清空子容器内容、保留容器结构——清外层会把子容器节点销毁，模板 ref 指向
-  // 脱离文档的旧节点，之后字符全插进不可见处。
-  // 内联模式动作区由独立动作打字机管理，这里只清台词区（台词 typewriter 首个
-  // tick 也会触发一次 clear，若清动作区会把动作打字机刚渲染的内容抹掉）；
-  // 标准模式动作区走 charReveal 打字，仍需清空（continueDialog Phase 2 前）。
   clear: () => {
     if (dialogueLineRef.value) dialogueLineRef.value.innerHTML = "";
     if (!settingsStore.text.inlineMotionText && motionLineRef.value) {
@@ -544,8 +517,6 @@ function renderLineInstant(line: string) {
   }
 }
 
-// 回复显示区 TypeWriter（标准/内联模式共用；逐字符渲染由 charReveal 负责；
-// appendTyping 用于台词合并续打）
 const { startTyping, stopTyping, isTyping, finishTyping, appendTyping } = useTypeWriter(
   inlineDisplayRef,
   (text) => {
@@ -554,8 +525,6 @@ const { startTyping, stopTyping, isTyping, finishTyping, appendTyping } = useTyp
   charReveal.writeFn,
 );
 
-// 输入框文本/发送/ASR 接线 —— 与桌宠 ChatInput 共用同一实现。
-// 别名回 inputMessage，模板绑定不变。
 const {
   text: inputMessage,
   isSending,
@@ -619,6 +588,8 @@ const { placeholderState, isInputEnabled } = useDialogStatus({
   },
 });
 
+const inputEnabled = computed(() => isInputEnabled.value);
+
 // 占位符：状态判定来自共享的 useDialogStatus，这里只负责主界面自己的文案
 const placeholderText = computed(() => {
   const s = placeholderState.value;
@@ -647,9 +618,6 @@ watch([() => uiStore.showCharacterLine, () => gameStore.currentStatus], ([newLin
     // 输入框清空由 useChatInput 的同源 watch 负责
     currentDisplayedText.value = "";
 
-    // 合并续打：i+1 到达时 event-queue 已武装（i 仍打字/播音频），MainChat 在 i
-    // 展示完成后自动推进队列，这里对 i+1 走追加路径——不重置显示区、续打新增文本。
-    // 同一容器里已有内容时，新段前加空格隔离，避免两句黏在一起。
     if (dialogueMerge.armed) {
       dialogueMerge.armed = false;
       const newSegs: DisplaySegment[] = [];
@@ -658,8 +626,6 @@ watch([() => uiStore.showCharacterLine, () => gameStore.currentStatus], ([newLin
         newSegs.push({ kind, text: hasPrior ? separator + text : text });
       };
       appendMerged("dialogue", newLine, " ");
-      // 动作段记账 + 动作区续打（独立于台词打字机）。hadPriorMotion 必须在
-      // segments.push 之前算——push 后新动作段已在 segments 里，会误判成已有前序动作。
       const hadPriorMotion = settingsStore.text.inlineMotionText
         ? segments.some((s) => s.kind === "motion")
         : false;
@@ -681,8 +647,6 @@ watch([() => uiStore.showCharacterLine, () => gameStore.currentStatus], ([newLin
       }
       segments.push(...newSegs);
       appendTyping(typedText(newSegs));
-      // 链式合并：刚追加的这行若仍满足合并条件、且队头下一条也是同角色短句，
-      // 继续武装，让 MainChat 在本行展示完成后再次自动续打下一条——突破只融合两句的限制。
       dialogueMerge.mergedLength += newLine.length;
       rearmNextMerge(newLine);
     } else {
@@ -729,9 +693,7 @@ onMounted(async () => {
 
   document.addEventListener("contextmenu", handleDialogShow);
   // asr-text / asr-send 监听与输入框桥由 useChatInput 统一注册
-  // 初始化容器宽度
   updateContainerWidth();
-  // 监听窗口大小变化
   window.addEventListener("resize", updateContainerWidth);
 
   initScreenshot();
@@ -748,8 +710,6 @@ onUnmounted(() => {
   destroyScreenshot();
 });
 
-// 粘贴图片：读取剪贴板中的图片，复用截图链路（预览、压缩与视觉路由和截图一致）。
-// 已有截图时直接覆盖，与"重新截取"行为对齐。
 function onPasteImage(event: ClipboardEvent) {
   const items = event.clipboardData?.items;
   if (!items) return;
@@ -831,10 +791,6 @@ defineExpose({
   color: #9ca3af;
 }
 
-/* 分割线：青蓝色微光点缀，亮段沿线条从左向右流动。
- * 视觉同源桌宠外框（青色 rgba(34,211,238)），但只保留微弱点缀。
- * 用 background-position 驱动而非 transform/子元素：背景只绘制在元素盒内，
- * 不会撑宽布局、也不会触发父级 overflow-x 滚动。 */
 .dialog-divider-glow {
   height: 1px;
   border-radius: 9999px;
@@ -870,10 +826,9 @@ defineExpose({
 /* 兼容 Chrome / Edge / Safari */
 .custom-scroll::-webkit-scrollbar {
   width: 6px; /* 纵向滚动条宽度 */
-  height: 6px; /* 横向滚动条高度（你这个是 overflow-x，主要控制这个） */
+  height: 6px; /* 横向滚动条高度 */
 }
 
-/* 移动端折叠按钮 — 与右侧 nav 关闭按钮等大 */
 .mobile-toggle-btn {
   background: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(255, 255, 255, 0.2);
@@ -954,8 +909,6 @@ defineExpose({
     transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94),
     opacity 0.3s ease;
 }
-/* 离开中的旧情绪脱离文档流，覆盖在新情绪上方向左滑出，
- * 容器宽度由新情绪决定，避免标题栏按钮被临时撑开 */
 .emotion-slide-leave-active {
   position: absolute;
   left: 0;
@@ -994,14 +947,10 @@ defineExpose({
 </style>
 
 <style>
-/* 底部 Home 指示器安全区：对话框本体铺到屏幕底（其半透明底盖住背景条带），
-     仅内容底部让出 env() 高度，输入框不被 Home 指示器遮挡（桌面/Android 桌面 env=0）。
-     外观（渐变底色 / 圆角 / 文字色）固定于此，投屏窗口另有 !important 覆盖。 */
 .game-dialog {
   padding-bottom: calc(15px + var(--safe-area-inset-bottom, 0px));
   color: #ffffff;
   border-radius: 16px;
   background: linear-gradient(to top, rgba(0, 14, 39, 0.7), rgba(0, 14, 39, 0.6));
 }
-/* 逐字符淡入+上浮动画的 @keyframes 已移入 src/assets/styles/dialogue-text.css（全局引入） */
 </style>
