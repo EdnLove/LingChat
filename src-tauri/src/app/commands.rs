@@ -13,6 +13,7 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
         plugins::commands::plugin_list,
         plugins::commands::plugin_set_enabled,
         plugins::commands::plugin_save_config,
+        plugins::commands::plugin_line_shown,
         plugins::commands::plugin_reload,
         plugins::commands::plugin_delete,
         plugins::commands::plugin_resources,
@@ -139,6 +140,7 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
         api::script::list_scripts,
         api::script::list_standalone_scripts,
         api::script::start_script,
+        api::script::stop_script,
         api::script::script_submit_input,
         api::script::script_submit_choice,
         // ── 剧本编辑器 ──
@@ -193,6 +195,7 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
         api::schedule::get_schedules,
         api::schedule::save_schedules,
         api::schedule::reload_proactive_system,
+        api::schedule::preview_proactive_interest_range,
         api::proactive_set_can_deliver,
         api::tool_settings::get_tool_settings,
         api::tool_settings::get_tool_runtime_info,

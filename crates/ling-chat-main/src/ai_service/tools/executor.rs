@@ -53,8 +53,9 @@ impl ToolContext {
         self
     }
 
+    /// 这个工具在当前上下文里能不能执行。
     pub fn allows(&self, name: &str) -> bool {
-        self.allowed_tools.contains(name)
+        self.base_allowed.contains(name) || self.allowed_tools.contains(name)
     }
 
     /// 取 AppHandle，用于访问 AppState 共享状态。无宿主环境时报错。
@@ -124,7 +125,7 @@ impl<'a> ToolExecutor<'a> {
         if !context.allows(name) {
             return error_result(
                 "tool_not_allowed",
-                format!("当前调用上下文不允许工具: {name}"),
+                format!("当前角色与场景没有工具 {name} 的权限"),
             );
         }
 

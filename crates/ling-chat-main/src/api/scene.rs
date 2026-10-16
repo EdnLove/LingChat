@@ -10,7 +10,9 @@ use crate::AppState;
 use crate::ai_service::game_system::scene_store::{
     LightingParams, LocationType, Scene, SceneStore,
 };
-use crate::ai_service::screen_analyzer::{ScreenAnalyzer, ScreenAnalyzerConfig};
+use crate::ai_service::screen_analyzer::{
+    ImageDelivery, ImageIntent, ScreenAnalyzer, ScreenAnalyzerConfig, deliver_image,
+};
 use crate::api::data_dir;
 use crate::utils::path::{validate_directory_name, validate_path_in_base};
 
@@ -241,20 +243,24 @@ fn migrate_scene_background(scene: &mut Scene, bg_base: &Path, index: &Backgroun
     changed
 }
 
-/// 将场景中保存的背景相对路径解析为完整路径。
-pub(crate) fn normalize_background(raw: &str) -> String {
-    let bg_base = super::backgrounds_dir();
-    let (_, index) = scan_backgrounds(&bg_base);
-    match index.resolve(raw, None) {
-        Ok(Some(path)) => path.to_string_lossy().into_owned(),
-        _ => String::new(),
-    }
-}
-
 pub(crate) fn model_to_info(scene: &Scene) -> SceneInfo {
     let bg_base = super::backgrounds_dir();
     let (_, index) = scan_backgrounds(&bg_base);
     model_to_info_with_background_index(scene, &index)
+}
+
+/// 场景当前应展示的背景图（绝对路径；解析不出则为 None）。
+pub(crate) fn resolved_background_of(scene: &Scene) -> Option<String> {
+    model_to_info(scene).background
+}
+
+/// 把 `GameStatus.background` 对齐到某个场景；场景不存在或没有背景时返回 None。
+pub(crate) fn resolved_background_of_id(scene_id: &str) -> Option<String> {
+    SceneStore::new(&data_dir())
+        .find_by_id(scene_id)
+        .ok()
+        .flatten()
+        .and_then(|scene| resolved_background_of(&scene))
 }
 
 fn now_iso() -> String {
@@ -421,19 +427,30 @@ async fn annotate_scene_location(app: &AppHandle, scene_id: &str) {
         return;
     };
 
-    let prompt = format!(
-        "你是场景分类助手。根据场景名称、描述和背景图判断该地点是室内还是室外。\
-         只输出三个词之一：室内、室外、不确定\n场景名：{}\n描述：{}",
-        scene.name, scene.description
-    );
-
-    // 优先视觉模型：与截图分析共用同一份「视觉模型」配置与请求链路
+    // 优先视觉模型：与截图分析共用同一份「视觉模型」配置与识图投递链路。
+    // 标注结果必须是文本，所以这个意图不走原生识图（见 ImageIntent::SceneStill）。
     let image_path = super::backgrounds_dir().join(&scene.background);
     let mut analyzer = ScreenAnalyzer::new(ScreenAnalyzerConfig::resolve(app));
-    if let Some(answer) = analyzer
-        .analyze_image_file(&image_path.to_string_lossy(), &prompt)
-        .await
-    {
+    let delivery = match std::fs::read(&image_path) {
+        Ok(image_bytes) => {
+            deliver_image(
+                app,
+                &mut analyzer,
+                &image_bytes,
+                ImageIntent::SceneStill {
+                    name: &scene.name,
+                    desc: &scene.description,
+                },
+            )
+            .await
+        },
+        Err(e) => {
+            tracing::warn!("[SceneLocation] 读取背景图失败: {e}");
+            ImageDelivery::default()
+        },
+    };
+
+    if let Some(answer) = delivery.text {
         if let Some(location) = parse_location_answer(&answer) {
             store_annotation(app, scene_id, location, &scene.name);
             return;
@@ -620,7 +637,7 @@ pub async fn set_weather_auto_sync(app: AppHandle, enabled: bool) -> Result<(), 
 }
 
 #[tauri::command]
-pub async fn update_scene(_app: AppHandle, req: UpdateSceneRequest) -> Result<SceneInfo, String> {
+pub async fn update_scene(app: AppHandle, req: UpdateSceneRequest) -> Result<SceneInfo, String> {
     let store = SceneStore::new(&data_dir());
     let mut scenes = store
         .load_all()
@@ -641,10 +658,20 @@ pub async fn update_scene(_app: AppHandle, req: UpdateSceneRequest) -> Result<Sc
     scenes[idx].lighting = req.lighting;
     scenes[idx].updated_at = now_iso();
 
+    let background = resolved_background_of(&scenes[idx]);
     let info = model_to_info(&scenes[idx]);
     store
         .save_all(&scenes)
         .map_err(|e| format!("保存场景失败: {}", e))?;
+
+    let state = app.state::<AppState>();
+    let service = state.ai_service.lock().await;
+    let mut gs = service.game_status.lock().await;
+    if gs.current_scene_id.as_deref() == Some(&req.id) {
+        gs.clear_background_override();
+        gs.sync_background_with_scene(background);
+    }
+
     Ok(info)
 }
 
@@ -692,12 +719,13 @@ pub async fn delete_scene(app: AppHandle, id: String) -> Result<(), String> {
         }
     }
 
-    // 若删除的是当前选中场景，清除引用
+    // 若删除的是当前选中场景，清除引用；背景文件刚被删掉，展示背景也要跟着落空
     let state = app.state::<AppState>();
     let service = state.ai_service.lock().await;
     let mut gs = service.game_status.lock().await;
     if gs.current_scene_id.as_deref() == Some(&id) {
         gs.current_scene_id = None;
+        gs.sync_background_with_scene(None);
     }
 
     Ok(())
@@ -743,6 +771,7 @@ pub async fn clear_empty_scenes(app: AppHandle) -> Result<usize, String> {
             let still_exists = scenes.iter().any(|s| &s.id == scene_id);
             if !still_exists {
                 gs.current_scene_id = None;
+                gs.sync_background_with_scene(None);
             }
         }
     }
@@ -906,10 +935,17 @@ pub async fn move_scene_to_category(
 
 #[tauri::command]
 pub async fn select_scene(app: AppHandle, scene_id: Option<String>) -> Result<(), String> {
+    // 背景跟随场景，先按 id 把背景解析出来，别在持锁时读盘
+    let background = scene_id.as_deref().and_then(resolved_background_of_id);
+
     let state = app.state::<AppState>();
     let service = state.ai_service.lock().await;
     let mut gs = service.game_status.lock().await;
     gs.current_scene_id = scene_id.clone();
+
+    // 换了场景，剧本临时背景的记录就此作废（它只保留到新场景更新为止）
+    gs.clear_background_override();
+    gs.sync_background_with_scene(background);
 
     // 持久化到 store，便于下次启动恢复
     if let Ok(store) = app.store(crate::config::STORE_FILE) {
@@ -921,8 +957,11 @@ pub async fn select_scene(app: AppHandle, scene_id: Option<String>) -> Result<()
         let _ = store.save();
     }
 
-    // 手动优先：用户手动选场景后，关闭 AI 自动切景（设置页可重新打开）
-    crate::config::AppConfig::lock_auto_switch(&app, crate::config::keys::AI_AUTO_SCENE);
+    // 手动优先：用户手动选场景后，关闭 AI 自动切景（设置页可重新打开）。
+    // 取消选中（scene_id 为空，背景转透明）不算选景，不动这个开关。
+    if scene_id.is_some() {
+        crate::config::AppConfig::lock_auto_switch(&app, crate::config::keys::AI_AUTO_SCENE);
+    }
 
     Ok(())
 }

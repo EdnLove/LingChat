@@ -202,7 +202,7 @@ pub async fn create_save(
 
     // 2. 同步台词
     if !lines.is_empty() {
-        SaveRepo::sync_lines(db, save_id, &lines)
+        SaveRepo::sync_lines(db, save_id, &lines, false)
             .await
             .map_err(|e| format!("同步台词失败: {}", e))?;
     }
@@ -281,32 +281,9 @@ pub async fn load_save(app: AppHandle, save_id: i32) -> Result<WebInitData, Stri
     let state = app.state::<AppState>();
     let db = &state.db;
 
-    // 旧引擎是独立 tokio 任务，读档前必须中止它并清掉其挂起的输入通道：
-    // 否则它会继续往恢复后的共享 GameStatus 写台词，污染本次读档的状态。
-    let aborted_script_engine = if let Some(handle) = state.script_task.lock().await.take() {
-        handle.abort();
-        true
-    } else {
-        false
-    };
-    {
-        let mut ch = state.script_channels.lock().await;
-        let _ = ch.input_tx.take();
-        let _ = ch.choice_tx.take();
-        ch.choice_allow_free = false;
-    }
+    crate::api::script::abort_running_script(&app).await;
 
     let mut service = state.ai_service.lock().await;
-
-    // 被中止的引擎走不到 on_script_end 收尾，is_running 会残留 true——
-    // 若本存档没有剧本可续跑，编辑器试玩/重扫的守卫会永远以为有剧本在跑。
-    // 试玩任务不登记在 script_task（走 preview_task），不受此复位影响。
-    if aborted_script_engine {
-        service
-            .script_manager
-            .is_running
-            .store(false, std::sync::atomic::Ordering::SeqCst);
-    }
 
     // 1. 获取存档
     let save_model = SaveRepo::get_save_by_id(db, save_id)
@@ -467,7 +444,7 @@ pub async fn update_save(
     let lines = service.game_status.lock().await.line_list.clone();
 
     // 2. 同步台词（智能 diff）
-    SaveRepo::sync_lines(db, save_id, &lines)
+    SaveRepo::sync_lines(db, save_id, &lines, false)
         .await
         .map_err(|e| format!("同步台词失败: {}", e))?;
 

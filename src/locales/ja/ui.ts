@@ -413,6 +413,7 @@ export default {
     todoReminderStyle: "ToDoのリマインド方法",
     todoReminderStyleRole: "キャラが声をかける",
     todoReminderStyleToast: "システム通知",
+    growthRangeHint: "≈ 1 サイクルあたりの興味増加 {min} ~ {max}（上の間隔から逆算）",
   },
   calendarPage: {
     yearMonth: "{year}年 {month}月",

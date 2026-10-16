@@ -291,6 +291,12 @@ export function applyWebInitData(state: GameState, gameInfo: WebInitData): void 
     state.dialogHistory = [];
   }
 
+  // 剧情模式标记不随 init data 传递，而换角色 / 重新 init 都是会话边界：
+  // 后端此刻已把旧剧本停掉，前端的章节名与选项按钮也必须一起清掉，
+  // 否则会挂在新角色界面上继续可点（issue #698）。读档与清空对话
+  // 本来就在本函数之后显式 enterStoryMode / exitStoryMode，不受影响。
+  state.runningScript = null;
+
   state.initialized = true;
 }
 

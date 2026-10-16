@@ -278,10 +278,16 @@ impl SaveRepo {
     /// Port of Python `SaveManager.sync_lines`. Walks DB line chain and
     /// input `GameLine` list in lockstep, finds the divergence point, then
     /// deletes stale DB lines and inserts new input lines after that point.
+    ///
+    /// `allow_rebuild`：首行即分歧（输入与存档无共同锚点）时是否允许接管该档。
+    /// 自动存档传 true——它的档位只跟踪"当前这一局"，被别的会话（切角色、开新档）
+    /// 占住时必须整体重建，否则会永久拒绝写入、自动存档彻底停摆；手动存档/语音
+    /// 回填等路径传 false，继续由安全网拦截，避免误删另一段对话的历史。
     pub async fn sync_lines(
         db: &DatabaseConnection,
         save_id: i32,
         input_lines: &[GameLine],
+        allow_rebuild: bool,
     ) -> Result<()> {
         let db_lines = Self::get_line_list(db, save_id).await?;
 
@@ -349,16 +355,20 @@ impl SaveRepo {
             break;
         }
 
-        // 安全网：输入与 DB 链在首行即分歧（diverge=0）且双方都非空时，
-        // 说明输入不是"同一段对话的演进"（正常续写/回溯/语音回填首行都会匹配），
-        // 而是把另一段对话（如跨角色残留、错位回溯）误当成当前存档内容——
-        // 若继续会让下面 diverge.. 删除把整个存档历史抹空。拒绝覆盖以保护存档。
+        // 自动存档位允许接管：它本就该随当前这局走，diverge=0 时下面等价于整档重建。
         if diverge == 0 && !db_lines.is_empty() && !input_lines.is_empty() {
-            return Err(anyhow!(
-                "sync_lines 安全保护：输入与存档无共同锚点，拒绝全量覆盖（save_id={save_id}，db_lines={}，input_lines={}）",
+            if !allow_rebuild {
+                return Err(anyhow!(
+                    "sync_lines 安全保护：输入与存档无共同锚点，拒绝全量覆盖（save_id={save_id}，db_lines={}，input_lines={}）",
+                    db_lines.len(),
+                    input_lines.len()
+                ));
+            }
+            tracing::warn!(
+                "sync_lines 接管档位：输入与存档无共同锚点，整体重建（save_id={save_id}，db_lines={}，input_lines={}）",
                 db_lines.len(),
                 input_lines.len()
-            ));
+            );
         }
 
         // Keep line rows, perceptions, and the save tail pointer consistent if

@@ -169,6 +169,74 @@
                 </div>
               </div>
 
+              <!-- GSV 六情绪参考语音：填全的分类按情绪切换参考音色，未填全的
+                   分类仍回退到上面的 gsv_voice_filename / gsv_voice_text -->
+              <div
+                v-if="activeTab === 'voice' && localSettings.tts_type === 'gsv'"
+                class="space-y-4"
+              >
+                <div
+                  class="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 p-4"
+                >
+                  <div>
+                    <h3 class="text-sm font-bold text-white/70">
+                      {{ $t("settings.characterInfo.gsvEmo.title") }}
+                    </h3>
+                    <p class="mt-1 text-xs text-white/40">
+                      {{ $t("settings.characterInfo.gsvEmo.description") }}
+                    </p>
+                  </div>
+                  <button
+                    role="switch"
+                    :aria-checked="gsvEmoEnabled"
+                    class="cursor-pointer rounded-lg border-none px-3.5 py-1.5 text-xs transition-colors"
+                    :class="
+                      gsvEmoEnabled
+                        ? 'bg-[#5e72e4] text-white hover:bg-[#4a5acf]'
+                        : 'bg-white/10 text-white/60 hover:bg-white/20'
+                    "
+                    @click="toggleGsvEmo"
+                  >
+                    {{
+                      gsvEmoEnabled
+                        ? $t("settings.characterInfo.gsvEmo.enable")
+                        : $t("settings.characterInfo.gsvEmo.disable")
+                    }}
+                  </button>
+                </div>
+
+                <div v-if="gsvEmoEnabled" class="space-y-3">
+                  <div
+                    v-for="cat in GSV_EMO_CATEGORIES"
+                    :key="cat"
+                    class="grid grid-cols-1 gap-3 rounded-xl border border-white/10 bg-white/5 p-4 md:grid-cols-2"
+                  >
+                    <div class="flex flex-col gap-2">
+                      <label class="text-[13px] font-medium text-white/60">
+                        {{ cat }} · {{ $t("settings.characterInfo.gsvEmo.voiceFile") }}
+                      </label>
+                      <input
+                        v-model="gsvEmoField(cat, 'gsv_emo_voice_files').value"
+                        type="text"
+                        :placeholder="$t('settings.characterInfo.gsvEmo.voiceFilePlaceholder')"
+                        class="form-control rounded-xl border border-white/10 bg-black/20 px-3.5 py-2.5 text-sm text-white transition-all duration-200 outline-none"
+                      />
+                    </div>
+                    <div class="flex flex-col gap-2">
+                      <label class="text-[13px] font-medium text-white/60">
+                        {{ cat }} · {{ $t("settings.characterInfo.gsvEmo.text") }}
+                      </label>
+                      <input
+                        v-model="gsvEmoField(cat, 'gsv_emo_texts').value"
+                        type="text"
+                        :placeholder="$t('settings.characterInfo.gsvEmo.textPlaceholder')"
+                        class="form-control rounded-xl border border-white/10 bg-black/20 px-3.5 py-2.5 text-sm text-white transition-all duration-200 outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <VoicePreview
                 v-if="activeTab === 'voice' && props.roleId"
                 :role-id="props.roleId"
@@ -990,6 +1058,33 @@ const migrateLegacyVoiceModelFields = () => {
     delete localSettings.value[key];
   }
 };
+
+// --- GSV 六情绪参考语音（自定义 UI；只写草稿，由底部保存统一提交） ---
+
+const GSV_EMO_CATEGORIES = ["吃惊", "开心", "恐惧", "难过", "生气", "中立"] as const;
+
+const gsvEmoEnabled = computed({
+  get: () => Boolean(localSettings.value.voice_models?.gsv_emo_enabled),
+  set: (val: boolean) => {
+    ensureVoiceModels().gsv_emo_enabled = val;
+  },
+});
+
+const toggleGsvEmo = () => {
+  gsvEmoEnabled.value = !gsvEmoEnabled.value;
+};
+
+/** 分类参考值的读写入口，与 voice_models 下的平级字段同样只落草稿。 */
+const gsvEmoField = (cat: string, key: "gsv_emo_texts" | "gsv_emo_voice_files") =>
+  computed({
+    get: () => (ensureVoiceModels()[key] as Record<string, string> | undefined)?.[cat] ?? "",
+    set: (val: string) => {
+      const voiceModels = ensureVoiceModels();
+      const map = (voiceModels[key] as Record<string, string> | undefined) ?? {};
+      map[cat] = val;
+      voiceModels[key] = map;
+    },
+  });
 
 const fieldModel = (field: FieldSchema) => {
   return computed({

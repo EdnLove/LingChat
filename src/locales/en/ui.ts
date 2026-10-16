@@ -416,6 +416,7 @@ export default {
     todoReminderStyle: "To-Do reminder style",
     todoReminderStyleRole: "Character speaks",
     todoReminderStyleToast: "System notification",
+    growthRangeHint: "≈ interest grows {min} ~ {max} per cycle (derived from the interval above)",
   },
   calendarPage: {
     yearMonth: "{month}/{year}",

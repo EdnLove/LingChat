@@ -342,6 +342,9 @@ pub async fn select_character(app: AppHandle, character_id: i32) -> Result<WebIn
     // 1. 从 DB 加载角色设定
     let state = app.state::<AppState>();
 
+    // 1b. 换角色是会话边界：旧剧本必须真正停掉。否则它会一直阻塞在输入通道上，
+    super::script::abort_running_script(&app).await;
+
     // 2. 读取 AppConfig 构建 PromptOptions
     let app_config = AppConfig::load(&app).unwrap_or_default();
     let prompt_options = PromptOptions {
@@ -357,6 +360,9 @@ pub async fn select_character(app: AppHandle, character_id: i32) -> Result<WebIn
             .await
             .map_err(|e| format!("初始化游戏状态失败: {}", e))?;
     }
+
+    // 3b. 换角色等于开新一局：起算自动存档冷却（此刻不持 ai_service 锁）
+    state.auto_save_manager.lock().await.arm_grace();
 
     // 4. 持久化上次游玩的角色 ID
     if let Ok(store) = app.store(config::STORE_FILE) {
@@ -386,6 +392,9 @@ pub async fn select_character(app: AppHandle, character_id: i32) -> Result<WebIn
 pub async fn clear_conversation(app: AppHandle) -> Result<WebInitData, String> {
     let state = app.state::<AppState>();
 
+    // 清空对话同样是会话边界，先真正停掉在跑的剧本（与切换角色同款收尾）
+    super::script::abort_running_script(&app).await;
+
     // 串行化：等待正在进行的消息生成完成再重置
     let gen_lock = state.generation_lock.clone();
     let _lock = gen_lock.lock().await;
@@ -397,6 +406,9 @@ pub async fn clear_conversation(app: AppHandle) -> Result<WebInitData, String> {
             .await
             .map_err(|e| format!("重置对话失败: {}", e))?;
     }
+
+    // 清空对话等于开新一局：起算自动存档冷却（此刻不持 ai_service 锁）
+    state.auto_save_manager.lock().await.arm_grace();
 
     let init = {
         let service = state.ai_service.lock().await;
@@ -446,6 +458,7 @@ pub(crate) async fn build_web_init_data(
     let (
         lines,
         current_scene_id,
+        current_scene,
         current_role_id,
         onstage_roles_ids,
         onstage_roles,
@@ -501,19 +514,25 @@ pub(crate) async fn build_web_init_data(
             }
         }
 
-        // 若恢复了场景，更新 GameStatus
+        // 上面补出来的场景只算「补齐当前场景」，不是用户切了景——因此不动剧本临时背景
         if sid != gs.current_scene_id {
             gs.current_scene_id = sid.clone();
-            if let Some(ref scene_id) = sid {
-                let store = SceneStore::new(&service.data_dir);
-                if let Ok(Some(scene)) = store.find_by_id(scene_id) {
-                    let bg = super::scene::normalize_background(&scene.background);
-                    if !bg.is_empty() {
-                        gs.background = bg;
-                    }
-                }
-            }
         }
+
+        let current_scene = sid
+            .as_deref()
+            .and_then(|id| {
+                SceneStore::new(&service.data_dir)
+                    .find_by_id(id)
+                    .ok()
+                    .flatten()
+            })
+            .map(|scene| super::scene::model_to_info(&scene));
+        gs.sync_background_with_scene(
+            current_scene
+                .as_ref()
+                .and_then(|scene| scene.background.clone()),
+        );
 
         // 从 store 恢复场景感知开关
         if let Ok(store) = app.store(config::STORE_FILE) {
@@ -545,6 +564,7 @@ pub(crate) async fn build_web_init_data(
         (
             lines,
             sid,
+            current_scene,
             gs.current_role_id,
             gs.onstage_role_ids.clone(),
             onstage_roles,
@@ -577,18 +597,6 @@ pub(crate) async fn build_web_init_data(
             read_str(config::session::LAST_BGM_MODE),
             read_str(config::session::LAST_AMBIENT_TRACKS),
         )
-    };
-
-    // 从 Scene Store 场景存储中恢复场景信息
-    let current_scene = if let Some(ref sid) = current_scene_id {
-        let store = SceneStore::new(&service.data_dir);
-        store
-            .find_by_id(sid)
-            .ok()
-            .flatten()
-            .map(|s| super::scene::model_to_info(&s))
-    } else {
-        None
     };
 
     let result = WebInitData {
@@ -890,6 +898,10 @@ pub async fn notify_player_entry(app: AppHandle) -> Result<(), String> {
 
         tracing::info!("[Entry] 已添加问候台词: {}", greeting);
     } // 释放锁
+
+    // 进入游戏等于开一局：起算自动存档冷却，让玩家有机会先读回上一局的自动存档，
+    // 而不是刚进门就被这轮问候的自动存档盖掉（此刻不持 ai_service 锁）
+    state.auto_save_manager.lock().await.arm_grace();
 
     // Phase 2: 触发 AI 响应（suppress_thinking=true，不显示思考指示器）
     let llm = crate::ai_service::llm::slot_snapshot(&state.chat.llm)

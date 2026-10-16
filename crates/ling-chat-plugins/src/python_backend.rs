@@ -5,7 +5,7 @@
 //! 用 `tokio::time::timeout` 兜底，超时直接丢弃整个解释器。
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use rustpython_vm::{
     AsObject, Interpreter, PyObjectRef, PyResult, VirtualMachine,
@@ -32,6 +32,108 @@ const BLOCKED_MODULES: &[&str] = &[
     "ctypes",
     "sysconfig",
 ];
+
+/// 插件目录的导入钩子（一段 Python，装进解释器后让脚本能 import 同目录的兄弟模块）。
+///
+/// 为什么读文件的是宿主而不是插件：这个嵌入式解释器**没有任何文件系统能力**——
+/// 冻结标准库里没有 `os` / `nt` / `posix` / `_os`，`_io.open` 在调用时就报
+/// 「Couldn't get FileIO」，常规的文件查找器（`PathFinder`）既没装上、装上也读不了文件。
+/// 所以这里注入 `_read_plugin_source(name)`（宿主用 `std::fs` 读，只认插件目录下
+/// `<名字>.py`），插件只多拿到「执行同目录某个文件」这一件事，仍然碰不到文件系统。
+///
+/// 只认顶层单段模块名：`a.b`、带路径分隔符的名字一律不算模块名（见 `is_module_name`）。
+const PLUGIN_IMPORT_BOOTSTRAP: &str = r#"
+import sys
+
+_bootstrap = sys.modules['_frozen_importlib']
+
+
+class _PluginSourceLoader:
+    """把一个兄弟模块的源码当模块执行。源码是宿主读好递进来的。"""
+
+    def __init__(self, name, source, path):
+        self.name = name
+        self.source = source
+        self.path = path
+
+    def create_module(self, spec):
+        return None
+
+    def exec_module(self, module):
+        # __file__ 自己填：spec.has_location 会让导入系统去取 spec.cached，
+        # 那条路 RustPython 没实现（NotImplementedError）。
+        module.__file__ = self.path
+        exec(compile(self.source, self.path, 'exec'), module.__dict__)
+
+
+class _PluginFinder:
+    def find_spec(self, name, path=None, target=None):
+        if not name or '.' in name:
+            return None
+        source = _read_plugin_source(name)
+        if source is None:
+            return None
+        location = _plugin_dir + '/' + name + '.py'
+        spec = _bootstrap.ModuleSpec(name, _PluginSourceLoader(name, source, location))
+        spec.origin = location
+        return spec
+
+
+sys.meta_path.append(_PluginFinder())
+"#;
+
+/// 模块名：首字符是字母或下划线，其余是字母、数字、下划线。
+///
+/// `a.b`、`../x`、`C:\x` 这类是路径不是模块名，一律挡掉——它们本可以诱导宿主读到
+/// 插件目录之外去。
+fn is_module_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_alphabetic() || c == '_' => {},
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// 读兄弟模块源码：只认插件目录下的 `<模块名>.py`，读不到就给 None。
+fn make_source_reader(vm: &VirtualMachine, plugin_dir: PathBuf) -> PyObjectRef {
+    vm.new_function(
+        "_read_plugin_source",
+        move |name: String| -> Option<String> {
+            if !is_module_name(&name) {
+                return None;
+            }
+            std::fs::read_to_string(plugin_dir.join(format!("{name}.py"))).ok()
+        },
+    )
+    .into()
+}
+
+/// 装上插件目录的导入钩子。
+///
+/// 必须在跑脚本顶层之前调用：兄弟模块就是在顶层 `import` 的。
+fn install_plugin_importer(vm: &VirtualMachine, plugin_dir: &Path) -> PyResult<()> {
+    let scope = vm.new_scope_with_builtins();
+    let location = plugin_dir.to_string_lossy().into_owned();
+    scope.globals.set_item(
+        vm.ctx.intern_str("_plugin_dir"),
+        vm.ctx.new_str(location).into(),
+        vm,
+    )?;
+    scope.globals.set_item(
+        vm.ctx.intern_str("_read_plugin_source"),
+        make_source_reader(vm, plugin_dir.to_path_buf()),
+        vm,
+    )?;
+    let code = vm
+        .compile(
+            PLUGIN_IMPORT_BOOTSTRAP,
+            Mode::Exec,
+            "<plugin_import>".to_owned(),
+        )
+        .map_err(|e| vm.new_syntax_error(&e, Some(PLUGIN_IMPORT_BOOTSTRAP)))?;
+    vm.run_code_obj(code, scope).map(|_| ())
+}
 
 /// 取 Python 异常的文本信息。
 fn exc_message(vm: &VirtualMachine, e: &PyBaseExceptionRef) -> String {
@@ -199,14 +301,22 @@ fn run_entry(
     build_ctx: impl FnOnce(&VirtualMachine, AppHandle) -> PyResult<PyObjectRef>,
 ) -> Result<Option<Value>, String> {
     let script = std::fs::read_to_string(script_path).map_err(|e| format!("读取脚本失败: {e}"))?;
+    let plugin_dir = script_path.parent().unwrap_or(Path::new(""));
     let interpreter = build_interpreter();
     interpreter.enter(|vm| {
         // 本次执行期间，read_data_file 只认这个插件 manifest 的 read 声明
         let _read_guard = host_api::set_read_allow(&run_env.read);
         // send_user_message 只对声明了该能力的插件放行
         let _send_guard = host_api::set_send_allow(run_env.send_user_message);
+        // trigger_proactive 同上
+        let _proactive_guard = host_api::set_proactive_allow(run_env.trigger_proactive);
         // ws_send / ws_open / ws_close 按当前插件定位连接
         let _plugin_guard = host_api::set_current_plugin(&run_env.plugin_id);
+        // 兄弟模块要在脚本顶层 import，所以导入钩子必须先装好
+        if !plugin_dir.as_os_str().is_empty() {
+            install_plugin_importer(vm, plugin_dir)
+                .map_err(|e| format!("插件导入钩子初始化失败: {}", exc_message(vm, &e)))?;
+        }
         let scope = vm.new_scope_with_builtins();
         let code = vm
             .compile(&script, Mode::Exec, script_path.display().to_string())
@@ -283,4 +393,109 @@ pub(crate) fn run_plugin_handler(
         build_signal_ctx(vm, signal, payload, &run_env, app)
     })
     .map(|_| ())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 起一个和线上一样的解释器、装上导入钩子、跑一段脚本。
+    ///
+    /// 不调 `build_interpreter`：它会拉进宿主那一侧（`host_api` 的 tauri 依赖），
+    /// 测试 exe 在 Windows 上会以 0xC0000139 起不来。导入钩子本身与宿主 API 无关，
+    /// 这里少的就是注入的 `plugin_host` 模块。
+    fn run_in_plugin_dir(dir: &Path, script: &str) -> Result<(), String> {
+        let interpreter = Interpreter::builder(rustpython_vm::Settings::default())
+            .add_frozen_modules(rustpython_pylib::FROZEN_STDLIB)
+            .build();
+        interpreter.enter(|vm| {
+            install_plugin_importer(vm, dir).map_err(|e| exc_message(vm, &e))?;
+            let scope = vm.new_scope_with_builtins();
+            let code = vm
+                .compile(script, Mode::Exec, "<test>".to_owned())
+                .map_err(|e| format!("脚本编译失败: {e}"))?;
+            vm.run_code_obj(code, scope)
+                .map(|_| ())
+                .map_err(|e| format!("[{}] {}", e.as_object().class().name(), exc_message(vm, &e)))
+        })
+    }
+
+    /// 建一个空的插件目录。每个用例用不同名字，免得互相看见对方的文件。
+    fn plugin_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(name);
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn plugin_can_import_a_sibling_module() {
+        let dir = plugin_dir("lingchat_plugin_import_ok");
+        std::fs::write(dir.join("shared_table.py"), "VALUE = 42\n").unwrap();
+        // 兄弟模块之间也能互相 import
+        std::fs::write(
+            dir.join("helper.py"),
+            "from shared_table import VALUE\nDOUBLED = VALUE * 2\n",
+        )
+        .unwrap();
+
+        run_in_plugin_dir(
+            &dir,
+            "from shared_table import VALUE\n\
+             import helper\n\
+             assert VALUE == 42, VALUE\n\
+             assert helper.DOUBLED == 84, helper.DOUBLED\n\
+             import shared_table\n\
+             assert shared_table.__file__.endswith('shared_table.py'), shared_table.__file__\n",
+        )
+        .expect("插件目录里的兄弟模块应该 import 得到");
+    }
+
+    /// 带点或路径分隔符的名字不算模块名：那是路径，能把宿主引到插件目录之外去。
+    #[test]
+    fn module_names_reject_paths() {
+        assert!(is_module_name("tables"));
+        assert!(is_module_name("_helpers2"));
+        assert!(!is_module_name(""));
+        assert!(!is_module_name("a.b"));
+        assert!(!is_module_name("../tables"));
+        assert!(!is_module_name("..\\tables"));
+        assert!(!is_module_name("sub/tables"));
+        assert!(!is_module_name("C:\\tables"));
+        assert!(!is_module_name("2tables"));
+    }
+
+    /// 只能 import 自己目录里的模块：隔壁插件的文件、带点的名字、读源码的原生函数都不给。
+    #[test]
+    fn sibling_import_does_not_leave_the_plugin_dir() {
+        let mine = plugin_dir("lingchat_plugin_import_mine");
+        let other = plugin_dir("lingchat_plugin_import_other");
+        std::fs::write(mine.join("sub.py"), "VALUE = 1\n").unwrap();
+        std::fs::write(other.join("secret.py"), "VALUE = 'leaked'\n").unwrap();
+
+        run_in_plugin_dir(&mine, "import secret\n")
+            .expect_err("不该 import 到别的插件目录里的模块");
+        run_in_plugin_dir(&mine, "import sub.tables\n").expect_err("带点的名字不该被认成模块名");
+        run_in_plugin_dir(&other, "from sub import VALUE\n")
+            .expect_err("不同插件目录的文件不该互相可见");
+
+        // 读源码这件事是宿主做的：脚本只能请求「执行某个模块」，拿不到读文件的入口
+        run_in_plugin_dir(&mine, "assert '_read_plugin_source' not in dir()\n")
+            .expect("读源码的原生函数不该出现在脚本的全局里");
+
+        // 装上钩子不等于开了文件系统：该禁的模块还是禁的
+        run_in_plugin_dir(&mine, "import os\n").expect_err("沙箱禁的模块不该因为这个钩子变得可用");
+        run_in_plugin_dir(&mine, "import _io\n_io.open('x')\n")
+            .expect_err("解释器里本来就没有文件读写，别指望从这里绕出去");
+    }
+
+    /// 兄弟模块里的语法错误要指到那个文件，而不是含糊地说一句脚本执行失败。
+    #[test]
+    fn sibling_syntax_error_points_at_the_file() {
+        let dir = plugin_dir("lingchat_plugin_import_bad");
+        std::fs::write(dir.join("broken.py"), "def :\n").unwrap();
+
+        let err = run_in_plugin_dir(&dir, "import broken\n").expect_err("坏模块应该报错");
+        assert!(err.contains("broken.py"), "错误里应该点出文件：{err}");
+    }
 }

@@ -169,6 +169,10 @@ export default {
     },
   },
   adventure: {
+    lock: {
+      title: "无法开始剧本",
+      running: "已有剧本正在运行，请先结束当前剧本",
+    },
     standalone: {
       title: "独立剧本",
       empty: "暂无独立剧本",
@@ -415,6 +419,8 @@ export default {
       },
       ENABLE_PROACTIVE_SYSTEM: "是否启用主动对话系统",
       MAX_PROACTIVE_TIMES: "在用户响应之前，能主动对话的次数",
+      PROACTIVE_EXPECTED_INTERVAL_MINUTES:
+        "两次主动搭话之间的期望间隔（分钟，1–60）：数值越小越频繁，程序据此反推每轮兴趣值的增长随机范围",
       ENABLE_VISUAL_PRECEPTION: "是否允许主动视觉感知桌面画面（偷看屏幕）",
       SCREEN_WEIGHT: "视觉模式触发权重（越大越容易偷看屏幕聊天，默认 30）",
       ENABLE_TOPIC_CREATER: "允许自主寻找并开启新话题",
@@ -531,6 +537,9 @@ export default {
       prereqAdventure: "完成前置冒险",
       achievement: "解锁特定成就",
     },
+    lock: {
+      scriptRunning: "当前有剧本进行中",
+    },
   },
   characterInfo: {
     draft: {
@@ -643,6 +652,17 @@ export default {
       add: "添加服装",
       item: "服装 #{index}",
       empty: '暂无服装配置，点击"添加服装"创建',
+    },
+    gsvEmo: {
+      title: "GSV 情绪参考语音",
+      description:
+        "开启后按情绪分类（吃惊/开心/恐惧/难过/生气/中立）切换参考语音与文本。音频路径与文本都填写了的分类才生效，未填全的分类仍使用上面的 gsv_voice_filename / gsv_voice_text。",
+      enable: "已开启",
+      disable: "已关闭",
+      voiceFile: "参考语音文件",
+      voiceFilePlaceholder: "填写 GSV 服务端可访问的音频路径（如 /refs/开心.wav）",
+      text: "参考文本",
+      textPlaceholder: "参考音频对应的文本内容",
     },
     touch: {
       hint: "在立绘上画出可以摸的区域，每个部位配一句发给 AI 的话。每件服装各有一套区域。仅对静态立绘生效，Live2D 角色的可摸范围由模型配置决定。",
@@ -1016,10 +1036,6 @@ export default {
     sample: {
       title: "显示文字样本",
       demo: "Ling Chat: 测试文本显示速度",
-    },
-    inlineMotion: {
-      title: "内联动作文本",
-      desc: "开启后动作文本将与台词同时显示，无需二次点击",
     },
     mergeLine: {
       title: "台词合并阈值",

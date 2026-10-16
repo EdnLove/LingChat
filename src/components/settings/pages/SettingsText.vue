@@ -70,16 +70,7 @@
         <Text :speed="textSpeedSample">{{ $t("settings.text.sample.demo") }}</Text>
       </MenuItem>
 
-      <MenuItem :title="$t('settings.text.inlineMotion.title')" size="small">
-        <template #header>
-          <AlignJustify :size="20" />
-        </template>
-        <Toggle :checked="settingsStore.text.inlineMotionText" @change="toggleInlineMotionText">
-          {{ $t("settings.text.inlineMotion.desc") }}
-        </Toggle>
-      </MenuItem>
-
-      <!-- 台词合并阈值：同角色连续短句自动合并续打（仅内联动作文本模式生效）；0=关闭 -->
+      <!-- 台词合并阈值：同角色连续短句自动合并续打；0=关闭 -->
       <MenuItem :title="$t('settings.text.mergeLine.title')" size="small">
         <template #header>
           <AlignJustify :size="20" />
@@ -505,6 +496,7 @@ import LanSyncDialog from "@/components/LanSyncDialog.vue";
 import ResourceSyncDialog from "@/components/ResourceSyncDialog.vue";
 import { useLanSync } from "@/composables/useLanSync";
 import { useUpdater } from "@/composables/useUpdater";
+import { eventQueue } from "@/core/events/event-queue";
 import { applyWebInitData } from "@/stores/modules/game/actions";
 import { useLlmProvidersStore } from "@/stores/modules/llm-providers";
 import type { DialogView } from "@/types/lanSync";
@@ -815,10 +807,15 @@ const handleClearHistory = async () => {
   const confirmed = await dialogStore.confirm(t("settings.text.clearHistory.confirm"));
   if (!confirmed) return;
 
+  // 清空对话会连带停掉正在跑的剧本，它没播完的事件就成了旧会话残留：
+  // 先清空队列（会暂停），待状态落地后再 resume，避免它们播进清空后的对话
+  eventQueue.clear();
+
   try {
     // 调用后端重置对话（复用 init_game_status 逻辑）
     const data = await invoke<WebInitData>("clear_conversation");
     applyWebInitData(gameStore.$state, data);
+    eventQueue.resume();
 
     // 重置前端输入状态
     gameStore.currentStatus = "input";
@@ -841,6 +838,7 @@ const handleClearHistory = async () => {
       skipTipsCheck: true,
     });
   } catch (error: any) {
+    eventQueue.resume();
     uiStore.showNotification({
       type: "error",
       title: t("settings.text.clearHistory.errorTitle"),
@@ -1101,10 +1099,6 @@ const textSpeedChange = (data: number) => {
 
 const voiceSound = (data: boolean) => {
   settingsStore.update("audio.chatEffectSound", data);
-};
-
-const toggleInlineMotionText = (data: boolean) => {
-  settingsStore.update("text.inlineMotionText", data);
 };
 
 const toggleSedentaryReminder = (data: boolean) => {
