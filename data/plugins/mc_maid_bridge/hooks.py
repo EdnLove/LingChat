@@ -10,7 +10,11 @@
 | `bridge.py`  | 与模组的通道：连没连上、是哪只女仆、收发帧、读配置          |
 | `wording.py` | 注册表 id、枚举串、数字 → 中文                              |
 | `events.py`  | 一类事件 → 一句旁白（加一类事件就在这里登记）               |
-| `tools.py`   | 六个工具的入口（manifest 的 `[[tools]]` 指向它）            |
+| `tools.py`   | 六个工具的入口，外加她身边那一圈的措辞（工具与开口时携带）  |
+
+台词表里只留两种桥接写的东西：一类是 `［MC 事件］` 开场的事件旁白，另一类是进入 MC
+时写一次的那条提示。她身边那一圈不进台词表——那些事由玩家开口那一刻随消息带过去
+（见 `_carry`），逐条记下来会把历史塞满同类句子。
 
 插件脚本每次调用都新建解释器、跑完即弃，所以这里不保存任何跨调用状态：
 用得到的信息一律当场问（见 `bridge.ready`），「自上次对话以来攒了几条事件」这类计数
@@ -26,21 +30,23 @@ from plugin_host import (
 )
 
 import bridge
+import tools
 from bridge import config, player_name, truthy
 from events import format_event
-
-# 提示行的标记前缀，用来在台词表里认出自己写过的那条——幂等就靠它。
-ENTRY_TAG = "［Minecraft 桥接］"
 
 # 游戏事件的标记前缀。既用来认自己写过的行，也用来判「自上次对话以来攒了几条」。
 EVENT_TAG = "［MC 事件］"
 
+# 进入 MC 的那条提示。开头是它的标记（模型与人都靠它认出这是桥接写的），写法变了要
+# 重新交代一遍，幂等按内容判，见 `_entry_hint_written`。
 ENTRY_HINT = (
     "［Minecraft 桥接］你已和玩家一起进入 Minecraft 世界，你变成了游戏里的小女仆。\n"
     "- 你在 LingChat 回的话会同步显示成游戏内女仆的聊天气泡，照常说话就行。\n"
-    "- 以「［Minecraft］」开头的消息来自游戏世界，是玩家在 MC 里说的，按玩家发言对待。\n"
-    "- 以「［MC 事件］」开头的是世界本身的旁白（换地形、天黑、下雨、受伤这类），"
-    "它不是谁说的话，当背景信息看。\n"
+    "- 以「［Minecraft］」开头的消息就是玩家在游戏里说的话，和玩家在输入框里发的一句一样。\n"
+    "- 玩家那句话后面若还跟着一句「（你此刻：…）」，那是你当时看到的情形（脚下踩着哪、"
+    "头顶遮没遮住、玩家离你多远、身边有什么活物），不是玩家说的话。\n"
+    "- 以「［MC 事件］」开头的是世界本身的旁白（换地形、天黑、下雨、受伤、有敌对生物"
+    "靠近这类），它不是谁说的话，当背景信息看。\n"
     "- 玩家让你做动作（过来、坐下、看着我、去床上躺下）时用 maid_ 开头的工具指挥女仆："
     "她不会瞬移，工具说「正在过去」就是还没到，等旁白说她到了再当这件事办成了。"
 )
@@ -98,6 +104,9 @@ def on_line_shown(ctx):
     maid, _ = bridge.ready(ctx)
     if not maid:
         return
+    # 顺手重申一次监控目标：刚连上那一次可能没发出去（见 _bind_maid），而插件没有定时器、
+    # 也存不下跨调用状态，「她说话」是唯一稳定的时机。模组那边幂等，重复发没有副作用。
+    bridge.bind(maid)
     bridge.send({"type": "send_chat", "data": {"maid_id": maid, "message": message}})
 
 
@@ -108,13 +117,18 @@ def _bind_maid(ctx):
     说话的那个玩家，才会把聊天转过来。不发这一条，MC 里的人说话永远没反应，而且
     是静默的——现象跟模组没装一模一样。
 
-    每次重连都要重发：模组换存档或重启服务端时会把这个绑定清掉。
+    **这里不查连接状态**：这一条正是在「刚连上」的那一刻发的，而那一刻宿主自己对这个
+    连接的登记可能还没落定（2026-10-16 真机上踩过：先问一句「连上了吗」得到否，于是
+    绑定被静静跳过，聊天与感知一起哑掉，只剩「她的话能上屏」这一半还通）。直接问女仆
+    是谁、再把绑定发出去，发不出去就记一笔；下一次上屏还会再说一遍（见 on_line_shown）。
     """
-    maid, reason = bridge.ready(ctx)
+    maid, reason = bridge.maid_id(bridge.config(ctx))
     if not maid:
         print(f"[mc_maid_bridge] 没能绑定女仆：{reason}")
         return
-    bridge.send({"type": "set_monitored_maid", "data": {"maid_id": maid}})
+    result = bridge.bind(maid)
+    if not result.get("ok"):
+        print(f"[mc_maid_bridge] 绑定帧没能发出去：{result.get('error')}")
 
 
 def _handle_frame(ctx, data):
@@ -123,22 +137,48 @@ def _handle_frame(ctx, data):
         return
     frame_type = data.get("type")
     if frame_type == "chat_message":
-        _handle_chat(data.get("data") or {})
+        _handle_chat(ctx, data.get("data") or {})
     elif frame_type == "event":
         _handle_event(ctx, data.get("data") or {})
 
 
-def _handle_chat(chat):
+def _handle_chat(ctx, chat):
     message = (chat.get("message") or "").strip()
     if not message:
         return
     # 发言者恒为玩家本人：模组只在「说话的人正是这只女仆的主人」时才转发，uuid 对不上
-    # 直接丢。所以用户名不能原样写进去——模型会当成第三个人在说话，而不是玩家。
+    # 直接丢。所以这里不带 MC 用户名——模型该看到的玩家只有一个名字（LingChat 设置里的
+    # 用户名，由宿主自己加在行首），再写一个游戏账号名就多出个「第三个人」。
+    # 2026-10-16 真机上模型正是照着「玩家（NoiQing_Ling）说：…」这个形状，把玩家没说过的
+    # 话写进了自己的台词。配置里填了 MC 用户名、而说话的不是他时（多人服里女仆的主人
+    # 另有其人）才点名。
     sender = (chat.get("sender") or "").strip()
-    who = f"玩家（{sender}）" if sender else "玩家"
+    who = player_name(config(ctx))
+    if who and sender and sender != who:
+        text = f"［Minecraft］{sender}说：{message}"
+    else:
+        text = f"［Minecraft］{message}"
+    note = _carry(chat)
     # 与玩家在输入框里发一句走同一条路：写进台词历史、按当前配置生成回复，
     # 所以聊天窗里看得到，角色的回话也会顺着 on_line_shown 变成游戏内气泡。
-    send_user_message(f"［Minecraft］{who}说：{message}")
+    send_user_message(f"{text}\n{note}" if note else text)
+
+
+def _carry(chat):
+    """随这次发言带一句她此刻的处境。
+
+    身边那一圈（附近有什么活物、玩家进出视线、头顶遮挡、脚下踩到什么）不再逐条写成
+    旁白——一整晚下来能把台词表塞满，而她要的只是「知道周围有什么」。改成开口这一刻
+    现取一份快照带过去：一次发言带一次，说完就随那行留在历史里。
+
+    女仆 id 直接用帧里的：模组只在「说话的人正是这只女仆的主人」时才转发，帧里必然带着
+    她的 uuid，不必再问一次游戏。取不到就这一轮不带，玩家的话照常送。
+    """
+    maid = (chat.get("maid_id") or "").strip()
+    if not maid:
+        return ""
+    data, _ = tools.snapshot(maid, tools.CARRY_TIMEOUT_MS)
+    return tools.carry_text(data) if data else ""
 
 
 def _handle_event(ctx, data):
@@ -203,23 +243,24 @@ def _append_entry_hint():
 
 
 def _entry_hint_written():
-    """台词表里是否已经有过提示行。
+    """台词表里是否已经写过**现在这一版**的提示行。
 
-    先看尾巴（重连的常见情形，便宜）；历史比尾巴窗口更长、尾巴里又没找到时，
-    才整段扫一遍确认——避免历史很长时每次连接都做一次全量导出。
+    按内容认，不按那个标记认：措辞改了以后老存档也要重新交代一遍，否则模型一直按旧
+    规矩理解「［Minecraft］」和「［MC 事件］」。先看尾巴（重连的常见情形，便宜）；历史
+    比尾巴窗口更长、尾巴里又没找到时，才整段扫一遍确认。
     """
     head = read_context(start=1, end=1)
     total = head.get("total") or 0
     if not head.get("ok") or not total:
         return False
     since = max(1, total - TAIL_SCAN)
-    if _has_entry_tag(read_context(start=since, end=total)):
+    if _has_hint(read_context(start=since, end=total)):
         return True
     if since <= 1:
         return False
-    return _has_entry_tag(read_context())
+    return _has_hint(read_context())
 
 
-def _has_entry_tag(history):
+def _has_hint(history):
     lines = history.get("lines") or []
-    return any(ENTRY_TAG in (line.get("content") or "") for line in lines)
+    return any(ENTRY_HINT in (line.get("content") or "") for line in lines)

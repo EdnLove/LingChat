@@ -1,4 +1,4 @@
-"""六个工具的入口（manifest 的 `[[tools]]` 指向本文件）。
+"""六个工具的入口（manifest 的 `[[tools]]` 指向本文件），外加「她身边那一圈」的措辞。
 
 `run(ctx)` 返回的文本就是模型看到的结果，所以说实话最要紧：没连上、没绑定女仆、模组说
 办不到，一律如实回报，绝不假装已经执行——模型会照着这个结果跟玩家交代。
@@ -7,6 +7,9 @@
 - 动作（走出去、坐下、站起、躺下、看过来）：把意图翻成一条 `maid_action` 帧，受理与否
   当场给答复；走过去这类耗时的，结果稍后由 `action_done` 事件旁白交代。
 - 查询（看一眼周围）：现取一份快照翻成几句事实，只回给模型看，不写台词表。
+
+那份快照有第二个用处：玩家在 MC 里说话时，随那句话带一句「你此刻的处境」（见
+`carry_text`）。身边的变化不再逐条写成旁白，她知道周围有什么就靠这一句。
 """
 
 from bridge import ask, ready
@@ -24,6 +27,9 @@ from wording import (
 ACTION_TIMEOUT_MS = 8000
 # 看一眼周围等快照的超时。单人游戏按 Esc 暂停时它必然超时，这时要如实说。
 LOOK_TIMEOUT_MS = 8000
+# 玩家说话时顺手取快照的超时：给得很短，玩家那句话不能被一次查询拖住（游戏暂停时
+# 模组答不上来，这一轮就不带，照常把话送进对话）。
+CARRY_TIMEOUT_MS = 1500
 
 LOOK_AROUND_TOOL = "maid_look_around"
 
@@ -112,16 +118,50 @@ def _look_around(ctx):
     if not maid:
         return {"ok": False, "error": error}
 
-    response, error = ask(
-        {"type": LOOK_AROUND_TOOL, "data": {"maid_id": maid}}, LOOK_TIMEOUT_MS
-    )
+    data, error = snapshot(maid, LOOK_TIMEOUT_MS)
     if error:
         return {"ok": False, "error": error}
+    return {"ok": True, "message": _look_around_text(data)}
+
+
+def snapshot(maid_id, timeout_ms):
+    """现取一份她身边的快照。返回 (数据, 错误说明)；出错时数据是 None。
+
+    工具「看一眼周围」与「玩家开口时顺手带一份」共用这条路：帧、超时口径、老模组
+    认不出这个帧时的说法都只有一处。
+    """
+    response, error = ask({"type": LOOK_AROUND_TOOL, "data": {"maid_id": maid_id}}, timeout_ms)
+    if error:
+        return None, error
     if response.get("type") == "error":
         # 老模组认不出这个帧，回的是统一错误帧（里面只有 message，没有业务字段）
         message = ((response.get("data") or {}).get("message") or "").strip()
-        return {"ok": False, "error": f"游戏那边没能回答：{message or '这个模组版本还不支持查看周围'}"}
-    return {"ok": True, "message": _look_around_text(response.get("data") or {})}
+        return None, f"游戏那边没能回答：{message or '这个模组版本还不支持查看周围'}"
+    return response.get("data") or {}, ""
+
+
+def carry_text(data):
+    """一份快照 → 一句「你此刻的处境」，附在玩家的发言后面。
+
+    只挑此刻要紧的说：脚下与头顶、玩家在不在身边、附近有什么活物。正前方那一眼与光照
+    留给工具那句——玩家问起来才需要那么细，每句话都带上就成了噪音。
+    帧里没有 owner 字段说明这压根不是快照（多半是别的东西回了信），那就什么都不带。
+    """
+    if "owner" not in data:
+        return ""
+    parts = []
+    foot = name_of(BLOCK_NAMES, (data.get("standing_on") or {}).get("id"), "")
+    if foot:
+        parts.append(f"脚下是{foot}")
+    # 下界与末地没有天空，「头顶有没有遮挡」在那里无从谈起
+    if data.get("has_sky"):
+        parts.append("头顶有遮挡" if data.get("sheltered") else "头顶是露天的")
+    parts.append(_owner_phrase(data.get("owner") or {}))
+    nearby = data.get("nearby") or []
+    if nearby:
+        described = "、".join(sighting(one) for one in nearby)
+        parts.append(f"附近有 {len(nearby)} 个活物：{described}")
+    return "（你此刻：" + "；".join(parts) + "）"
 
 
 def _look_around_text(data):
@@ -142,13 +182,7 @@ def _look_around_text(data):
     else:
         lines.append("正前方没有挡着的东西，视线是通的。")
 
-    owner = data.get("owner") or {}
-    if not owner.get("same_dimension"):
-        lines.append("玩家不在你所在的这个世界里。")
-    elif owner.get("visible"):
-        lines.append(f"玩家就在你 {number(owner.get('distance'))} 格以内，你看得见他。")
-    else:
-        lines.append(f"玩家离你大约 {number(owner.get('distance'))} 格，但被什么挡着，你看不见他。")
+    lines.append(_owner_phrase(data.get("owner") or {}) + "。")
 
     nearby = data.get("nearby") or []
     if not nearby:
@@ -159,6 +193,16 @@ def _look_around_text(data):
         if data.get("truncated"):
             lines.append("更远的没列出来。")
     return "".join(lines)
+
+
+def _owner_phrase(owner):
+    """主人在哪，不带句号。两条路共用这一句，说法只有一处：工具那句自己收尾，
+    携带那句用分号与别的分句连起来。"""
+    if not owner.get("same_dimension"):
+        return "玩家不在你所在的这个世界里"
+    if owner.get("visible"):
+        return f"玩家就在你 {number(owner.get('distance'))} 格以内，你看得见他"
+    return f"玩家离你大约 {number(owner.get('distance'))} 格，但被什么挡着，你看不见他"
 
 
 TOOLS = {

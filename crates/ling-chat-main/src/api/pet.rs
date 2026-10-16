@@ -1,5 +1,9 @@
 use serde::{Deserialize, Serialize};
+#[cfg(desktop)]
+use std::sync::OnceLock;
 use std::sync::{Arc, Mutex};
+#[cfg(desktop)]
+use std::time::Instant;
 use tauri::AppHandle;
 #[cfg(desktop)]
 use tauri::Emitter;
@@ -444,6 +448,22 @@ fn ensure_bubble_window(app: &AppHandle, scale: f64) -> tauri::Result<()> {
     // topmost 组内的前后顺序会丢失，靠 2s 轮询兜底会有一段被遮挡的空窗期。
     if let Some(pet) = app.get_webview_window("main") {
         place_bubble(app, &pet);
+    }
+
+    tracing::info!("气泡窗已创建");
+    Ok(())
+}
+
+/// 宠物窗的跟随监听只挂一次。
+#[cfg(desktop)]
+fn watch_pet_window(app: &AppHandle) {
+    static PET_WINDOW_WATCHED: OnceLock<()> = OnceLock::new();
+
+    // get_or_init 保证只注册一份；主窗由配置在启动时创建，取不到属于异常状态
+    PET_WINDOW_WATCHED.get_or_init(|| {
+        let Some(pet) = app.get_webview_window("main") else {
+            return;
+        };
         let handle = app.clone();
         pet.on_window_event(move |event| {
             if let tauri::WindowEvent::Focused(true) = event {
@@ -455,10 +475,7 @@ fn ensure_bubble_window(app: &AppHandle, scale: f64) -> tauri::Result<()> {
                 }
             }
         });
-    }
-
-    tracing::info!("气泡窗已创建");
-    Ok(())
+    });
 }
 /// 退出全屏，并等到它真正结束。
 ///
@@ -561,6 +578,7 @@ pub async fn set_pet_mode(
 
         if enable {
             let scale_val = scale.unwrap_or(1.0);
+            let started = Instant::now();
 
             // 宠物窗 = 顶部留白 + 头像带 + 输入带，**不含气泡**：气泡独立成窗，
             // 顶部的留白专供频谱圆环，头像顶边在它下面。改这里必须同步
@@ -574,14 +592,28 @@ pub async fn set_pet_mode(
             let _ = window.set_decorations(false);
             let _ = window.set_maximizable(false);
             let _ = window.set_size(LogicalSize::new(width, height));
+            let styled_ms = started.elapsed().as_millis();
+
+            // 跟随监听只挂一次，不能跟着气泡窗的创建走
+            watch_pet_window(&app_handle);
 
             if let Err(e) = ensure_bubble_window(&app_handle, scale_val) {
                 tracing::warn!("气泡窗创建失败，桌宠降级为无气泡: {e}");
             }
+            let bubble_ms = started.elapsed().as_millis();
+
             // 改尺寸走的是"只 resize 不重建"，位置需要跟着新尺寸重算一次
             if let Some(pet) = app_handle.get_webview_window("main") {
                 place_bubble(&app_handle, &pet);
             }
+            let place_ms = started.elapsed().as_millis();
+
+            // 进桌宠偶发整机卡顿：分段耗时留待复现时定位（样式重建 / 建气泡窗 / 重排）
+            tracing::info!(
+                "[Pet] 进入桌宠耗时: 样式 {styled_ms}ms / 建气泡窗 {}ms / 重排 {}ms / 合计 {place_ms}ms",
+                bubble_ms - styled_ms,
+                place_ms - bubble_ms
+            );
         } else {
             close_bubble_window(&app_handle);
 

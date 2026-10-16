@@ -34,7 +34,7 @@ key = "player_name"
 label = "你在 MC 里的用户名"
 kind = "string"
 required = false
-hint = "比如 NoiQing_Ling。填上之后，游戏事件里出现这个名字就写成「玩家」，模型不会把它当成别人。\n留空也能用：接上游戏时的那句旁白里会写明玩家在游戏里叫什么。"
+hint = "比如 NoiQing_Ling。填上之后：游戏事件里出现这个名字就写成「玩家」，你在 MC 里说的话也不再带上这个账号名（模型只该认得设置里那个用户名）。\n留空也能用：接上游戏时的那句旁白里会写明玩家在游戏里叫什么。"
 
 [[config]]
 key = "echo_to_game"

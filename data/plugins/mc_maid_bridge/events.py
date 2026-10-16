@@ -3,6 +3,13 @@
 只写发生了什么，不写「该有什么情绪」——情绪由模型自己决定，留在台词表里的始终是
 客观记录。哪一条算紧急（要当场请角色开口）由 `_URGENT` 定，事件落地在 hooks.py。
 
+**身边那一圈刻意不在这里登记**：附近有什么活物、玩家进出视线、头顶遮没遮住、脚下踩到
+什么，这四类（模组的 `player_proximity_change` / `player_sight_change` / `living_near` /
+`shelter_change` / `ground_change`）不再翻成旁白。她此刻的处境由玩家开口那一刻随消息
+带过去的一份实时快照交代（见 `tools.carry_text`），逐条记下来只会让台词表积满
+「附近有村民」——2026-10-16 真机上一个晚上 34 条事件旁白里 31 条是这类。模组那边照推
+不误，这里不认就等于丢掉，是本次改动有意为之的「不认识就不出声」（见下）。
+
 加一类事件：写一个函数，在 `FORMATTERS` 里登记一行；紧急的话再进 `_URGENT`。
 每个函数收 `(data, player_name)`，只有受伤那条用得上名字（打她的可能是玩家本人）。
 认不出的 event_type 一律不出声——模组先加了新事件、插件还没跟上时，这是刻意的向后兼容。
@@ -17,27 +24,7 @@ from wording import (
     direction_text,
     name_of,
     number,
-    who_of,
 )
-
-# 与主人的远近档。gone 只可能是他去了别的维度、或者根本没绑定主人。
-PROXIMITY_PHRASES = {
-    "close": "走到了你身边",
-    "near": "退到了几步之外",
-    "far": "走远了一些",
-    "gone": "离开了你的世界",
-}
-
-# 脚下值得说的几种地，与模组侧那份白名单一一对应。
-FOOTING_PHRASES = {
-    "water": "你踩进水里了。",
-    "lava": "你踩进岩浆里了。",
-    "fire": "你踩进火里了。",
-    "snow": "你走到雪地上了。",
-    "sand": "你踩到沙子上了。",
-    "farmland": "你踩到耕地上了。",
-    "ice": "你踩到冰面上了。",
-}
 
 # 受理即完成的动作收尾时记进台词表的旁白。go_to 另有说法（看走到哪了）。
 ACTION_DONE_PHRASES = {
@@ -125,43 +112,18 @@ def maid_hurt(data, player_name):
     return f"你{cause}，{times}一共掉了 {damage} 点血，现在是 {now}/{most}。"
 
 
-def player_proximity_change(data, _player):
-    band = (data.get("proximity") or "").strip()
-    return f"玩家{PROXIMITY_PHRASES.get(band, '离你的距离变了')}。"
-
-
-def player_sight_change(data, _player):
-    if data.get("visible"):
-        return "玩家又出现在你能看到的地方了。"
-    return "玩家走出了你的视线。"
-
-
 def threat_near(data, _player):
-    """敌对生物靠近。说清是什么、多远、在哪个方向；还没看见它就补一句。"""
+    """敌对生物靠近。说清是什么、多远、在哪个方向；还没看见它就补一句。
+
+    身边那一层只剩这一条还在写旁白：它是唯一「得当场叫醒她」的观察，其余几类都由
+    开口时那份快照带过去。
+    """
     who = name_of(MOB_NAMES, data.get("type"), "什么东西")
     where = direction_text(data.get("direction"))
     text = f"有{who}靠过来了，大约 {number(data.get('distance'))} 格，在你{where}。"
     if not data.get("visible"):
         text += "你还没看到它。"
     return text
-
-
-def living_near(data, _player):
-    """身边来了别的活物。玩家与其他女仆用类别称呼，其余用生物名。"""
-    who = who_of(data.get("category"), data.get("type"))
-    where = direction_text(data.get("direction"))
-    return f"附近有{who}，在你{where}，大约 {number(data.get('distance'))} 格。"
-
-
-def shelter_change(data, _player):
-    if data.get("sheltered"):
-        return "你走进了有遮挡的地方，头顶看不到天了。"
-    return "你走到露天的空地上了，头顶又能看到天。"
-
-
-def ground_change(data, _player):
-    kind = (data.get("kind") or "").strip()
-    return FOOTING_PHRASES.get(kind, "你脚下踩的东西变了。")
 
 
 def action_done(data, _player):
@@ -196,12 +158,7 @@ FORMATTERS = {
     "weather_change": weather,
     "low_health": low_health,
     "maid_hurt": maid_hurt,
-    "player_proximity_change": player_proximity_change,
-    "player_sight_change": player_sight_change,
     "threat_near": threat_near,
-    "living_near": living_near,
-    "shelter_change": shelter_change,
-    "ground_change": ground_change,
     "action_done": action_done,
 }
 
