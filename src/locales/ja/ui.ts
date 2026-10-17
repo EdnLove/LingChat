@@ -277,15 +277,14 @@ export default {
       "「LLM プロバイダ」でログイン済みの Codex サブスクリプションで検索します。API Key の入力は不要です",
     kimiHint:
       "現在のチャットプロバイダーが公式 Kimi Code の場合、API Key は空欄のまま安全に認証情報を再利用できます。それ以外は別のキーを入力してください",
-    providerDeepSeek: "DeepSeek Responses",
+    providerDeepSeek: "DeepSeek ウェブ検索",
     customHint:
       "カスタム端点は Kimi /search プロトコル互換が必要（POST JSON のフィールド名は text_query）",
     apiKeyPlaceholder: "カスタム端点の API Key を入力",
     kimiApiKeyPlaceholder: "現在の Kimi Code 認証情報を再利用する場合は空欄にできます",
     dsApiKeyPlaceholder: "DeepSeek API Key を入力",
-    dsModel: "DeepSeek モデル",
     dsHint:
-      "DeepSeek Responses API のサーバーサイド web_search で検索します。別途 DeepSeek API Key が必要です。回答は DeepSeek が生成します",
+      "DeepSeek の /v1/tools/search エンドポイントで検索します。別途 DeepSeek API Key が必要です",
     baseUrl: "検索サービス URL",
     proxyEnable: "プロキシ経由で検索サービスにアクセス（v2rayN など）",
     maxResults: "検索結果の件数",

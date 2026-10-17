@@ -268,14 +268,12 @@ export default {
     codexHint: "复用「大模型管理」中已登录的 Codex 订阅凭据联网搜索，无需填写 API Key",
     kimiHint:
       "API Key 可留空：当前对话模型为官方 Kimi Code 时，会安全复用它的凭据；其他情况请单独填写",
-    providerDeepSeek: "DeepSeek Responses",
+    providerDeepSeek: "DeepSeek 网页搜索",
     customHint: "自定义端点需兼容 Kimi /search 协议（POST JSON，字段名为 text_query）",
     apiKeyPlaceholder: "填入自定义端点 API Key",
     kimiApiKeyPlaceholder: "可留空复用当前 Kimi Code 凭据",
     dsApiKeyPlaceholder: "填入 DeepSeek API Key",
-    dsModel: "DeepSeek 模型",
-    dsHint:
-      "通过 DeepSeek Responses API 的服务端 web_search 联网；需要单独填写 DeepSeek API Key，结果由服务端生成综合回答",
+    dsHint: "通过 DeepSeek /v1/tools/search 端点联网搜索；需要单独填写 DeepSeek API Key",
     baseUrl: "搜索服务地址",
     proxyEnable: "通过代理访问搜索服务（如 v2rayN）",
     maxResults: "返回结果条数",

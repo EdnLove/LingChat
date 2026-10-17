@@ -7,8 +7,6 @@ export interface WebSearchSettings {
   enabled: boolean;
   /** 搜索服务提供商："kimi" | "bocha" | "deepseek" | "tavily" | "codex" | "custom"（仅 custom 用 base_url） */
   provider: string;
-  /** DeepSeek Responses API 使用的模型（仅 provider = "deepseek" 时生效） */
-  model: string;
   api_key: string;
   base_url: string;
   proxy_enabled: boolean;

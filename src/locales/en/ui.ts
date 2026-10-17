@@ -279,15 +279,14 @@ export default {
       "Searches with the Codex subscription you signed into in LLM Providers — no API Key needed",
     kimiHint:
       "The API Key may be left blank when the active chat provider is official Kimi Code; its credential is reused securely. Otherwise, enter a separate key.",
-    providerDeepSeek: "DeepSeek Responses",
+    providerDeepSeek: "DeepSeek Web Search",
     customHint:
       "Custom endpoints must support the Kimi /search protocol (POST JSON field: text_query)",
     apiKeyPlaceholder: "Enter the custom endpoint API Key",
     kimiApiKeyPlaceholder: "Optional when reusing the active Kimi Code credential",
     dsApiKeyPlaceholder: "Enter your DeepSeek API Key",
-    dsModel: "DeepSeek Model",
     dsHint:
-      "Uses DeepSeek's server-side web_search via the Responses API. Requires a separate DeepSeek API key; the answer is synthesized by DeepSeek.",
+      "Searches via DeepSeek's /v1/tools/search endpoint. Requires a separate DeepSeek API key.",
     baseUrl: "Search Service URL",
     proxyEnable: "Access the search service via proxy (e.g. v2rayN)",
     maxResults: "Max Results",

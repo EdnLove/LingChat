@@ -318,17 +318,8 @@
           </p>
         </template>
 
-        <!-- DeepSeek Responses：可切换模型；结果数量由服务端决定，不展示条数设置 -->
+        <!-- DeepSeek 独立搜索端点：需要单独 API Key -->
         <template v-if="form.web_search.provider === 'deepseek'">
-          <label class="text-brand mt-4 inline-flex items-center font-medium">
-            {{ $t("ui.toolCalls.dsModel") }}
-          </label>
-          <input
-            type="text"
-            v-model="form.web_search.model"
-            placeholder="deepseek-flash"
-            class="shadow-glass focus:border-brand focus:ring-brand/20 mt-2 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white transition-all duration-200 focus:ring-2 focus:outline-none"
-          />
           <p class="mt-2 mb-2 text-sm text-gray-300">
             {{ $t("ui.toolCalls.dsHint") }}
           </p>
@@ -350,19 +341,17 @@
           />
         </template>
 
-        <template v-if="form.web_search.provider !== 'deepseek'">
-          <label class="text-brand mt-4 inline-flex items-center font-medium">
-            {{ $t("ui.toolCalls.maxResults") }}
-          </label>
-          <input
-            type="number"
-            v-model.number="form.web_search.max_results"
-            min="1"
-            max="20"
-            step="1"
-            class="shadow-glass focus:border-brand focus:ring-brand/20 mt-2 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white transition-all duration-200 focus:ring-2 focus:outline-none"
-          />
-        </template>
+        <label class="text-brand mt-4 inline-flex items-center font-medium">
+          {{ $t("ui.toolCalls.maxResults") }}
+        </label>
+        <input
+          type="number"
+          v-model.number="form.web_search.max_results"
+          min="1"
+          max="20"
+          step="1"
+          class="shadow-glass focus:border-brand focus:ring-brand/20 mt-2 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2.5 text-sm text-white transition-all duration-200 focus:ring-2 focus:outline-none"
+        />
 
         <div class="flex items-center gap-3 px-1 py-2.5">
           <Toggle
@@ -638,7 +627,6 @@ const form = reactive<ToolSettings>({
   web_search: {
     enabled: false,
     provider: "kimi",
-    model: "deepseek-flash",
     api_key: "",
     base_url: "",
     proxy_enabled: false,

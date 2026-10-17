@@ -86,17 +86,14 @@ pub struct WebSearchSettings {
     /// 搜索服务提供商：
     /// "kimi"（Kimi Code 同款 /v1/search；API Key 为空时可复用当前官方 Kimi Code 对话凭据）
     /// "bocha"（BoCha 博查 https://api.bochaai.com/v1/web-search）
-    /// "deepseek"（DeepSeek Responses API，服务端内置 web_search）
+    /// "deepseek"（DeepSeek 网页搜索 https://api.deepseek.com/v1/tools/search）
     /// "tavily"（Tavily https://api.tavily.com/search，body 为 query）
     /// "codex"（ChatGPT Codex alpha/search，复用 Codex OAuth，无需 API Key）
     /// "custom"（用户配置的 Kimi /search 兼容端点）
     pub provider: String,
-    /// DeepSeek Responses API 使用的模型（仅 provider = "deepseek" 时生效）。
-    #[serde(default = "default_deepseek_model")]
-    pub model: String,
     /// API Key（Bearer 认证）。
     pub api_key: String,
-    /// 搜索端点（deepseek 固定走官方端点，不读此字段；仅 custom 模式需要）。
+    /// 搜索端点（bocha/deepseek/kimi 固定走官方端点，不读此字段；仅 custom 模式需要）。
     pub base_url: String,
     /// 是否通过本地 HTTP 代理（如 v2rayN）访问搜索端点。
     pub proxy_enabled: bool,
@@ -109,17 +106,11 @@ pub struct WebSearchSettings {
     pub hide_search_results: bool,
 }
 
-/// DeepSeek Responses API 的默认模型（旧配置缺省该字段时使用）。
-fn default_deepseek_model() -> String {
-    "deepseek-flash".to_string()
-}
-
 impl Default for WebSearchSettings {
     fn default() -> Self {
         Self {
             enabled: false,
             provider: "kimi".to_string(),
-            model: "deepseek-flash".to_string(),
             api_key: String::new(),
             base_url: "https://api.kimi.com/coding/v1/search".to_string(),
             proxy_enabled: false,
