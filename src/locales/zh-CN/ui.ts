@@ -171,6 +171,24 @@ export default {
     toolRagTitle: "工具按需检索",
     toolRagHint:
       "每次请求只下发常用工具，模型需要时先用一句话检索出合适的工具再调用，省下全部工具说明占用的上下文。关闭后每次请求都下发全部已授权工具。",
+    toolRecommendTitle: "工具推荐",
+    toolRecommendHint:
+      "模型常常想不起来调用工具。这里选择每轮发言前怎么给它提个醒：推荐只是临时提示，不写进台词表；推荐的工具会随这一轮请求一起下发。",
+    toolRecommendModes: {
+      off: {
+        label: "不推荐",
+        description: "不做任何推荐，模型完全靠自己判断要不要检索或调用工具。",
+      },
+      agent: {
+        label: "Agent 推荐",
+        description: "由一个小的决策代理看一遍最近的对话来挑工具，每轮多一次小模型调用。",
+      },
+      rag: {
+        label: "检索推荐",
+        description:
+          "拿你这句话静默检索一次工具，只有分数超过阈值的才会被推荐；不额外调用模型，只花一点本地算力。",
+      },
+    },
     accessModes: {
       manual: { label: "逐次确认", description: "写入、编辑、删除文件和执行命令前都需要你确认。" },
       auto_approve: {

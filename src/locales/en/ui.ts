@@ -167,6 +167,26 @@ export default {
     toolRagTitle: "Search Tools on Demand",
     toolRagHint:
       "Sends only the common tools with each request; when the model needs one, it searches in a sentence first and then calls it, saving the context that every tool description would otherwise occupy. Turn off to send all authorized tools on every request.",
+    toolRecommendTitle: "Tool Suggestions",
+    toolRecommendHint:
+      "Models often forget to use their tools. Choose how to nudge the model before each turn. Suggestions are a temporary hint, never written to the transcript, and the suggested tools are sent with that turn's request.",
+    toolRecommendModes: {
+      off: {
+        label: "Off",
+        description:
+          "No suggestions; the model decides on its own whether to search for or call tools.",
+      },
+      agent: {
+        label: "Agent",
+        description:
+          "A small decision agent reads the recent conversation and picks tools. Adds one small model call per turn.",
+      },
+      rag: {
+        label: "Retrieval",
+        description:
+          "Silently searches the tools with your message; only tools scored above the threshold are suggested. No extra model call, just local compute.",
+      },
+    },
     accessModes: {
       manual: {
         label: "Ask Every Time",

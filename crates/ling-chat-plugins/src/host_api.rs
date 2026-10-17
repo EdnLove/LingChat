@@ -672,37 +672,32 @@ fn current_capture_allow() -> bool {
     CAPTURE_ALLOW.with(|cell| *cell.borrow())
 }
 
-/// 按插件要求取一张画面，返回 (base64, 处理结果)。
+/// 抓一张屏幕画面，返回 JPEG 的 data URL。
 ///
-/// 三道关，任何一道不过都只是「这次不带图」，消息照发：
-/// - 插件没声明 `capture_screen`：不抓（见 `CAPTURE_ALLOW`）；
-/// - 当前对话模型没有原生识图：不抓。抓了也只能走视觉模型转述，等于每条消息多花
-///   一次调用、还往台词表塞一段描述——不如不抓；
-/// - 抓不到（没找到那个窗口、整屏也抓不到）：作罢。
+/// 抓哪个窗口由插件给的关键词决定，找不到（或抓回来的不像一张画）就退回整个桌面。
+/// 具体实现与压缩档位在 `screen_analyzer::capture_window_as_jpeg`，那边已经处理了
+/// 「最小化后只剩标题栏一条」「独显全屏只给回黑图」这类坏帧。
 ///
-/// 结果字符串同时回给插件（`screenshot` 字段），排查「为什么图没到」时不用猜。
-fn take_screenshot(app: &AppHandle, screen: &str) -> (Option<String>, &'static str) {
+/// 当前模型没开原生识图时直接失败：抓了也送不进对话，不如把原因给插件，让它如实回话。
+fn capture_screen_impl(app: &AppHandle, window: &str) -> serde_json::Value {
     use base64::Engine as _;
 
-    let (shot, how) = if screen.trim().is_empty() {
-        (None, "off")
-    } else if !current_capture_allow() {
-        (None, "denied")
-    } else if !ling_chat_main::ai_service::llm::provider_config::native_vision_enabled(app) {
-        (None, "no_vision")
-    } else {
-        match ling_chat_main::ai_service::screen_analyzer::capture_window_as_jpeg(screen) {
-            Some(bytes) => (
-                Some(base64::engine::general_purpose::STANDARD.encode(&bytes)),
-                "attached",
-            ),
-            None => (None, "capture_failed"),
-        }
-    };
-    if how != "off" {
-        tracing::info!("[Plugin] send_user_message 的截图：{how}（窗口关键词 {screen}）");
+    if !ling_chat_main::ai_service::llm::provider_config::native_vision_enabled(app) {
+        return serde_json::json!({
+            "ok": false,
+            "error": "当前对话模型没有开启原生识图，看不到图片",
+        });
     }
-    (shot, how)
+    match ling_chat_main::ai_service::screen_analyzer::capture_window_as_jpeg(window) {
+        Some(bytes) => serde_json::json!({
+            "ok": true,
+            "image": format!(
+                "data:image/jpeg;base64,{}",
+                base64::engine::general_purpose::STANDARD.encode(&bytes)
+            ),
+        }),
+        None => serde_json::json!({ "ok": false, "error": "抓不到画面（窗口与桌面都没取到）" }),
+    }
 }
 
 /// 把一条用户消息送进对话（等同玩家在输入框里发了一句）。
@@ -710,12 +705,9 @@ fn take_screenshot(app: &AppHandle, screen: &str) -> (Option<String>, &'static s
 /// 复用玩家那条入口 `send_chat_message`，行为完全一致：写进对话、走当前配置
 /// 生成回复，该有的记忆与工具都会生效。生成在后台跑，这里不等它——插件 handler
 /// 不该被一轮回复卡住。
-///
-/// `screen` 非空时先抓一张画面随这条消息一起给模型看，见 [`take_screenshot`]。
-async fn send_user_message_impl(app: AppHandle, text: String, screen: String) -> serde_json::Value {
-    let (shot, how) = take_screenshot(&app, &screen);
-    match ling_chat_main::api::chat::send_chat_message(app, text, shot).await {
-        Ok(()) => serde_json::json!({ "ok": true, "screenshot": how }),
+async fn send_user_message_impl(app: AppHandle, text: String) -> serde_json::Value {
+    match ling_chat_main::api::chat::send_chat_message(app, text, None).await {
+        Ok(()) => serde_json::json!({ "ok": true }),
         Err(e) => serde_json::json!({ "ok": false, "error": e }),
     }
 }
@@ -794,27 +786,15 @@ mod plugin_host {
     /// 把一条用户消息送进对话（等同玩家在输入框里发了一句）。
     ///
     /// 用法：`send_user_message("在 QQ 里说的话")`
-    ///      `send_user_message("在游戏里说的话", screen="Minecraft")`
     ///
-    /// `screen` 非空时，先抓一张画面随这条消息一起给模型看：值是要找的窗口标题
-    /// 关键词（标题或进程名命中就用它），找不到就抓整个桌面。图会先缩到长边 1024
-    /// 再编 JPEG，约一千 token；**需要 manifest 顶层声明 `capture_screen = true`**，
-    /// 且当前对话模型开着原生识图，否则这一项自动不起作用（消息照发）。
-    ///
-    /// 返回：成功 `{ "ok": true, "screenshot": "attached" }`；失败 `{ "ok": false, "error": "..." }`
-    /// （不抛异常）。`screenshot` 说明这次到底带没带图：`attached` / `off`（没要求）/
-    /// `denied`（没声明能力）/ `no_vision`（没开原生识图）/ `capture_failed`。
+    /// 返回：成功 `{ "ok": true }`；失败 `{ "ok": false, "error": "..." }`（不抛异常）。
     ///
     /// **需要 manifest 顶层声明 `send_user_message = true`**，未声明的插件调用一律被拒。
     /// 调用等同玩家自己发了一句：会写进对话并触发回复生成（生成在后台跑，本调用
     /// 立刻返回）。注意两点：`/` 开头的内容会被当成调试指令，插件侧应自行过滤；
     /// 别把收到的 `ai_reply` 原样转回来，否则会和角色互相刷屏。
     #[pyfunction]
-    fn send_user_message(
-        text: String,
-        kwargs: KwArgs<PyObjectRef>,
-        vm: &VirtualMachine,
-    ) -> PyResult<PyObjectRef> {
+    fn send_user_message(text: String, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
         if !super::current_send_allow() {
             return Ok(super::err_json(
                 vm,
@@ -824,12 +804,48 @@ mod plugin_host {
         let Some(app) = crate::app_handle() else {
             return Ok(super::no_host(vm));
         };
+        let result = super::runtime().block_on(super::send_user_message_impl(app, text));
+        Ok(super::value_to_pyobject(vm, &result))
+    }
+
+    /// 抓一张屏幕画面，返回 JPEG 的 data URL——工具把它转给模型看，模型就「看得到」了。
+    ///
+    /// 用法：`capture_screen()` / `capture_screen(window="Minecraft")`
+    ///
+    /// `window` 是要找的窗口标题（或进程名）关键词，命中就用它；找不到、抓失败、
+    /// 抓回来的不像一张画面（最小化后只剩标题栏一条、独显全屏只给回黑图）都退回抓
+    /// 整个桌面。图会先缩到长边 1024 再编 JPEG，约一千 token。
+    ///
+    /// 返回：成功 `{ "ok": true, "image": "data:image/jpeg;base64,..." }`；
+    /// 失败 `{ "ok": false, "error": "..." }`（不抛异常）。
+    ///
+    /// **需要 manifest 顶层声明 `capture_screen = true`**（屏幕上是玩家的隐私），
+    /// 且当前对话模型开着原生识图——看不到图的模型抓了也送不进对话。
+    #[pyfunction]
+    fn capture_screen(kwargs: KwArgs<PyObjectRef>, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
+        if !super::current_capture_allow() {
+            return Ok(super::err_json(
+                vm,
+                "本插件未声明 capture_screen 能力（需在 manifest.toml 顶层写 capture_screen = true）",
+            ));
+        }
+        let Some(app) = crate::app_handle() else {
+            return Ok(super::no_host(vm));
+        };
         let kwargs = super::kwargs_map(kwargs);
-        let screen = kwargs
-            .get("screen")
+        let window = kwargs
+            .get("window")
             .and_then(|v| super::py_to_value(vm, v).as_str().map(str::to_string))
             .unwrap_or_default();
-        let result = super::runtime().block_on(super::send_user_message_impl(app, text, screen));
+        let result = super::capture_screen_impl(&app, &window);
+        tracing::info!(
+            "[Plugin] capture_screen 窗口关键词={window:?} 结果={}",
+            if result["ok"].as_bool().unwrap_or(false) {
+                "ok"
+            } else {
+                "失败"
+            }
+        );
         Ok(super::value_to_pyobject(vm, &result))
     }
 

@@ -175,6 +175,33 @@
             </div>
           </div>
         </div>
+        <div class="mt-3 rounded-xl border border-white/15 bg-white/5 px-4 py-3">
+          <h3 class="font-semibold text-white">
+            {{ $t("ui.toolCalls.toolRecommendTitle") }}
+          </h3>
+          <p class="mt-1 text-sm leading-relaxed text-gray-300">
+            {{ $t("ui.toolCalls.toolRecommendHint") }}
+          </p>
+          <div class="mt-3 flex flex-wrap gap-2">
+            <button
+              v-for="mode in toolRecommendModes"
+              :key="mode"
+              type="button"
+              class="rounded-lg border px-3 py-1.5 text-sm transition-colors duration-200"
+              :class="
+                form.tool_recommend_mode === mode
+                  ? 'border-brand bg-brand/15 text-white'
+                  : 'border-white/15 bg-black/20 text-gray-300 hover:bg-white/10'
+              "
+              @click="form.tool_recommend_mode = mode"
+            >
+              {{ $t(`ui.toolCalls.toolRecommendModes.${mode}.label`) }}
+            </button>
+          </div>
+          <p class="mt-2 text-xs leading-relaxed text-gray-400">
+            {{ $t(`ui.toolCalls.toolRecommendModes.${form.tool_recommend_mode}.description`) }}
+          </p>
+        </div>
         <div
           v-if="form.access_mode === 'full_access'"
           class="mt-3 rounded-lg border-l-4 border-amber-400/70 bg-amber-400/10 px-4 py-3 text-sm text-amber-200/90"
@@ -572,6 +599,7 @@ import {
   testWebSearch,
   TOOL_GROUP_KEYS,
   type ToolAccessMode,
+  type ToolRecommendMode,
   type ToolRuntimeInfo,
   type ToolSettings,
 } from "@/api/services/tool-settings";
@@ -590,6 +618,7 @@ const commandAvailable = computed(() => runtimeInfo.value?.commandAvailable ?? !
 
 const navItems = ["access", "web_search", ...TOOL_GROUP_KEYS] as const;
 const accessModes: ToolAccessMode[] = ["manual", "auto_approve", "full_access"];
+const toolRecommendModes: ToolRecommendMode[] = ["off", "agent", "rag"];
 const DEFAULT_TOOL_ROUND_LIMIT = 8;
 const MIN_TOOL_ROUND_LIMIT = 1;
 const MAX_TOOL_ROUND_LIMIT = 64;
@@ -630,6 +659,7 @@ const form = reactive<ToolSettings>({
   access_mode: "manual",
   max_tool_rounds: DEFAULT_TOOL_ROUND_LIMIT,
   tool_rag: true,
+  tool_recommend_mode: "off",
 });
 
 const status = reactive({ message: "", color: "#4ade80" });
@@ -777,6 +807,7 @@ onMounted(async () => {
     form.access_mode = settings.access_mode ?? "manual";
     form.max_tool_rounds = settings.max_tool_rounds ?? DEFAULT_TOOL_ROUND_LIMIT;
     form.tool_rag = settings.tool_rag ?? true;
+    form.tool_recommend_mode = settings.tool_recommend_mode ?? "off";
     normalizeToolRoundLimit();
     normalizeMediaSettings();
     await loadRuntimeInfo();

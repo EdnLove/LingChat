@@ -1,12 +1,14 @@
-"""六个工具的入口（manifest 的 `[[tools]]` 指向本文件），外加「她身边那一圈」的措辞。
+"""七个工具的入口（manifest 的 `[[tools]]` 指向本文件），外加「她身边那一圈」的措辞。
 
 `run(ctx)` 返回的文本就是模型看到的结果，所以说实话最要紧：没连上、没绑定女仆、模组说
 办不到，一律如实回报，绝不假装已经执行——模型会照着这个结果跟玩家交代。
 
-工具分两类：
+工具分三类：
 - 动作（走出去、坐下、站起、躺下、看过来）：把意图翻成一条 `maid_action` 帧，受理与否
   当场给答复；走过去这类耗时的，结果稍后由 `action_done` 事件旁白交代。
 - 查询（看一眼周围）：现取一份快照翻成几句事实，只回给模型看，不写台词表。
+- 看图（看一眼玩家屏幕）：抓一张画面交给宿主，宿主把它当图片附给模型——她这才看得到
+  你搭的爱心是什么形状。
 
 那份快照有第二个用处：玩家在 MC 里说话时，随那句话带一句「你此刻的处境」（见
 `carry_text`）；她挨打那类「出事」的旁白后面也缀一句眼前的活物（见 `creature_text`）。
@@ -16,7 +18,9 @@
 「大约 10.5 格」这种句子，而玩家并不需要知道几位小数。
 """
 
-from bridge import ask, ready
+from plugin_host import capture_screen
+
+from bridge import ask, config, ready
 from wording import (
     BLOCK_NAMES,
     DIMENSION_NAMES,
@@ -39,6 +43,16 @@ CARRY_TIMEOUT_MS = 1500
 OWNER_NEAR = 30.0
 
 LOOK_AROUND_TOOL = "maid_look_around"
+SEE_SCREEN_TOOL = "maid_see_screen"
+
+# 抓屏时按这个关键词找游戏窗口（标题或进程名命中即可），找不到就抓整个屏幕。
+DEFAULT_SCREEN_WINDOW = "Minecraft"
+
+# 图交给宿主要附的那句话：图从哪来、看到的是什么，模型才知道该怎么用。
+SCREEN_HINT = (
+    "（这是玩家屏幕上此刻的样子，也就是你眼前看到的画面。"
+    "图里如果有聊天窗口，那是你自己在的那扇窗，不用管它。）"
+)
 
 # 带目标的动作与各自的默认目标。执行器只校验 JSON Schema 的一个子集、不认 enum，
 # 所以合法值在这里兜底（模组那头还会再校验一次）。
@@ -129,6 +143,26 @@ def _look_around(ctx):
     if error:
         return {"ok": False, "error": error}
     return {"ok": True, "message": _look_around_text(data)}
+
+
+def _see_screen(ctx):
+    """看一眼玩家此刻屏幕上的画面，把图交给模型。
+
+    图不经过这段文字：宿主会把工具结果里的 image 摘出来，单起一条消息附给模型，
+    只在这一轮生效、不进长期记忆。抓不到就如实说，别让模型照着想象编。
+    """
+    window = (config(ctx).get("screen_window") or "").strip()
+    shot = capture_screen(window=window or DEFAULT_SCREEN_WINDOW)
+    if not shot.get("ok"):
+        return {"ok": False, "error": shot.get("error") or "抓不到画面"}
+    image = (shot.get("image") or "").strip()
+    if not image:
+        return {"ok": False, "error": "抓回来的画面是空的"}
+    return {
+        "ok": True,
+        "message": "你看了一眼玩家此刻屏幕上的画面，图已经附上了。",
+        "image": {"data_url": image, "hint": SCREEN_HINT},
+    }
 
 
 def snapshot(maid_id, timeout_ms):
@@ -257,4 +291,5 @@ TOOLS = {
     "maid_lie_down": action_tool("lie_down"),
     "maid_look_at": action_tool("look_at"),
     LOOK_AROUND_TOOL: _look_around,
+    SEE_SCREEN_TOOL: _see_screen,
 }

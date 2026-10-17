@@ -179,6 +179,19 @@ impl MediaFileSettings {
     }
 }
 
+/// 主聊天每轮发言前的工具推荐方式。
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolRecommendMode {
+    /// 不推荐，模型自己决定要不要检索或调用工具。
+    #[default]
+    Off,
+    /// 上帝 Agent 看一遍最近的对话再挑（每轮多一次小模型调用）。
+    Agent,
+    /// 拿玩家这句话静默检索一次工具，过阈值的才推荐（不额外调用模型）。
+    Rag,
+}
+
 /// 主聊天工具的统一审批策略。只读工具始终可以直接运行。
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -207,6 +220,9 @@ pub struct ToolSettings {
     /// 工具按需检索（Tool RAG）：只下发常驻工具 + 检索激活的工具，
     /// 而不是把全部已授权工具定义随每次请求下发。关闭即回到全量下发。
     pub tool_rag: bool,
+    /// 每轮用户发言前怎么推荐工具：不推荐 / 上帝 Agent 挑 / 静默检索。
+    /// 两种推荐都只是临时提示，不写台词表也不进记忆。
+    pub tool_recommend_mode: ToolRecommendMode,
     /// 以下四项仅用于读取旧版配置。保存后会迁移成 `access_mode`。
     #[serde(default, skip_serializing)]
     pub command_auto_approve: bool,
@@ -230,6 +246,7 @@ impl Default for ToolSettings {
             access_mode: ToolAccessMode::default(),
             max_tool_rounds: DEFAULT_TOOL_CALL_ROUND_LIMIT,
             tool_rag: true,
+            tool_recommend_mode: ToolRecommendMode::default(),
             command_auto_approve: false,
             command_delete_auto_approve: false,
             file_delete_auto_approve: false,
