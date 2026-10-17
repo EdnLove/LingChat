@@ -283,6 +283,12 @@ async fn dispatch_chat_turn(
     tokio::spawn(async move {
         let _lock = gen_lock.lock().await;
 
+        // 上一轮生成期间插件攒下的旁白先补进来：它们发生在上一轮，按顺序排在本轮输入之前。
+        {
+            let mut gs = preamble_gs.lock().await;
+            gs.flush_pending_prompt_lines(&preamble_db).await;
+        }
+
         // 系统台词先于本轮玩家消息落库，模型按「系统提示 → 玩家发言」的顺序读取；
         // 本轮无玩家发言时它就是本轮唯一的输入。
         // sender_role_id 保持 None，不计入玩家消息序号，回溯对话不会在它上面截断。

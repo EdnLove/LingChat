@@ -327,8 +327,16 @@ async fn add_prompt_line_impl(app: AppHandle, role: String, text: String) -> ser
 
     let state = app.state::<AppState>();
     let db = state.db.clone();
+    let gen_lock = state.generation_lock.clone();
     let gs = game_status_handle(&app).await;
+    // 生成进行中先排队：直接写会往流式任务算好的行号后面插队，事件一多就会和
+    // 正在生成的这一轮搅在一起。下一轮开头（拿到生成锁之后）再按顺序补写。
+    let idle = gen_lock.try_lock();
     let mut gs = gs.lock().await;
+    if idle.is_err() {
+        gs.queue_prompt_line(role, text);
+        return serde_json::json!({ "ok": true, "queued": true });
+    }
     match gs.add_prompt_line(&db, role, text).await {
         Ok(index) => serde_json::json!({ "ok": true, "index": index }),
         Err(e) => serde_json::json!({ "ok": false, "error": e.to_string() }),
@@ -943,6 +951,10 @@ mod plugin_host {
     ///
     /// 返回 `{ "ok": true, "index": N }`（N 是该行的位置，1 起、与 `read_context`
     /// 的下标口径一致）或 `{ "ok": false, "error": "..." }`（角色名不认识 / 内容为空）。
+    ///
+    /// 正在生成回复时不会直接写：这一行会先排队（`{ "ok": true, "queued": true }`），
+    /// 等本轮收尾、下一轮开头按顺序补进台词表——中途插队会和流式写入抢行号。
+    /// 连着的旁白在队列里会先用换行接成一行（上限 600 字），写入时仍是一条。
     #[pyfunction]
     fn add_prompt_line(role: String, text: String, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
         let Some(app) = crate::app_handle() else {
@@ -957,7 +969,10 @@ mod plugin_host {
     /// 用法：`trigger_proactive("")` —— 把要说的先记成旁白，再空提示请求开口；
     /// 传提示语则会被包成 `{旁白: （系统提示：…）}` 写进台词表（截图转述这类要用）。
     ///
-    /// 返回：`{ "ok": true, "triggered": true }`
+    /// 请求只会**排队**：等这一轮台词播完、前端空闲下来才投放；同时最多攒一条，
+    /// 短时间连发多次会合并成一次（战斗里每挨一下来一次也不会叠出好几轮）。
+    ///
+    /// 返回：`{ "ok": true, "triggered": true }`（已受理/已合并）
     #[pyfunction]
     fn trigger_proactive(text: String, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
         if !super::current_proactive_allow() {

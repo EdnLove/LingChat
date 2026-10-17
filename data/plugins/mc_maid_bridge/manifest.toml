@@ -1,6 +1,6 @@
 id = "mc_maid_bridge"
 name = "车万女仆桥接"
-description = "把《车万女仆》桥接模组接进对话：MC 里玩家说的话进对话，角色回的话变成游戏内女仆气泡，还能指挥女仆走过去、坐下、躺床、看过来，并让她知道自己身边有什么"
+description = "把《车万女仆》桥接模组接进对话：MC 里玩家说的话进对话，角色回的话变成游戏内女仆气泡，还能指挥女仆走过去、坐下、躺下，并让她知道自己身边有什么、收到了你给的什么、被 Carry On 抱起来，以及你拿到了什么成就"
 version = "0.1.0"
 author = "LingChat"
 
@@ -78,9 +78,10 @@ signal = "line_shown"
 script = "hooks.py"
 handler = "on_line_shown"
 
-# 动作与查询：让 LLM 指挥游戏里的女仆走过去、坐下、躺床、看过来，或问一句她周围有什么。
+# 动作与查询：让 LLM 指挥游戏里的女仆走过去、坐下、躺床，或问一句她周围有什么。
 # 六个工具都指向 tools.py（一个脚本可挂多个入口，不必为每个工具新开文件）。
 # 描述的第一句会进 tool_search 的清单，也会进 Tool RAG 的检索语料，所以要一句话说清能力。
+# 「看向玩家」不在这里：她说话时由模组自己转头，不需要模型下指令。
 [[tools]]
 name = "maid_go_to"
 description = "让女仆走到玩家身边或最近的床边。target 可选 player（玩家，默认）或 bed（最近的床）；走过去要花点时间，到位后会有旁白告诉你结果。"
@@ -106,13 +107,6 @@ timeout_ms = 15000
 name = "maid_lie_down"
 description = "让女仆走到床上躺下睡觉。她按自己的作息睡，不在睡觉时段会自己起来；附近没有床也会失败，工具会如实告诉你原因。"
 parameters = '{ "type":"object", "properties":{ "target":{ "type":"string", "enum":["bed"], "description":"bed = 最近的床（默认也是唯一取值）" } } }'
-script = "tools.py"
-timeout_ms = 15000
-
-[[tools]]
-name = "maid_look_at"
-description = "让女仆转头看向玩家。只是转头看一眼，不会走过来。"
-parameters = '{ "type":"object", "properties":{} }'
 script = "tools.py"
 timeout_ms = 15000
 

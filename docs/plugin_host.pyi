@@ -66,12 +66,15 @@ def edit_context(
 
 def add_prompt_line(role: str, text: str) -> Dict[str, Any]:
     """往台词表末尾追加一条提示台词（旁白/系统/剧情），不触发回复。
-    role 取 "narrator" / "system" / "plot"。返回 {ok, index}。"""
+    role 取 "narrator" / "system" / "plot"。
+    空闲时返回 {ok, index}；生成进行中先排队，返回 {ok, queued: True}，
+    下一轮开头再按顺序写进台词表（连着的 narrator 旁白会并成一行）。"""
 
 def trigger_proactive(text: str) -> Dict[str, Any]:
-    """请求宿主主动开一次口（主动对话系统的一次投放），不等生成。需 manifest 声明
-    trigger_proactive = true。已受理 {ok, triggered: True}；没受理
-    {ok, triggered: False, reason}（reason 见指南，不排队）。
+    """请求宿主主动开一次口（主动对话系统的一次投放）。需 manifest 声明
+    trigger_proactive = true。请求只排队：等这一轮台词播完、再过冷却才投放；
+    同一时刻最多攒一条，连发会合并。{ok, triggered: True} = 已受理/已合并；
+    proactive_disabled / system_busy 见指南。
     text 为空 = 只开口、不往台词表写提示行。"""
 
 def compress_context() -> Dict[str, Any]:

@@ -10,7 +10,7 @@
 「附近有村民」——2026-10-16 真机上一个晚上 34 条事件旁白里 31 条是这类。模组那边照推
 不误，这里不认就等于丢掉，是本次改动有意为之的「不认识就不出声」（见下）。
 
-加一类事件：写一个函数，在 `FORMATTERS` 里登记一行；紧急的话再进 `_URGENT`。
+加一类事件：写一个函数，在 `FORMATTERS` 里登记一行；紧急的话再进 `URGENT`。
 每个函数只收这一条事件的数据；「是不是玩家干的」由模组给的标记回答，不必拿配置里的用户名去比。
 认不出的 event_type 一律不出声——模组先加了新事件、插件还没跟上时，这是刻意的向后兼容。
 """
@@ -20,7 +20,9 @@ from wording import (
     DAMAGE_HINTS,
     DIMENSION_NAMES,
     MOB_NAMES,
+    advancement_name,
     as_int,
+    item_name,
     name_of,
     nearness_place,
     who_of,
@@ -37,7 +39,6 @@ ACTION_DONE_PHRASES = {
     "sit": "你坐下了。",
     "stand": "你站起来了。",
     "lie_down": "你躺到床上睡着了。",
-    "look_at": "你转头看向了玩家。",
 }
 
 
@@ -48,8 +49,13 @@ def format_event(data):
     if formatter is None:
         return "", False
     # 玩家死在旁边不是背景动静，当场请她开口；别的生灵死了照旧走「攒够几条」那套。
+    # 玩家丢下的东西被她收起来同理：那是给她的，该有反应；她自己捡到的杂物不必。
     # 外层那个 bool 不能省：`or` 会把右操作数原样返回，缺字段时就成了 None 而不是假。
-    urgent = kind in URGENT or bool(kind == "creature_death" and data.get("victim_owner"))
+    urgent = (
+        kind in URGENT
+        or bool(kind == "creature_death" and data.get("victim_owner"))
+        or bool(kind == "item_pickup" and data.get("from_owner"))
+    )
     return formatter(data), urgent
 
 
@@ -134,15 +140,90 @@ def creature_death(data):
 
 
 def _death_cause(data):
-    """怎么死的：一句动词短语。谁动的手看标记与类型 id，都不认识就按伤害类型说。"""
-    if data.get("attacker_owner"):
+    """怎么死的：一句动词短语。谁动的手看标记与类型 id，都不认识就按伤害类型说。
+
+    `attacker_maid` 是「她自己动的手」，`attacker_owner` 是「她主人（玩家）动的手」。
+    这两个标记必须排在 `attacker` 前面：她自己与各种生物也带一个显示名，拿名字去认
+    「别的玩家」会把它们全说成玩家（2026-10-17 真机：玩家杀了两只羊，旁白写成「被你
+    杀了」，角色于是以为自己动了手，一整天都在困惑）。
+    """
+    if data.get("attacker_maid"):
         return "被你杀了"
-    if (data.get("attacker") or "").strip():
-        return "被别的玩家杀了"
+    if data.get("attacker_owner"):
+        return "被玩家杀了"
     if (data.get("attacker_type") or "").strip():
         who = name_of(MOB_NAMES, data.get("attacker_type"), "什么东西")
         return f"被{who}杀了"
+    if (data.get("attacker") or "").strip():
+        return "被别的玩家杀了"
     return DAMAGE_HINTS.get((data.get("damage_type") or "").strip()) or "死了"
+
+
+def item_gift(data):
+    """主人把手里的东西丢在她身边。模组把一小段连续投掷合成一条。
+
+    只记「给了什么」，不写数字之外的推测。她未必会去捡（拾物模式没开、背包没格就捡不了），
+    捡没捡另有 `item_pickup` 那条。
+    """
+    place = "脚边" if _close(data.get("distance")) else "身边"
+    return f"玩家往你{place}丢下了{_item_list(data.get('items'))}。"
+
+
+def item_pickup(data):
+    """她把地上的东西收进了背包。玩家丢的那份值得当场开口，其余只是记一笔。"""
+    items = _item_list([data])
+    if data.get("from_owner"):
+        return f"你把玩家丢给你的{items} 收进了背包。"
+    return f"你捡起了{items}。"
+
+
+def item_received(data):
+    """背包里多出东西，多半是玩家在女仆界面里放进去的。界面那条路没有事件可挂，
+    模组只能前后比一次，所以这里只说「多了什么」，不硬认是谁放的。"""
+    return f"你的背包里多了{_item_list(data.get('items'))}。"
+
+
+def item_fed(data):
+    """玩家喂她吃了东西（潜行右键食物）。连喂几口由模组合成一条。"""
+    return f"玩家喂你吃了{_item_list(data.get('items'))}。"
+
+
+def maid_carried(data):
+    """被 Carry On 抱了起来。她主人才能抱她（那个模组只允许主人动驯服生物）。"""
+    return "玩家把你抱了起来。"
+
+
+def maid_dropped(data):
+    """抱了一会儿又放下来了。"""
+    return "玩家把你放下来了。"
+
+
+def player_advancement(data):
+    """玩家拿到了成就（原版叫「进度」）。挑战类另说一句，语气不一样。"""
+    name = advancement_name(data.get("advancement"), data.get("title"))
+    if (data.get("frame") or "") == "challenge":
+        return f"玩家完成了挑战「{name}」。"
+    return f"玩家获得了成就「{name}」。"
+
+
+def _item_list(items):
+    """[{item,count}, ...] → 「熟牛肉 ×2、面包」。不认识的 id 退回英文后半段，模型也认。"""
+    parts = []
+    for one in items or []:
+        if not isinstance(one, dict):
+            continue
+        name = item_name(one.get("item"))
+        count = as_int(one.get("count"), 1)
+        parts.append(f"{name} ×{count}" if count > 1 else name)
+    return "、".join(parts) or "东西"
+
+
+def _close(distance):
+    """丢的东西是不是就在脚边（三格内）。给不出距离就当脚边。"""
+    try:
+        return float(distance) <= 3.0
+    except (TypeError, ValueError):
+        return True
 
 
 def threat_near(data):
@@ -206,8 +287,28 @@ FORMATTERS = {
     "threat_near": threat_near,
     "creature_death": creature_death,
     "action_done": action_done,
+    "item_gift": item_gift,
+    "item_pickup": item_pickup,
+    "item_received": item_received,
+    "item_fed": item_fed,
+    "maid_carried": maid_carried,
+    "maid_dropped": maid_dropped,
+    "player_advancement": player_advancement,
 }
 
-# 这几类当场请角色开口（挨打、血量告急、敌对生物靠近、动作收尾）；
-# 其余走「攒够几条」那套，不然每一次散步都会变成一次生成。
-URGENT = frozenset({"low_health", "maid_hurt", "threat_near", "action_done"})
+# 这几类当场请角色开口（挨打、血量告急、敌对生物靠近、动作收尾、收到东西、
+# 被抱起来或放下、玩家拿到成就）；其余走「攒够几件」那套，不然每一次散步都会变成一次生成。
+# `item_pickup` 只有「捡的是玩家丢的」才当场开口，判在 `format_event` 里。
+URGENT = frozenset(
+    {
+        "low_health",
+        "maid_hurt",
+        "threat_near",
+        "action_done",
+        "item_received",
+        "item_fed",
+        "maid_carried",
+        "maid_dropped",
+        "player_advancement",
+    }
+)

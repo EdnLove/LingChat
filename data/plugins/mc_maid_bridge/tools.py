@@ -1,14 +1,16 @@
-"""七个工具的入口（manifest 的 `[[tools]]` 指向本文件），外加「她身边那一圈」的措辞。
+"""六个工具的入口（manifest 的 `[[tools]]` 指向本文件），外加「她身边那一圈」的措辞。
 
 `run(ctx)` 返回的文本就是模型看到的结果，所以说实话最要紧：没连上、没绑定女仆、模组说
 办不到，一律如实回报，绝不假装已经执行——模型会照着这个结果跟玩家交代。
 
 工具分三类：
-- 动作（走出去、坐下、站起、躺下、看过来）：把意图翻成一条 `maid_action` 帧，受理与否
+- 动作（走出去、坐下、站起、躺下）：把意图翻成一条 `maid_action` 帧，受理与否
   当场给答复；走过去这类耗时的，结果稍后由 `action_done` 事件旁白交代。
 - 查询（看一眼周围）：现取一份快照翻成几句事实，只回给模型看，不写台词表。
 - 看图（看一眼玩家屏幕）：抓一张画面交给宿主，宿主把它当图片附给模型——她这才看得到
   你搭的爱心是什么形状。
+
+「看向玩家」不是工具：她每说一句话，模组自己会转头看主人（打架、干活、睡觉时除外）。
 
 那份快照有第二个用处：玩家在 MC 里说话时，随那句话带一句「你此刻的处境」（见
 `carry_text`）；她挨打那类「出事」的旁白后面也缀一句眼前的活物（见 `creature_text`）。
@@ -68,7 +70,6 @@ PENDING_TEXT = {
 DONE_TEXT = {
     "sit": "已经坐下了。",
     "stand": "已经站起来了。",
-    "look_at": "已经看向玩家了。",
 }
 
 
@@ -289,7 +290,6 @@ TOOLS = {
     "maid_sit_down": action_tool("sit"),
     "maid_stand_up": action_tool("stand"),
     "maid_lie_down": action_tool("lie_down"),
-    "maid_look_at": action_tool("look_at"),
     LOOK_AROUND_TOOL: _look_around,
     SEE_SCREEN_TOOL: _see_screen,
 }

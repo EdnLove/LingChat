@@ -70,7 +70,27 @@ pub struct GameStatus {
 
     /// 场景感知开关（关闭后切换场景不再触发旁白）
     pub scene_awareness_enabled: bool,
+
+    /// 生成进行中由插件攒下的旁白，等这一轮收尾、下一轮开头再按顺序落进台词表。
+    ///
+    /// 生成期间直接 `add_prompt_line` 会往流式任务算好的行号后面插队（它按位置回填
+    /// 助手台词），事件一多就会与正在生成的这一轮搅在一起。排队到下一轮开头写，
+    /// 既保住行号，也让「这一轮生成时发生的事」完整地出现在下一轮上下文里。
+    /// 不参与存档：换会话时随 `GameStatus` 一起丢弃。
+    pending_prompt_lines: Vec<QueuedPromptLine>,
 }
+
+/// 一条等下一轮开头再写的插件旁白。
+pub struct QueuedPromptLine {
+    role: PromptRole,
+    text: String,
+}
+
+/// 排队上限。战斗里每挨一下都可能攒一条，上限到了丢最早的：最近发生的事更重要。
+const MAX_PENDING_PROMPT_LINES: usize = 200;
+
+/// 排队旁白接成一行的长度上限；再长就另起一行（与插件侧的合并口径各自兜底）。
+const MAX_QUEUED_LINE_CHARS: usize = 600;
 
 impl GameStatus {
     pub fn new(role_manager: GameRoleManager) -> Self {
@@ -97,7 +117,59 @@ impl GameStatus {
             entry_greeting_done: false,
             affection_eval_cursor: 0,
             scene_awareness_enabled: true,
+            pending_prompt_lines: Vec::new(),
         }
+    }
+
+    /// 生成进行中收到插件旁白时先攒着，下一轮开头由
+    /// [`Self::flush_pending_prompt_lines`] 按顺序写进台词表。
+    ///
+    /// 连着来的旁白会先接成一行（换行隔开）：同一批事件拆成好几行落进台词表，
+    /// 模型会把它们当成好几件先后发生的事来复述。系统 / 剧情提示不并。
+    pub fn queue_prompt_line(&mut self, role: PromptRole, text: impl Into<String>) {
+        let text = text.into();
+        if let Some(last) = self.pending_prompt_lines.last_mut() {
+            if matches!(
+                (&last.role, &role),
+                (PromptRole::Narrator, PromptRole::Narrator)
+            ) && last.text.len() + text.len() + 1 <= MAX_QUEUED_LINE_CHARS
+            {
+                last.text.push('\n');
+                last.text.push_str(&text);
+                return;
+            }
+        }
+        if self.pending_prompt_lines.len() >= MAX_PENDING_PROMPT_LINES {
+            self.pending_prompt_lines.remove(0);
+            tracing::warn!(
+                "[GameStatus] 插件旁白积压到上限（{} 条），丢弃最早的一条",
+                MAX_PENDING_PROMPT_LINES
+            );
+        }
+        self.pending_prompt_lines
+            .push(QueuedPromptLine { role, text });
+    }
+
+    /// 把生成期间攒下的插件旁白按顺序写进台词表。
+    ///
+    /// **必须在持有 `generation_lock` 之后、构建本轮上下文之前调用**，否则又会和
+    /// 流式写入抢行号。返回实际写入的条数（写入失败的条目不阻塞后面的）。
+    pub async fn flush_pending_prompt_lines(&mut self, db: &DatabaseConnection) -> usize {
+        if self.pending_prompt_lines.is_empty() {
+            return 0;
+        }
+        let queued = std::mem::take(&mut self.pending_prompt_lines);
+        let mut written = 0;
+        for line in queued {
+            match self.add_prompt_line(db, line.role, &line.text).await {
+                Ok(_) => written += 1,
+                Err(e) => tracing::warn!("[GameStatus] 补写插件旁白失败：{e}"),
+            }
+        }
+        if written > 0 {
+            tracing::info!("[GameStatus] 补写生成期间攒下的插件旁白 {written} 条");
+        }
+        written
     }
 
     pub async fn get_role<'a>(
