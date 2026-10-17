@@ -151,7 +151,7 @@ impl GenaiProvider {
         }
 
         Ok(Self {
-            client: builder.build(),
+            client: builder.build()?,
             model,
             provider: cfg.provider.to_lowercase(),
             temperature: cfg.temperature,
@@ -516,7 +516,10 @@ impl GenaiProvider {
         let output = async_stream::try_stream! {
             while let Some(event) = inner.next().await {
                 match event.map_err(|e| anyhow!("genai 流式事件错误: {e}"))? {
-                    ChatStreamEvent::Start | ChatStreamEvent::ThoughtSignatureChunk(_) | ChatStreamEvent::ToolCallChunk(_) => {}
+                    ChatStreamEvent::Start
+                    | ChatStreamEvent::Heartbeat
+                    | ChatStreamEvent::ThoughtSignatureChunk(_)
+                    | ChatStreamEvent::ToolCallChunk(_) => {}
                     ChatStreamEvent::Chunk(chunk) if !chunk.content.is_empty() => {
                         yield LlmChunk::Content(chunk.content);
                     }
