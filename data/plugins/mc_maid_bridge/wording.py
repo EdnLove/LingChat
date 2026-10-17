@@ -284,6 +284,25 @@ BLOCK_NAMES = {
     "minecraft:grass_block": "草方块",
     "minecraft:stone": "石头",
     "minecraft:cobblestone": "圆石",
+    "minecraft:coal_ore": "煤矿石",
+    "minecraft:iron_ore": "铁矿石",
+    "minecraft:copper_ore": "铜矿石",
+    "minecraft:gold_ore": "金矿石",
+    "minecraft:diamond_ore": "钻石矿石",
+    "minecraft:redstone_ore": "红石矿石",
+    "minecraft:lapis_ore": "青金石矿石",
+    "minecraft:emerald_ore": "绿宝石矿石",
+    "minecraft:deepslate_coal_ore": "深层煤矿石",
+    "minecraft:deepslate_iron_ore": "深层铁矿石",
+    "minecraft:deepslate_copper_ore": "深层铜矿石",
+    "minecraft:deepslate_gold_ore": "深层金矿石",
+    "minecraft:deepslate_diamond_ore": "深层钻石矿石",
+    "minecraft:deepslate_redstone_ore": "深层红石矿石",
+    "minecraft:deepslate_lapis_ore": "深层青金石矿石",
+    "minecraft:deepslate_emerald_ore": "深层绿宝石矿石",
+    "minecraft:nether_quartz_ore": "下界石英矿石",
+    "minecraft:ancient_debris": "远古残骸",
+    "minecraft:bedrock": "基岩",
     "minecraft:deepslate": "深板岩",
     "minecraft:granite": "花岗岩",
     "minecraft:diorite": "闪长岩",
@@ -327,6 +346,9 @@ BLOCK_NAMES = {
     "minecraft:diamond_block": "钻石块",
     "minecraft:glowstone": "萤石",
 }
+
+# 中文名反查 id：模型说「挖石头」时用。
+_BLOCK_BY_NAME = {name: ident for ident, name in BLOCK_NAMES.items()}
 
 # 常见物品的中文名。玩家丢过来、喂过来的东西大多在这张表里；没收录的退回 id 后半段，
 # 方块类还能借上面那张方块表（丢过来的「方块」在物品栏里只是一个物品）。
@@ -514,6 +536,155 @@ ITEM_NAMES = {
     "minecraft:nautilus_shell": "鹦鹉螺壳",
 }
 
+# 车万女仆的工作模式（模组只给注册表 id，中文名在这里，取的是她界面里那一排的写法）。
+# 顺序照她界面里的排列；枪械那条只有整合包里装了枪械模组时才存在。
+TASK_NAMES = {
+    "touhou_little_maid:idle": "空闲",
+    "touhou_little_maid:attack": "攻击",
+    "touhou_little_maid:ranged_attack": "弓兵",
+    "touhou_little_maid:crossbow_attack": "弩兵",
+    "touhou_little_maid:danmaku_attack": "弹幕攻击",
+    "touhou_little_maid:trident_attack": "三叉戟攻击",
+    "touhou_little_maid:gun_attack": "枪械",
+    "touhou_little_maid:farm": "农场",
+    "touhou_little_maid:sugar_cane": "甘蔗",
+    "touhou_little_maid:melon": "瓜类",
+    "touhou_little_maid:cocoa": "可可",
+    "touhou_little_maid:honey": "采蜜",
+    "touhou_little_maid:grass": "花草",
+    "touhou_little_maid:snow": "清雪",
+    "touhou_little_maid:feed": "喂食",
+    "touhou_little_maid:shears": "剪刀",
+    "touhou_little_maid:milk": "牛奶",
+    "touhou_little_maid:torch": "火把",
+    "touhou_little_maid:feed_animal": "繁殖动物",
+    "touhou_little_maid:fishing": "钓鱼",
+    "touhou_little_maid:extinguishing": "灭火",
+    "touhou_little_maid:board_games": "游戏",
+}
+
+# 模型嘴里未必照抄上面那些名字（玩家说的是「种菜」「打怪」「别干活了」）。
+# 同义词收在这里，只收真正常见的那几个；名字本身由 TASK_NAMES 兜住。
+TASK_ALIASES = {
+    "待命": "touhou_little_maid:idle",
+    "休息": "touhou_little_maid:idle",
+    "停工": "touhou_little_maid:idle",
+    "别干活": "touhou_little_maid:idle",
+    "种地": "touhou_little_maid:farm",
+    "种田": "touhou_little_maid:farm",
+    "种菜": "touhou_little_maid:farm",
+    "农活": "touhou_little_maid:farm",
+    "打怪": "touhou_little_maid:attack",
+    "近战": "touhou_little_maid:attack",
+    "战斗": "touhou_little_maid:attack",
+    "弓箭": "touhou_little_maid:ranged_attack",
+    "瓜": "touhou_little_maid:melon",
+    "西瓜": "touhou_little_maid:melon",
+    "南瓜": "touhou_little_maid:melon",
+    "养蜂": "touhou_little_maid:honey",
+    "蜂蜜": "touhou_little_maid:honey",
+    "除草": "touhou_little_maid:grass",
+    "拔草": "touhou_little_maid:grass",
+    "扫雪": "touhou_little_maid:snow",
+    "铲雪": "touhou_little_maid:snow",
+    "投喂": "touhou_little_maid:feed",
+    "喂我": "touhou_little_maid:feed",
+    "剪羊毛": "touhou_little_maid:shears",
+    "羊毛": "touhou_little_maid:shears",
+    "挤奶": "touhou_little_maid:milk",
+    "插火把": "touhou_little_maid:torch",
+    "点火把": "touhou_little_maid:torch",
+    "照明": "touhou_little_maid:torch",
+    "养动物": "touhou_little_maid:feed_animal",
+    "繁殖": "touhou_little_maid:feed_animal",
+    "救火": "touhou_little_maid:extinguishing",
+    "下棋": "touhou_little_maid:board_games",
+    "五子棋": "touhou_little_maid:board_games",
+    "捕鱼": "touhou_little_maid:fishing",
+}
+
+# 中文名反查 id：模型多半直接说「农场」「钓鱼」，而不是英文短名。
+_TASK_BY_NAME = {name: ident for ident, name in TASK_NAMES.items()}
+
+# 攻击目标的口语说法。owner 是主人自己——她可以真的打玩家，这是有意开放的。
+ATTACK_ALIASES = {
+    "owner": "owner",
+    "master": "owner",
+    "player": "owner",
+    "主人": "owner",
+    "玩家": "owner",
+    "hostile": "hostile",
+    "monster": "hostile",
+    "敌对": "hostile",
+    "怪物": "hostile",
+    "敌对生物": "hostile",
+    "animal": "animal",
+    "动物": "animal",
+    "牲畜": "animal",
+}
+
+_MOB_BY_NAME = {name: ident for ident, name in MOB_NAMES.items()}
+
+# 「挖这块」这类说法：不指定方块时挖玩家正看着的那一块。
+MINE_LOOKED = frozenset(
+    {"looked", "this", "here", "target", "这块", "这个", "这里", "这块方块", "面前", "看着的", "看着的那块"}
+)
+
+# 方块的口语说法。BLOCK_NAMES 里的中文名已经能反查，这里补矿石、原木这类常用但
+# 不在「身边一圈」表里的说法。认不出的英文短名按原版方块放行，模组会如实报「附近没有」。
+BLOCK_ALIASES = {
+    "木头": "minecraft:oak_log",
+    "原木": "minecraft:oak_log",
+    "树干": "minecraft:oak_log",
+    "橡木": "minecraft:oak_log",
+    "云杉木": "minecraft:spruce_log",
+    "白桦木": "minecraft:birch_log",
+    "木板": "minecraft:oak_planks",
+    "树叶": "minecraft:oak_leaves",
+    "煤矿": "minecraft:coal_ore",
+    "煤矿石": "minecraft:coal_ore",
+    "铁矿": "minecraft:iron_ore",
+    "铁矿石": "minecraft:iron_ore",
+    "铜矿": "minecraft:copper_ore",
+    "铜矿石": "minecraft:copper_ore",
+    "金矿": "minecraft:gold_ore",
+    "金矿石": "minecraft:gold_ore",
+    "钻石矿": "minecraft:diamond_ore",
+    "钻石矿石": "minecraft:diamond_ore",
+    "钻石": "minecraft:diamond_ore",
+    "红石矿": "minecraft:redstone_ore",
+    "红石矿石": "minecraft:redstone_ore",
+    "红石": "minecraft:redstone_ore",
+    "青金石矿": "minecraft:lapis_ore",
+    "青金石": "minecraft:lapis_ore",
+    "绿宝石矿": "minecraft:emerald_ore",
+    "绿宝石": "minecraft:emerald_ore",
+    "深层铁矿": "minecraft:deepslate_iron_ore",
+    "深层金矿": "minecraft:deepslate_gold_ore",
+    "深层钻石矿": "minecraft:deepslate_diamond_ore",
+    "下界石英": "minecraft:nether_quartz_ore",
+    "石英矿": "minecraft:nether_quartz_ore",
+    "远古残骸": "minecraft:ancient_debris",
+    "基岩": "minecraft:bedrock",
+}
+
+# 攻击力度。默认是追着打倒；「轻轻打一下」只出一手、伤害固定，用来逗她抬手。
+ATTACK_STYLES = {
+    "light": "light",
+    "tap": "light",
+    "gentle": "light",
+    "轻轻": "light",
+    "轻轻打": "light",
+    "轻打": "light",
+    "打一下": "light",
+    "拍一下": "light",
+    "碰一下": "light",
+    "fight": "fight",
+    "full": "fight",
+    "追着打": "fight",
+    "打倒": "fight",
+}
+
 # 「近」与「中」的分界（格）。再远一律说「远」。
 NEAR_CLOSE = 5.0
 NEAR_MID = 10.0
@@ -579,15 +750,128 @@ def who_of(category, type_id):
     return CATEGORY_NAMES.get(category or "") or name_of(MOB_NAMES, type_id, "什么东西")
 
 
+def task_id(raw):
+    """工作模式：中文名、同义词或注册表 id 都换成 id；认不出给空串。
+
+    带命名空间的写法原样放行——模组或附属包加的模式不在这张表里，有没有交给游戏判，
+    插件不在这一层替它拦。
+    """
+    text = (raw or "").strip()
+    if not text:
+        return ""
+    lowered = text.lower()
+    if lowered in TASK_NAMES:
+        return lowered
+    short = "touhou_little_maid:" + lowered
+    if short in TASK_NAMES:
+        return short
+    alias = TASK_ALIASES.get(text) or _TASK_BY_NAME.get(text)
+    if alias:
+        return alias
+    if ":" in lowered and " " not in lowered:
+        return lowered
+    return ""
+
+
+def task_name(raw, summary=""):
+    """工作模式 id → 中文名。表里没有的用模组给的英文摘要兜底，再不行退回 id 后半段。"""
+    identifier = (raw or "").strip().lower()
+    known = TASK_NAMES.get(identifier) or TASK_NAMES.get("touhou_little_maid:" + identifier)
+    if known:
+        return known
+    text = (summary or "").strip()
+    if text and not text.startswith("task."):
+        return text
+    return identifier.split(":")[-1].replace("_", " ") or "新工作"
+
+
+def task_choices():
+    """认不出工作模式时列给模型看的那一串：中文名（短 id）。"""
+    return "、".join(f"{name}（{ident.split(':')[-1]}）" for ident, name in TASK_NAMES.items())
+
+
+def attack_style(raw):
+    """攻击力度：认不出的按默认（追着打）。轻轻一下得玩家明说。"""
+    text = (raw or "").strip().lower()
+    return ATTACK_STYLES.get(text, "fight")
+
+
+def attack_target(raw):
+    """攻击目标：活物的中文名、英文短名、完整 id，或 owner / hostile / animal。
+
+    owner 是她主人（她可以真的打玩家）；hostile / animal 让模组按生物类别挑最近的一只。
+    认不出的给空串，由工具报错——瞎猜一个目标打出去比报错更糟。
+    """
+    text = (raw or "").strip()
+    if not text:
+        return ""
+    lowered = text.lower()
+    alias = ATTACK_ALIASES.get(lowered) or ATTACK_ALIASES.get(text)
+    if alias:
+        return alias
+    known = _MOB_BY_NAME.get(text)
+    if known:
+        return known
+    if ":" in lowered and " " not in lowered:
+        return lowered
+    if lowered.isascii() and lowered.replace("_", "").isalnum():
+        # 英文短名按原版实体认；模组实体请写全命名空间
+        return "minecraft:" + lowered
+    return ""
+
+
+def mine_target(raw):
+    """挖掘目标：方块的中文名、英文 id，或 looked（玩家正看着的那块）。
+
+    空字符串按 looked 处理：玩家说「把这块挖了」时模型多半不给 target。认不出的中文
+    说法给空串，由工具报错并列出几个例子——瞎猜一个方块挖出去比报错更糟。
+    """
+    text = (raw or "").strip()
+    lowered = text.lower()
+    if not text or lowered in MINE_LOOKED or text in MINE_LOOKED:
+        return "looked"
+    alias = BLOCK_ALIASES.get(text) or BLOCK_ALIASES.get(lowered)
+    if alias:
+        return alias
+    known = _BLOCK_BY_NAME.get(text)
+    if known:
+        return known
+    if ":" in lowered and " " not in lowered:
+        return lowered
+    if lowered.isascii() and lowered.replace("_", "").isalnum():
+        # 英文短名按原版方块认；模组方块请写全命名空间
+        return "minecraft:" + lowered
+    return ""
+
+
+def mine_choices():
+    """认不出方块时列给模型看的例子。"""
+    return "石头、圆石、泥土、沙子、橡木原木、铁矿、钻石矿，或者 looked"
+
+
 def sighting(one):
-    """一份附近实体的记录 → 「近处的僵尸（被挡着）」。
+    """一份看得见的附近实体记录 → 「近处的僵尸」。
 
     只说是什么、大概多远，不说方位，也不给格数：模型会把旁白里的方位与数字照样
     复述出来（「左前方 10.5 格有只蜘蛛」），而玩家并不需要知道这些。
+    被挡住的实体不走这句：看不见就只剩声音，统一由调用方汇总成「听到…的声音」。
     """
     who = who_of(one.get("category"), one.get("type"))
-    hidden = "" if one.get("visible") else "（被挡着）"
-    return f"{nearness_place(one.get('distance'))}的{who}{hidden}"
+    return f"{nearness_place(one.get('distance'))}的{who}"
+
+
+def heard_sounds(ones):
+    """看不见的活物 → 「僵尸和蜘蛛的声音」；同一类只念一次。
+
+    隔墙报「被挡着的僵尸」既生硬又像透视；她真正拥有的信息只是「那边有声音」。
+    认不出的类型退回 id 后半段，与别处一致。
+    """
+    names = []
+    for one in ones:
+        name = who_of(one.get("category"), one.get("type"))
+        if name not in names:
+            names.append(name)
+    return f"{'和'.join(names)}的声音" if names else ""
 
 
 def nearness(distance):

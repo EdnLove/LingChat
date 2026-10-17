@@ -1,6 +1,6 @@
 id = "mc_maid_bridge"
 name = "车万女仆桥接"
-description = "把《车万女仆》桥接模组接进对话：MC 里玩家说的话进对话，角色回的话变成游戏内女仆气泡，还能指挥女仆走过去、坐下、躺下，并让她知道自己身边有什么、收到了你给的什么、被 Carry On 抱起来，以及你拿到了什么成就"
+description = "把《车万女仆》桥接模组接进对话：MC 里玩家说的话进对话，角色回的话变成游戏内女仆气泡，还能指挥女仆走过去、坐下、躺下、换工作模式（种菜、钓鱼、打怪）、打指定的活物、挖方块，并让她知道自己身边有什么、收到了你给的什么、被 Carry On 抱起来，以及你拿到了什么成就"
 version = "0.1.0"
 author = "LingChat"
 
@@ -78,13 +78,14 @@ signal = "line_shown"
 script = "hooks.py"
 handler = "on_line_shown"
 
-# 动作与查询：让 LLM 指挥游戏里的女仆走过去、坐下、躺床，或问一句她周围有什么。
-# 六个工具都指向 tools.py（一个脚本可挂多个入口，不必为每个工具新开文件）。
+# 动作、工作模式、攻击、挖掘与查询：让 LLM 指挥游戏里的女仆走过去、坐下、躺床、
+# 换工作、打指定的活物、挖方块，或问一句她周围有什么。
+# 九个工具都指向 tools.py（一个脚本可挂多个入口，不必为每个工具新开文件）。
 # 描述的第一句会进 tool_search 的清单，也会进 Tool RAG 的检索语料，所以要一句话说清能力。
 # 「看向玩家」不在这里：她说话时由模组自己转头，不需要模型下指令。
 [[tools]]
 name = "maid_go_to"
-description = "让女仆走到玩家身边或最近的床边。target 可选 player（玩家，默认）或 bed（最近的床）；走过去要花点时间，到位后会有旁白告诉你结果。"
+description = "让女仆走到玩家身边或最近的床边。target 可选 player（玩家，默认）或 bed（最近的床）。走路要花点时间，工具返回时她通常还在路上，不代表已经到位。"
 parameters = '{ "type":"object", "properties":{ "target":{ "type":"string", "enum":["player","bed"], "description":"player = 走到玩家身边（默认）；bed = 走到最近的床边" } } }'
 script = "tools.py"
 timeout_ms = 15000
@@ -98,7 +99,7 @@ timeout_ms = 15000
 
 [[tools]]
 name = "maid_stand_up"
-description = "让女仆站起来。她坐着或躺着时用这个让她恢复行动。"
+description = "让女仆站起来。她坐着、躺着、睡着了，或者坐在坐垫/椅子上时用这个让她恢复行动——下不来座位也算。和 maid_sit_down 相对。"
 parameters = '{ "type":"object", "properties":{} }'
 script = "tools.py"
 timeout_ms = 15000
@@ -107,6 +108,27 @@ timeout_ms = 15000
 name = "maid_lie_down"
 description = "让女仆走到床上躺下睡觉。她按自己的作息睡，不在睡觉时段会自己起来；附近没有床也会失败，工具会如实告诉你原因。"
 parameters = '{ "type":"object", "properties":{ "target":{ "type":"string", "enum":["bed"], "description":"bed = 最近的床（默认也是唯一取值）" } } }'
+script = "tools.py"
+timeout_ms = 15000
+
+[[tools]]
+name = "maid_set_task"
+description = "切换女仆的工作模式，也就是她接下来会自己去干什么活。玩家说「去种地」「去钓鱼」「别干活了」「去打怪吧」这类话时用它。task 填下面之一（中文名或括号里的英文短名都行）：农场 farm、钓鱼 fishing、攻击 attack、弓兵 ranged_attack、弩兵 crossbow_attack、弹幕攻击 danmaku_attack、三叉戟攻击 trident_attack、甘蔗 sugar_cane、瓜类 melon、可可 cocoa、采蜜 honey、花草 grass、清雪 snow、喂食 feed、剪刀 shears、牛奶 milk、火把 torch、繁殖动物 feed_animal、灭火 extinguishing、游戏 board_games、空闲 idle。她按自己的作息干活，不是切完立刻就到；结果里会写明现在是不是她的工作时间。"
+parameters = '{ "type":"object", "properties":{ "task":{ "type":"string", "description":"工作模式：中文名或英文短名，例如 种菜、farm" } }, "required":["task"] }'
+script = "tools.py"
+timeout_ms = 15000
+
+[[tools]]
+name = "maid_attack"
+description = "让女仆去攻击她身边的一个活物。target 写要打谁：活物的中文名或英文短名（僵尸、zombie、羊、sheep），或 hostile（最近的敌对生物）、animal（最近的动物）、owner（主人自己，也就是玩家）。style 选力度：fight（默认，追着一直打到对方倒下）或 light（只轻轻打一下，打完就收手、伤害很小）。玩家说「去打那只僵尸」「揍它」用默认；说「打我一下」「轻轻碰我一下」「拍我一下」时用 light，不然她会追着玩家一直打到倒下。这个工具只负责攻击，不保证目标已经倒下：结果只说明她开始打了，目标还在。目标离她太远会失败，先走近再让她打。"
+parameters = '{ "type":"object", "properties":{ "target":{ "type":"string", "description":"要打谁：活物名字、英文短名、实体 id，或 hostile / animal / owner" }, "style":{ "type":"string", "description":"fight = 追着打倒（默认）；light = 只轻轻打一下" } }, "required":["target"] }'
+script = "tools.py"
+timeout_ms = 15000
+
+[[tools]]
+name = "maid_mine"
+description = "让女仆去挖方块。target 写方块的中文名或英文 id（石头、圆石、泥土、沙子、橡木原木、铁矿、钻石矿……），或者写 looked（玩家准星正指着的那块；玩家说「把这块挖了」时用它，省略 target 也按 looked 处理）。count 是要挖几块，默认 1，最多 64。她会自己走过去、从背包里换合适的工具、一块一块地挖，方块会按硬度和工具慢慢裂开，掉落进她的背包。这个工具只负责开始挖：结果只说明她动身了，方块还没被挖掉。方块受保护、挖不动、她走不到跟前、或者没有能挖它的工具时会失败并说明原因。玩家只说「去挖矿」而没指哪块时，先问清楚要挖什么，或者用 looked 挖他正看着的那块。"
+parameters = '{ "type":"object", "properties":{ "target":{ "type":"string", "description":"方块中文名、英文 id，或 looked（玩家正看着的那块；省略也是它）" }, "count":{ "type":"integer", "minimum":1, "maximum":64, "description":"要挖几块（默认 1，最多 64）" } } }'
 script = "tools.py"
 timeout_ms = 15000
 

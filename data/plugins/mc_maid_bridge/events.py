@@ -1,7 +1,8 @@
 """模组推来的一条游戏事件 → 一句只陈述事实的中文。
 
 只写发生了什么，不写「该有什么情绪」——情绪由模型自己决定，留在台词表里的始终是
-客观记录。哪一条算紧急（要当场请角色开口）由 `URGENT` 定，事件落地在 hooks.py。
+客观记录。哪一条算紧急（要当场请角色开口）由 `URGENT` 定，事件落地在 hooks.py；
+每条值多少秒由 `EVENT_TTL` 定，宿主在角色真要开口时才判，过期的不进台词表。
 
 **身边那一圈刻意不在这里登记**：附近有什么活物、玩家进出视线、头顶遮没遮住、脚下踩到
 什么，这五类（模组的 `player_proximity_change` / `player_sight_change` / `living_near` /
@@ -17,6 +18,7 @@
 
 from wording import (
     BIOME_NAMES,
+    BLOCK_NAMES,
     DAMAGE_HINTS,
     DIMENSION_NAMES,
     MOB_NAMES,
@@ -25,6 +27,7 @@ from wording import (
     item_name,
     name_of,
     nearness_place,
+    task_name,
     who_of,
 )
 
@@ -57,6 +60,29 @@ def format_event(data):
         or bool(kind == "item_pickup" and data.get("from_owner"))
     )
     return formatter(data), urgent
+
+
+def event_ttl(kind):
+    """这类事件值多少秒。"""
+    return EVENT_TTL.get(kind, DEFAULT_EVENT_TTL)
+
+
+def event_key(kind):
+    """同类事件在队列里的合并键；不需要合并的返回空串。
+
+    只给受伤用：连着挨几下是同一件事，留最重的那一次就够了，不必记成好几条旁白。
+    """
+    return "hurt" if kind == "maid_hurt" else ""
+
+
+def event_severity(kind, data):
+    """同键合并时比大小的严重度。受伤按掉血的百分之一计，取整免得浮点比较。"""
+    if kind != "maid_hurt":
+        return 0
+    try:
+        return int(round(float(data.get("damage") or 0) * 100))
+    except (TypeError, ValueError):
+        return 0
 
 
 def snapshot(data):
@@ -206,6 +232,15 @@ def player_advancement(data):
     return f"玩家获得了成就「{name}」。"
 
 
+def maid_task_change(data):
+    """她自己换了工作模式（农场、钓鱼、空闲……）。
+
+    只说换成了什么，不催她开工：她现在会不会去干、在哪儿干，工具那次回执里已经说过了，
+    而这条旁白要留在台词表里，管的是过一会儿她还记不记得自己在干什么。
+    """
+    return f"你换成了工作模式「{task_name(data.get('task'), data.get('summary'))}」。"
+
+
 def _item_list(items):
     """[{item,count}, ...] → 「熟牛肉 ×2、面包」。不认识的 id 退回英文后半段，模型也认。"""
     parts = []
@@ -256,6 +291,27 @@ def action_done(data):
     return f"刚才那件事没做成：{reason}" if reason else "刚才那件事没做成。"
 
 
+def maid_mine_done(data):
+    """挖掘收尾：挖到多少、还差多少、为什么停。
+
+    工具受理只代表开始挖了，模型很容易把「正过去挖」当成「已经挖到了」；这条旁白才是
+    唯一能让它改口的依据。走不到、工具不对也在这里说清楚，不留悬案。
+    """
+    name = name_of(BLOCK_NAMES, data.get("block"), "方块")
+    mined = as_int(data.get("mined"), 0)
+    wanted = as_int(data.get("wanted"), mined)
+    status = (data.get("status") or "").strip()
+    if status == "done":
+        return f"你挖掉了一块{name}。" if mined == 1 else f"你挖掉了{mined}块{name}。"
+    reason = (data.get("reason") or "").strip()
+    if mined > 0:
+        text = f"你挖掉了{mined}块{name}"
+        if wanted > mined:
+            text += f"，还差{wanted - mined}块没挖完"
+        return text + (f"：{reason}。" if reason else "。")
+    return f"没能挖成：{reason}。" if reason else "没能挖成。"
+
+
 def _weather_phrase(data):
     if data.get("thundering"):
         return "外面在打雷"
@@ -287,6 +343,7 @@ FORMATTERS = {
     "threat_near": threat_near,
     "creature_death": creature_death,
     "action_done": action_done,
+    "maid_mine_done": maid_mine_done,
     "item_gift": item_gift,
     "item_pickup": item_pickup,
     "item_received": item_received,
@@ -294,21 +351,50 @@ FORMATTERS = {
     "maid_carried": maid_carried,
     "maid_dropped": maid_dropped,
     "player_advancement": player_advancement,
+    "maid_task_change": maid_task_change,
 }
 
-# 这几类当场请角色开口（挨打、血量告急、敌对生物靠近、动作收尾、收到东西、
-# 被抱起来或放下、玩家拿到成就）；其余走「攒够几件」那套，不然每一次散步都会变成一次生成。
+# 一条事件从发生到「还值得让角色知道」有多久（秒）。宿主在角色真要开口时按它截断：
+# 过期的条目直接丢掉、不进台词表。捡起东西这种小事过几秒就没人关心；受伤、被围住
+# 能管一分钟；换地形、换工作模式这类背景信息留得久一些。认不出的类型按下面那档。
+EVENT_TTL = {
+    "item_pickup": 5,
+    "item_received": 30,
+    "item_fed": 30,
+    "item_gift": 60,
+    "maid_hurt": 60,
+    "low_health": 60,
+    "threat_near": 60,
+    "creature_death": 45,
+    "action_done": 60,
+    "maid_carried": 30,
+    "maid_dropped": 30,
+    "maid_mine_done": 120,
+    "player_advancement": 300,
+    "maid_task_change": 300,
+    "time_phase_change": 300,
+    "weather_change": 300,
+    "state_snapshot": 600,
+    "biome_change": 600,
+    "dimension_change": 600,
+}
+
+DEFAULT_EVENT_TTL = 120
+
+# 这几类当场请角色开口（挨打、血量告急、敌对生物靠近、动作收尾、挖完了、收到东西、
+# **被抱起来**、玩家拿到成就）；其余走「攒够几件」那套，不然每一次散步都会变成一次生成。
 # `item_pickup` 只有「捡的是玩家丢的」才当场开口，判在 `format_event` 里。
+# 放下不算紧急：抱起来那一下要当场反应，放下来只是接着上一件事往下走。
 URGENT = frozenset(
     {
         "low_health",
         "maid_hurt",
         "threat_near",
         "action_done",
+        "maid_mine_done",
         "item_received",
         "item_fed",
         "maid_carried",
-        "maid_dropped",
         "player_advancement",
     }
 )

@@ -18,12 +18,11 @@
 
 插件脚本每次调用都新建解释器、跑完即弃，所以这里不保存任何跨调用状态：
 用得到的信息一律当场问（见 `bridge.ready`），「自上次对话以来攒了几条事件」这类计数
-也直接从台词表读回来（见 `_quiet_event_run`）。
+由宿主队列回给（见 `_quiet_event_run`）。
 """
 
 from plugin_host import (
     add_prompt_line,
-    edit_context,
     read_context,
     send_user_message,
     set_auto_mode,
@@ -33,18 +32,11 @@ from plugin_host import (
 import bridge
 import tools
 from bridge import config, player_name, truthy
-from events import format_event
+from events import event_key, event_severity, event_ttl, format_event
 from wording import kaomoji_for
 
-# 游戏事件的标记前缀。既用来认自己写过的行，也用来判「自上次对话以来攒了几条」。
+# 游戏事件的标记前缀。模型与人都靠它认出这是世界记录而不是谁说的话。
 EVENT_TAG = "［MC 事件］"
-
-# 接连发生的几件事并进同一行，用这个隔开。插件没有时钟，判「还接得上」只看台词表：
-# 上一行仍是自己写的事件旁白，就说明这中间没人说过话。攒到这么多件、或者这么长就
-# 另起一行，免得一行无限长。
-EVENT_SEP = "；"
-MAX_EVENTS_PER_LINE = 6
-MAX_EVENT_LINE_CHARS = 300
 
 # 出事那一刻顺手再问一次「她周围有什么」的几类。收到东西、被抱起来、拿到成就都不是
 # 出事，不必多一次往返；被抱着的时候她根本不在世界里，问了也取不到。
@@ -58,13 +50,22 @@ ENTRY_HINT = (
     "- 玩家在游戏里打出的话会当成玩家自己的发言送过来，和在输入框里发的一句一样。\n"
     "- 玩家那句话后面若还跟着一句「（你此刻：…）」，那是你当时看到的情形（脚下踩着哪、"
     "头顶遮没遮住、玩家在不在你身边、身边有什么活物），不是玩家说的话。\n"
-    "- 以「［MC 事件］」开头的是世界本身的旁白（换地形、天黑、下雨、受伤、有生物死亡、"
+    "- 以「［MC 事件］」开头的是世界本身的记录（换地形、天黑、下雨、受伤、有生物死亡、"
     "玩家丢给你或喂你东西、玩家把你抱起来或放下、玩家拿到成就这类），它不是谁说的话，"
-    "当背景信息看；几件事接连发生时可能记在同一行里，用「；」隔开。\n"
+    "当背景信息看；几件事接连发生时可能记在同一行里，用换行隔开。\n"
     "- 玩家往你背包里放东西、丢东西给你、拿食物潜行右键喂你，都会记成一条旁白；"
     "旁白里说收到或捡到的东西，就是已经在你身边或背包里的。\n"
-    "- 玩家让你做动作（过来、坐下、去床上躺下）时用 maid_ 开头的工具指挥女仆："
-    "她不会瞬移，工具说「正在过去」就是还没到，等旁白说她到了再当这件事办成了。"
+    "- 玩家让你做动作（过来、坐下、站起来、去床上躺下）时用 maid_ 开头的工具指挥女仆："
+    "她不会瞬移，工具回执只说明指令已收到，不代表已经到位。\n"
+    "- 玩家叫你干活（种地、钓鱼、打怪）或者叫你别干了，用 maid_set_task 换工作模式；"
+    "她按自己的作息干活，切换成功不等于她此刻已经开工，工具结果里会写明。\n"
+    "- 玩家叫你打谁（「打那只僵尸」「打我一下」）用 maid_attack 点名：活物的名字、"
+    "hostile / animal，或者 owner（主人自己）。追着打是默认，会把目标往死里打；"
+    "只是逗她抬手（「打我一下」「轻轻碰我一下」）要加 style=light，只打一下就收手。"
+    "攻击回执只代表她开始打了，不代表目标已经倒下；在那之前只能说「正在打」。\n"
+    "- 玩家叫你挖方块（「把这块挖了」「挖十块石头」）用 maid_mine：target 填方块名，"
+    "不给就是玩家正看着的那块；count 填要挖几块。她会自己走过去、从背包里换合适的工具。"
+    "挖掘回执只代表开始挖了，方块还没被挖掉。"
 )
 
 # 幂等检查先扫这么多条尾巴；不够长才整段再扫一次（见 `_entry_hint_written`）。
@@ -211,92 +212,48 @@ def _carry(chat):
 
 
 def _handle_event(ctx, data):
-    """一条游戏事件：记成旁白，该开口的时候请角色开口。
+    """一条游戏事件：交给宿主排队，该开口的时候请角色开口。
 
     紧急的（`events.URGENT`，外加「主人死在旁边」「捡到玩家丢的东西」两处特判）当场
-    开口；其余的攒够若干件、且这期间没人说话才请一次。接连发生的几件事并进同一行，
-    不再一件事一行。
+    开口；其余的攒够若干件、且这期间没人说话才请一次。
+
+    事件一律带有效期交给宿主：它不会立刻进台词表，等角色真要开口那一刻再按有效期
+    筛一遍，过期的直接丢掉——一场战斗里捡东西、挨打、怪物死掉会连着来，等第一轮
+    台词念完，早先那些小事已经不值得再提了。
     """
+    kind = (data.get("event_type") or "").strip()
     text, urgent = format_event(data)
     if not text:
         return
-    if urgent and (data.get("event_type") or "") in SNAPSHOT_EVENTS:
+    if urgent and kind in SNAPSHOT_EVENTS:
         # 出事这一刻正好是「再感知一次周围」的时机：怪物那条有 2 分钟防抖管着，
         # 这期间新来的谁都不会各记一条，所以她身边站着什么就跟着这条一起交代。
         text += _creature_text(data)
-    index = _append_event(text)
-    if index is None:
+    pending = _append_event(text, kind, data)
+    if pending is None:
         return
-    if urgent or _quiet_event_run(index, bridge.proactive_after(ctx)):
+    if urgent or _quiet_event_run(pending, bridge.proactive_after(ctx)):
         _nudge()
 
 
-def _append_event(text):
-    """写一条事件旁白，能并就并进上一行。返回它所在的行号；写失败返回 None。
+def _append_event(text, kind, data):
+    """把一条事件交给宿主排队。返回队列里还有效的事件条数；写失败返回 None。
 
-    生成进行中宿主会让这一行排队（`queued`），那一刻读不到它，也就合并不了：
-    下一轮开头宿主会按顺序补写，最多多出几行，不会搅进正在生成的那一轮。
+    `ttl_seconds` 让宿主在角色真要开口时才判「还值不值得说」；`key` + `severity`
+    让连着挨打只留最重的一次。排队条数由宿主算好回给我们——插件没有跨调用状态，
+    「攒够几条了」只能问队列。
     """
-    written = add_prompt_line("narrator", EVENT_TAG + text)
-    if not written.get("ok"):
-        print(f"[mc_maid_bridge] 游戏事件没能写进台词表：{written.get('error')}")
-        return None
-    index = written.get("index")
-    if not index:
-        return 0
-    return _merge_event(index, text)
-
-
-def _merge_event(index, text):
-    """把这一条并进上一行还没人接话的事件旁白。并成了返回合并后的行号。
-
-    只并自己写的行：上一行仍是「［MC 事件］…」就说明玩家与角色都没在这中间说过话，
-    两件事放在一行里说完即可。过长（件数或字数到顶）就另起一行。
-    """
-    if index <= 1:
-        return index
-    window = read_context(start=index - 1, end=index)
-    lines = window.get("lines") or []
-    if len(lines) < 2:
-        return index
-    prev, current = lines
-    prev_content = prev.get("content") or ""
-    # 并发时另一次调用可能已经先并过这一行，行号对不上就不动它（宁可多一行）
-    if EVENT_TAG + text not in (current.get("content") or ""):
-        return index
-    body = _event_body(prev_content)
-    if body is None:
-        return index
-    if len(_event_segments(body)) >= MAX_EVENTS_PER_LINE:
-        return index
-    if len(prev_content) + len(text) > MAX_EVENT_LINE_CHARS:
-        return index
-    # `_event_body` 已经去掉每段结尾的句号，并进来读起来是「天黑了；开始下雨了。」
-    merged = dict(prev)
-    merged["content"] = (
-        prev_content.split(EVENT_TAG, 1)[0] + EVENT_TAG + body + EVENT_SEP + text + "}"
+    written = add_prompt_line(
+        "narrator",
+        EVENT_TAG + text,
+        ttl_seconds=event_ttl(kind),
+        key=event_key(kind),
+        severity=event_severity(kind, data),
     )
-    if not edit_context([merged], start=index - 1, end=index).get("ok"):
-        return index
-    return index - 1
-
-
-def _event_body(content):
-    """一行事件旁白的正文；不是自己写的行返回 None。
-
-    生成期间宿主会把连着的几条排队旁白用换行接成一行，这里把两种形状统一成
-    「一段一件事、段间用 EVENT_SEP、段尾不留句号」，读写只认这一种。
-    """
-    if EVENT_TAG not in content or not content.endswith("}"):
+    if not written.get("ok"):
+        print(f"[mc_maid_bridge] 游戏事件没能进队列：{written.get('error')}")
         return None
-    body = content.split(EVENT_TAG, 1)[1][:-1].replace(EVENT_TAG, "")
-    parts = [part.strip() for part in body.replace("\n", EVENT_SEP).split(EVENT_SEP)]
-    parts = [part[:-1] if part.endswith("。") else part for part in parts if part]
-    return EVENT_SEP.join(parts) or None
-
-
-def _event_segments(body):
-    return [part for part in body.split(EVENT_SEP) if part.strip()]
+    return int(written.get("pending") or 0)
 
 
 def _creature_text(data):
@@ -308,29 +265,16 @@ def _creature_text(data):
     return tools.creature_text(snapshot) if snapshot else ""
 
 
-def _quiet_event_run(index, count):
-    """这串接连记下的事件刚好攒够 count 件时返回真。
+def _quiet_event_run(pending, count):
+    """排队中的事件刚好攒够 count 件时返回真。
 
-    用户要的「状态更新到一定量、且这期间玩家没说话」就是这个：玩家发言与角色的
-    回话都会插进这个连续段、把它打断，计数于是自然归零——所以插件不必自己存计数器。
-    合并过的行里一件事占一段，段与段之间用 `EVENT_SEP` 隔开。
+    用户要的「状态更新到一定量、且这期间玩家没说话」就是这个：角色一旦开口，宿主
+    就把队列写进台词表并清空，计数自然归零——所以插件不必自己存计数器。带有效期的
+    条目在入队时已经筛过一遍，这里的数只算还活着的。
 
-    用「刚好到量」而不是「至少」：到了量就请过一次口，再往后每多一件都重请一次，
-    战斗里会一直催。
+    用「刚好到量」而不是「至少」：到了量就请过一次口，之后同一个队列里不再重复催。
     """
-    if not index or count <= 0:
-        return False
-    window = read_context(start=max(1, index - count + 1), end=index)
-    lines = window.get("lines") or []
-    if not lines or _event_body(lines[-1].get("content") or "") is None:
-        return False
-    events = 0
-    for line in reversed(lines):
-        body = _event_body(line.get("content") or "")
-        if body is None:
-            break
-        events += len(_event_segments(body))
-    return events == count
+    return count > 0 and pending == count
 
 
 def _nudge():
@@ -341,7 +285,7 @@ def _nudge():
     就直接接着上下文生成一轮，不往台词表写任何行。
 
     可能被拒（主动对话没开、用户正在输入、上一轮还没说完），那就下次再说：
-    事件行已经记在台词表里，上下文不缺这一段。
+    事件已经排在宿主队列里，有效期之内下一次开口仍会带上。
     """
     result = trigger_proactive("")
     if result.get("ok") and not result.get("triggered"):

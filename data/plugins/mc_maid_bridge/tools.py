@@ -1,11 +1,17 @@
-"""六个工具的入口（manifest 的 `[[tools]]` 指向本文件），外加「她身边那一圈」的措辞。
+"""九个工具的入口（manifest 的 `[[tools]]` 指向本文件），外加「她身边那一圈」的措辞。
 
 `run(ctx)` 返回的文本就是模型看到的结果，所以说实话最要紧：没连上、没绑定女仆、模组说
 办不到，一律如实回报，绝不假装已经执行——模型会照着这个结果跟玩家交代。
 
-工具分三类：
+工具分六类：
 - 动作（走出去、坐下、站起、躺下）：把意图翻成一条 `maid_action` 帧，受理与否
   当场给答复；走过去这类耗时的，结果稍后由 `action_done` 事件旁白交代。
+- 工作模式（换她接下来去干什么活）：翻成一条 `maid_set_task` 帧，切的就是她自己界面里
+  那个任务，成败与「现在会不会真去干」一并回给模型。
+- 攻击（打她身边的哪个活物）：翻成一条 `maid_attack` 帧。点谁由玩家说了算，连主人自己
+  都能被点名；她会先切到攻击模式，没有武器就如实失败。
+- 挖掘（挖玩家看着的那块、或附近的某一种方块）：翻成一条 `maid_mine` 帧。受理只代表
+  开始挖了；挖穿、挖够、走不到都由 `maid_mine_done` 事件旁白交代。
 - 查询（看一眼周围）：现取一份快照翻成几句事实，只回给模型看，不写台词表。
 - 看图（看一眼玩家屏幕）：抓一张画面交给宿主，宿主把它当图片附给模型——她这才看得到
   你搭的爱心是什么形状。
@@ -27,9 +33,17 @@ from wording import (
     BLOCK_NAMES,
     DIMENSION_NAMES,
     MOB_NAMES,
+    attack_style,
+    attack_target,
+    heard_sounds,
     name_of,
+    mine_choices,
+    mine_target,
     nearness_place,
     sighting,
+    task_choices,
+    task_id,
+    task_name,
 )
 
 # 动作的回执要等模组受理，超时明显小于工具自身的 15s，否则模型在工具超时里干等。
@@ -44,8 +58,14 @@ CARRY_TIMEOUT_MS = 1500
 # 去编「我看见你了」，而真正要紧的只是主人有没有走远。
 OWNER_NEAR = 30.0
 
+# 「你此刻：附近有…」里最多念几只活物。按需查询能列十几只，全念出来太吵。
+CARRY_CREATURE_LIMIT = 4
+
 LOOK_AROUND_TOOL = "maid_look_around"
 SEE_SCREEN_TOOL = "maid_see_screen"
+SET_TASK_TOOL = "maid_set_task"
+ATTACK_TOOL = "maid_attack"
+MINE_TOOL = "maid_mine"
 
 # 抓屏时按这个关键词找游戏窗口（标题或进程名命中即可），找不到就抓整个屏幕。
 DEFAULT_SCREEN_WINDOW = "Minecraft"
@@ -61,9 +81,10 @@ SCREEN_HINT = (
 TARGET_DEFAULTS = {"go_to": "player", "lie_down": "bed"}
 
 # 受理了但还没做完时给模型的话：必须让它知道自己还没到位，否则它会当场宣布已经办到。
+# 只陈述此刻的状态，不承诺「之后会通知」——模型会照着这句对玩家说出口。
 PENDING_TEXT = {
-    "go_to": "正在走过去，到了会告诉你。",
-    "lie_down": "正在走过去，躺下了会告诉你。",
+    "go_to": "她正在走过去，还没到玩家身边。",
+    "lie_down": "她正在往床边走，还没躺下。",
 }
 
 # 受理即完成的动作给模型的话。
@@ -108,7 +129,7 @@ def _do_action(ctx, action):
     if not frame.get("accepted"):
         return {"ok": False, "error": frame.get("reason") or "游戏拒绝了这次动作"}
     if frame.get("async"):
-        return {"ok": True, "message": PENDING_TEXT.get(action, "正在做，好了会告诉你。")}
+        return {"ok": True, "message": PENDING_TEXT.get(action, "已经开始，还没做完。")}
     return {"ok": True, "message": DONE_TEXT.get(action, "已经做完了。")}
 
 
@@ -128,6 +149,157 @@ def _action_target(action, args):
     if action == "lie_down" and raw != "bed":
         return default
     return raw
+
+
+def _set_task(ctx):
+    """换她的工作模式。切的就是她自己界面里那个任务，我们这边不留副本。"""
+    maid, error = ready(ctx)
+    if not maid:
+        return {"ok": False, "error": error}
+
+    raw = (ctx.get("args") or {}).get("task")
+    raw = raw.strip() if isinstance(raw, str) else ""
+    task = task_id(raw)
+    if not task:
+        return {"ok": False, "error": f"没有这个工作模式：{raw or '（空）'}。能用的有：{task_choices()}。"}
+
+    response, error = ask({"type": SET_TASK_TOOL, "data": {"maid_id": maid, "task": task}}, ACTION_TIMEOUT_MS)
+    if error:
+        return {"ok": False, "error": error}
+    frame = response.get("data") or {}
+    if response.get("type") == "error":
+        # 模组没就绪，或者这个模组版本还不认这条帧
+        return {"ok": False, "error": (frame.get("message") or "").strip() or "游戏那边没能换工作模式"}
+    if not frame.get("accepted"):
+        return {"ok": False, "error": frame.get("reason") or "游戏拒绝了这次切换"}
+    return {"ok": True, "message": _task_text(frame)}
+
+
+def _task_text(frame):
+    """换工作的回执 → 给模型的一句话：成没成、缺不缺东西、现在会不会真去干。
+
+    后两件事模型自己看不见，而它们决定玩家会不会白等：她的日程表此刻可能不在工作时间；
+    跟随状态下有活时，玩家走远了不会把她拽回来，活会接着干，叫一声就能回来。
+    """
+    name = task_name(frame.get("task"), frame.get("summary"))
+    parts = [f"已经切换到「{name}」了。" if frame.get("changed") else f"本来就在「{name}」。"]
+    switch = (frame.get("switch_result") or "").strip()
+    if switch == "MISSING_REQUIRED_ITEM":
+        parts.append("不过手上和背包里都没有要用的东西（锄头、剪刀、钓竿这类），得先给你。")
+    elif switch == "PARTIAL_OK":
+        parts.append("不过工具不全，只有一部分活能干。")
+    if frame.get("work_time") is False:
+        parts.append("不过现在是你的休息时间，到了工作时间才会去干。")
+    elif frame.get("home_mode") is False:
+        parts.append("不过你还在跟随模式：干活的时候玩家走远了不会把你拽回来，活会接着干，叫一声就回来。")
+    return "".join(parts)
+
+
+def _attack(ctx):
+    """让她去打一个活物。点谁由玩家那句话决定，插件只把说法翻成 id 或类别。"""
+    maid, error = ready(ctx)
+    if not maid:
+        return {"ok": False, "error": error}
+
+    raw = (ctx.get("args") or {}).get("target")
+    raw = raw.strip() if isinstance(raw, str) else ""
+    target = attack_target(raw)
+    if not target:
+        return {
+            "ok": False,
+            "error": f"没听懂要打谁：{raw or '（空）'}。可以说活物的名字（僵尸、羊），"
+            "或者 hostile（最近的敌对生物）、animal（最近的动物）、owner（主人，也就是玩家自己）。",
+        }
+    style = attack_style((ctx.get("args") or {}).get("style"))
+
+    response, error = ask(
+        {"type": ATTACK_TOOL, "data": {"maid_id": maid, "target": target, "style": style}}, ACTION_TIMEOUT_MS
+    )
+    if error:
+        return {"ok": False, "error": error}
+    frame = response.get("data") or {}
+    if response.get("type") == "error":
+        return {"ok": False, "error": (frame.get("message") or "").strip() or "游戏那边没能下达攻击"}
+    if not frame.get("accepted"):
+        return {"ok": False, "error": frame.get("reason") or "游戏拒绝了这次攻击"}
+    return {"ok": True, "message": _attack_text(frame)}
+
+
+def _attack_text(frame):
+    """攻击回执 → 一句话。目标只说名字，不给格数。
+
+    说清这个工具**只负责攻击**：它不保证目标已经倒下。模型很容易把「盯上了」当成
+    「已经解决」，而实际上她可能才砍到第一下。
+
+    轻轻一下是另一回事：只出一手、伤害固定，说清「打完就收手」就够，不必再提倒下。
+    """
+    target = frame.get("target") or {}
+    if target.get("owner"):
+        who = "玩家"
+    else:
+        fallback = (target.get("name") or "").strip() or "那个活物"
+        who = name_of(MOB_NAMES, target.get("type"), fallback)
+    if frame.get("style") == "light":
+        return f"会过去轻轻打{who}一下，打完就收手，不会追着打。"
+    parts = [f"已开始攻击{who}。"]
+    if not frame.get("weapon", True):
+        parts.append("她手上没有武器，只能空手打，伤害很低。")
+    parts.append(f"这个工具只下达攻击指令，{who}还没有倒下；她会一直打到目标倒下或追不上为止。")
+    return "".join(parts)
+
+
+def _mine(ctx):
+    """让她去挖方块：玩家看着的那块，或附近的某一种方块。"""
+    maid, error = ready(ctx)
+    if not maid:
+        return {"ok": False, "error": error}
+
+    args = ctx.get("args") or {}
+    raw = args.get("target")
+    raw = raw.strip() if isinstance(raw, str) else ""
+    target = mine_target(raw)
+    if not target:
+        return {
+            "ok": False,
+            "error": f"没听懂要挖哪种方块：{raw or '（空）'}。可以说 {mine_choices()}。",
+        }
+    try:
+        count = int(args.get("count"))
+    except (TypeError, ValueError):
+        count = 1
+    count = max(1, min(64, count))
+
+    response, error = ask(
+        {"type": MINE_TOOL, "data": {"maid_id": maid, "target": target, "count": count}},
+        ACTION_TIMEOUT_MS,
+    )
+    if error:
+        return {"ok": False, "error": error}
+    frame = response.get("data") or {}
+    if response.get("type") == "error":
+        return {"ok": False, "error": (frame.get("message") or "").strip() or "游戏那边没能开始挖"}
+    if not frame.get("accepted"):
+        return {"ok": False, "error": frame.get("reason") or "游戏拒绝了这次挖掘"}
+    return {"ok": True, "message": _mine_text(frame)}
+
+
+def _mine_text(frame):
+    """挖掘回执 → 一句话。这个工具只负责开始挖，不代表方块已经掉下来。
+
+    挖穿、挖够、走不到都由模组之后推的 `maid_mine_done` 状态说明；在这之前，
+    模型只能说她「正过去挖」。
+    """
+    block = frame.get("block") or ""
+    fallback = (frame.get("name") or "").strip() or "方块"
+    name = name_of(BLOCK_NAMES, block, fallback)
+    if frame.get("looked"):
+        parts = [f"正过去挖你看着的那块{name}。"]
+    else:
+        parts = [f"正过去挖{frame.get('count') or 1}块{name}。"]
+    if not frame.get("has_tool", True):
+        parts.append("她手上没有趁手的工具，只能徒手挖，会慢一些。")
+    parts.append(f"这个工具只表示开始挖了，{name}还在原地。")
+    return "".join(parts)
 
 
 def _look_around(ctx):
@@ -203,16 +375,27 @@ def carry_text(data):
 
 
 def creature_phrase(data):
-    """附近有哪些活物，一句话的中间那半截（「附近有左前方近处的僵尸」）。
+    """附近有哪些活物，一句话的中间那半截（「附近有近处的僵尸」）。
 
     出事那一刻（她挨打、血量告急）跟着事件旁白一起给她——怪物另记一条有 2 分钟防抖
     挡着，但「她刚挨了一下，旁边站着谁」是当下最要紧的处境，不该等到玩家下次说话。
+
+    看得见的按距离档报；看不见的不报「被挡着」，只汇总成「听到僵尸和蜘蛛的声音」——
+    隔墙知道具体是哪一只、离多远，读起来像透视，也不像她真有的感官。
+
+    只看最近几只：按需查询现在能列十几只，全念出来会把玩家那句话挤成一份清单。
     """
-    nearby = data.get("nearby") or []
+    nearby = (data.get("nearby") or [])[:CARRY_CREATURE_LIMIT]
     if not nearby:
         return ""
-    described = "、".join(sighting(one) for one in nearby)
-    return f"附近有{described}"
+    seen = [one for one in nearby if one.get("visible")]
+    sounds = heard_sounds([one for one in nearby if not one.get("visible")])
+    parts = []
+    if seen:
+        parts.append(f"附近有{'、'.join(sighting(one) for one in seen)}")
+    if sounds:
+        parts.append(f"{'还能' if seen else '附近能'}听到{sounds}")
+    return "；".join(parts)
 
 
 def creature_text(data):
@@ -292,4 +475,7 @@ TOOLS = {
     "maid_lie_down": action_tool("lie_down"),
     LOOK_AROUND_TOOL: _look_around,
     SEE_SCREEN_TOOL: _see_screen,
+    SET_TASK_TOOL: _set_task,
+    ATTACK_TOOL: _attack,
+    MINE_TOOL: _mine,
 }

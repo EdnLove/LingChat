@@ -64,11 +64,22 @@ def edit_context(
 ) -> Dict[str, Any]:
     """用 replacement 替换第 start~end 条台词。返回 {ok, removed, total}。"""
 
-def add_prompt_line(role: str, text: str) -> Dict[str, Any]:
+def add_prompt_line(
+    role: str,
+    text: str,
+    *,
+    ttl_seconds: Optional[float] = ...,
+    key: Optional[str] = ...,
+    severity: int = ...,
+) -> Dict[str, Any]:
     """往台词表末尾追加一条提示台词（旁白/系统/剧情），不触发回复。
     role 取 "narrator" / "system" / "plot"。
     空闲时返回 {ok, index}；生成进行中先排队，返回 {ok, queued: True}，
-    下一轮开头再按顺序写进台词表（连着的 narrator 旁白会并成一行）。"""
+    下一轮开头再按顺序写进台词表（连着的 narrator 旁白会并成一行）。
+    传 ttl_seconds 表示这条只在这么长时间内有效：先留在队列里，等角色真要开口时
+    再判一次，过期的直接丢弃、不写进台词表；key + severity 让同类事件（比如连着
+    挨打）只保留最严重的一条。带有效期的调用返回 {ok, queued: True, pending: N}，
+    pending 是队列里还有效的条目数。"""
 
 def trigger_proactive(text: str) -> Dict[str, Any]:
     """请求宿主主动开一次口（主动对话系统的一次投放）。需 manifest 声明

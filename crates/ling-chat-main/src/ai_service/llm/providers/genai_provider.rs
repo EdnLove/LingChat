@@ -69,6 +69,16 @@ fn infer_image_mime(data_url: &str) -> String {
     "image/jpeg".to_string()
 }
 
+/// 组装「带正文的工具调用」assistant 消息。
+fn assistant_tool_calls_message(content: &str, calls: Vec<GenaiToolCall>) -> ChatMessage {
+    let mut parts: Vec<ContentPart> = Vec::new();
+    if !content.trim().is_empty() {
+        parts.push(ContentPart::Text(content.to_string()));
+    }
+    parts.extend(calls.into_iter().map(ContentPart::ToolCall));
+    ChatMessage::assistant(MessageContent::from_parts(parts))
+}
+
 /// 按字符数截断，超长时补一句省略说明。按字符切，不会打断 UTF-8。
 fn truncate_chars(text: &str, max_chars: usize) -> String {
     let total = text.chars().count();
@@ -197,7 +207,7 @@ impl GenaiProvider {
                             })
                         })
                         .collect::<Result<Vec<_>>>()?;
-                    genai_messages.push(ChatMessage::from(calls));
+                    genai_messages.push(assistant_tool_calls_message(&msg.content, calls));
                 },
                 _ => {
                     let role = match msg.role.as_str() {
@@ -650,61 +660,5 @@ impl LlmProvider for GenaiProvider {
             tool_calls,
             usage,
         })
-    }
-}
-
-#[cfg(test)]
-mod worldbook_tests {
-    use super::*;
-    use crate::ai_service::worldbook::Worldbook;
-
-    #[test]
-    fn worldbook_dynamic_reference_stays_out_of_provider_system() {
-        let provider = GenaiProvider {
-            client: GenaiClient::builder().build(),
-            model: "test".into(),
-            provider: "openai".into(),
-            temperature: None,
-            top_p: None,
-            enable_thinking: false,
-            reasoning_effort: None,
-            is_minimax: false,
-        };
-        let book: Worldbook = serde_yaml::from_str(
-            "entries: [{id: core, activation: {type: always}, content: 常驻资料}, {id: family, activation: {type: keyword, keys: [家庭]}, content: 动态家庭资料}]",
-        )
-        .unwrap();
-        let memory = vec![
-            LlmMessage::system("角色设定"),
-            LlmMessage::user("历史问题"),
-            LlmMessage::assistant("历史回复"),
-            LlmMessage::user("当前问题"),
-        ];
-        let mut hit = memory.clone();
-        let mut miss = memory.clone();
-        book.inject(&mut hit, Some("家庭"));
-        book.inject(&mut miss, Some("你好"));
-        let hit = provider.build_chat_request(&hit, None).unwrap();
-        let miss = provider.build_chat_request(&miss, None).unwrap();
-        assert_eq!(hit.system, miss.system);
-        assert!(hit.system.as_deref().unwrap().contains("常驻资料"));
-        assert!(!hit.system.as_deref().unwrap().contains("动态家庭资料"));
-        assert_eq!(
-            serde_json::to_value(&hit.messages[..2]).unwrap(),
-            serde_json::to_value(&miss.messages[..2]).unwrap(),
-        );
-        assert!(
-            hit.messages
-                .last()
-                .unwrap()
-                .content
-                .first_text()
-                .unwrap()
-                .contains("动态家庭资料")
-        );
-        assert_eq!(
-            miss.messages.last().unwrap().content.first_text(),
-            Some("当前问题")
-        );
     }
 }

@@ -346,6 +346,19 @@ async fn handle_debug_command(app: &AppHandle, text: &str) -> Result<(), String>
 
             for msg in &role.memory {
                 tracing::info!("[{}] {}", msg.role, msg.content);
+                // 工具调用与调用 ID 是消息的另一半：只打正文的话，历史里会出现
+                // 「有工具结果却没有谁发起的调用」，排查工具链路时完全对不上。
+                if let Some(calls) = &msg.tool_calls {
+                    let calls = calls
+                        .iter()
+                        .map(|call| format!("{}({})", call.function.name, call.function.arguments))
+                        .collect::<Vec<_>>()
+                        .join("; ");
+                    tracing::info!("  工具调用: {calls}");
+                }
+                if let Some(id) = &msg.tool_call_id {
+                    tracing::info!("  对应调用: {id}");
+                }
             }
         },
         "/查看台词" => {

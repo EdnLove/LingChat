@@ -308,7 +308,17 @@ async fn edit_context_impl(
 }
 
 /// 追加一条提示台词（旁白 / 系统提示 / 剧情提示）。
-async fn add_prompt_line_impl(app: AppHandle, role: String, text: String) -> serde_json::Value {
+///
+/// `ttl_seconds > 0` 表示这条只是「此刻发生的事」：先留在队列里，等真的轮到角色开口
+/// 时再判一次有效期，过期的直接丢弃`key` + `severity` 让同类事件在队列里只保留最严重的一条。
+async fn add_prompt_line_impl(
+    app: AppHandle,
+    role: String,
+    text: String,
+    ttl_seconds: Option<f64>,
+    key: Option<String>,
+    severity: i64,
+) -> serde_json::Value {
     let role = match role.trim().to_ascii_lowercase().as_str() {
         "narrator" => PromptRole::Narrator,
         "system" => PromptRole::System,
@@ -329,12 +339,26 @@ async fn add_prompt_line_impl(app: AppHandle, role: String, text: String) -> ser
     let db = state.db.clone();
     let gen_lock = state.generation_lock.clone();
     let gs = game_status_handle(&app).await;
+    let mut gs = gs.lock().await;
+
+    // 有有效期的条目一律先排队：什么时候轮到角色开口不由插件决定，等那一刻再判
+    // 「还值不值得说」。排队条数回给插件，它据此判「攒够几件了」。
+    if let Some(ttl) = ttl_seconds.filter(|seconds| *seconds > 0.0) {
+        let pending = gs.queue_prompt_line(
+            role,
+            text,
+            Some(std::time::Duration::from_secs_f64(ttl)),
+            key,
+            severity,
+        );
+        return serde_json::json!({ "ok": true, "queued": true, "pending": pending });
+    }
+
     // 生成进行中先排队：直接写会往流式任务算好的行号后面插队，事件一多就会和
     // 正在生成的这一轮搅在一起。下一轮开头（拿到生成锁之后）再按顺序补写。
     let idle = gen_lock.try_lock();
-    let mut gs = gs.lock().await;
     if idle.is_err() {
-        gs.queue_prompt_line(role, text);
+        gs.queue_prompt_line(role, text, None, None, 0);
         return serde_json::json!({ "ok": true, "queued": true });
     }
     match gs.add_prompt_line(&db, role, text).await {
@@ -955,12 +979,39 @@ mod plugin_host {
     /// 正在生成回复时不会直接写：这一行会先排队（`{ "ok": true, "queued": true }`），
     /// 等本轮收尾、下一轮开头按顺序补进台词表——中途插队会和流式写入抢行号。
     /// 连着的旁白在队列里会先用换行接成一行（上限 600 字），写入时仍是一条。
+    ///
+    /// 游戏事件传 `ttl_seconds=`（这条信息值多少秒）就一直留在队列里，等角色真要开口
+    /// 时再判一次，过期的直接丢掉；`key=` + `severity=` 让同类事件只留最严重的一条。
+    /// 带有效期的调用返回 `{ "ok": true, "queued": true, "pending": N }`。
     #[pyfunction]
-    fn add_prompt_line(role: String, text: String, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
+    fn add_prompt_line(
+        role: String,
+        text: String,
+        kwargs: KwArgs<PyObjectRef>,
+        vm: &VirtualMachine,
+    ) -> PyResult<PyObjectRef> {
+        let kwargs = super::kwargs_map(kwargs);
+        let ttl_seconds = kwargs
+            .get("ttl_seconds")
+            .and_then(|v| super::py_to_value(vm, v).as_f64());
+        let key = kwargs
+            .get("key")
+            .and_then(|v| super::py_to_value(vm, v).as_str().map(str::to_string));
+        let severity = kwargs
+            .get("severity")
+            .and_then(|v| super::py_to_value(vm, v).as_i64())
+            .unwrap_or(0);
         let Some(app) = crate::app_handle() else {
             return Ok(super::no_host(vm));
         };
-        let result = super::runtime().block_on(super::add_prompt_line_impl(app, role, text));
+        let result = super::runtime().block_on(super::add_prompt_line_impl(
+            app,
+            role,
+            text,
+            ttl_seconds,
+            key,
+            severity,
+        ));
         Ok(super::value_to_pyobject(vm, &result))
     }
 

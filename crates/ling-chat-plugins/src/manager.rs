@@ -1471,7 +1471,7 @@ fn dependency_error(missing: &[String], inactive: &[String]) -> String {
     }
 }
 
-/// 把工具名授权给 default 角色组。
+/// 把工具名授权给 default 角色组与主动对话场景组。
 ///
 /// 插件工具注册后必须走这一步才可能被下发：权限矩阵里主聊天取的就是 default
 /// 角色组的工具集，光进 registry 与 available_tools 展示列表都是看不见的。
@@ -1482,16 +1482,20 @@ fn grant_tools_to_default_group(registry: &ToolRegistry, names: &[String]) {
     registry.update_permissions(|p| {
         for name in names {
             p.set_tool_allowed_for_default_group(name, true);
+            p.set_tool_allowed_for_proactive_scene(name, true);
         }
     });
 }
 
-/// 收回 default 角色组对这批工具名的授权。
+/// 收回 default 角色组与主动对话场景组对这批工具名的授权。
 fn revoke_tools_from_default_group(registry: &ToolRegistry, names: &[String]) {
     if names.is_empty() {
         return;
     }
     registry.update_permissions(|p| {
+        for name in names {
+            p.set_tool_allowed_for_proactive_scene(name, false);
+        }
         // 组不存在时不动权限：那个入口会顺手建一个 enabled = true 的空组，而空
         // 工具集在 all_tools 场景下等于放行全部工具，一旦被塞进角色就是提权。
         if !p.role_groups.contains_key(DEFAULT_ROLE_GROUP) {

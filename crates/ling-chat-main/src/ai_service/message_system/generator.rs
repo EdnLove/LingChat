@@ -38,7 +38,10 @@ use crate::ai_service::types::{GameLine, LineAttributeExt, LineBase, LlmMessage,
 use crate::api::data_dir;
 use crate::config::AppConfig;
 use crate::db::entities::line::LineAttribute;
-use crate::utils::prompt::{PromptRole, RoundReply, correction_texts, scan_reply_shape};
+use crate::utils::prompt::{
+    PromptRole, REPETITION_MIN_ROUNDS, RoundReply, correction_texts, repetition_text,
+    scan_reply_shape,
+};
 
 /// MessageGenerator 的业务调用来源。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -664,7 +667,7 @@ impl MessageGenerator {
         // 每类问题只取首个命中的轮次（多人模式下一次回复含多个角色的输出，
         // 逐轮插入会把提示堆一片）；什么都没产出的轮次（模型只调了工具）不参与判据。
         let mode = gs.reply_length_mode();
-        let texts = round_replies
+        let mut texts = round_replies
             .iter()
             .filter(|round| round.landed_lines > 0 || !round.shapes.is_empty())
             .find_map(|round| {
@@ -672,6 +675,22 @@ impl MessageGenerator {
                 (!texts.is_empty()).then_some(texts)
             })
             .unwrap_or_default();
+
+        // 台词条数连续多轮一模一样：条数可能仍在允许区间内，但每轮同长很机械。
+        // 已经越界时交给上面的数量纠偏，不再叠一条「要有变化」；本轮没落下台词时
+        // 不检查，否则会拿上一轮的结论重复插同一条提示。
+        let produced_lines = round_replies.iter().any(|round| round.landed_lines > 0);
+        if produced_lines {
+            if let Some((count, streak)) = same_length_streak(&gs.line_list) {
+                let in_range = match mode.accepted_range() {
+                    Some((min, max)) => (min..=max).contains(&count),
+                    None => true,
+                };
+                if streak >= REPETITION_MIN_ROUNDS && in_range {
+                    texts.push(repetition_text(streak, count));
+                }
+            }
+        }
 
         // 同一条提示紧邻重复就不再插：跨过本轮刚产出的台词回头看一行，
         // 命中即说明上一轮已经提醒过同样的问题（隔轮重复是有意的：模型不听就该再提醒）
@@ -971,6 +990,45 @@ impl MessageGenerator {
 
         Ok(acc)
     }
+}
+
+// ============================================================
+// 回复条数趋势
+// ============================================================
+
+/// 最近台词条数一致的趋势，返回（最后一轮的台词条数，与它相同的连续轮数）。
+fn same_length_streak(lines: &[GameLine]) -> Option<(usize, usize)> {
+    let mut rounds: Vec<(i32, usize)> = Vec::new();
+    let mut current: Option<(i32, usize)> = None;
+    for line in lines {
+        // assistant 行才是台词；工具调用回填的前缀行 sender 为空，与玩家发言、旁白、
+        // 提示、工具行一样结束一轮
+        let role_id = match line.attribute() {
+            LineAttribute::Assistant => line.sender_role_id(),
+            _ => None,
+        };
+        let Some(role_id) = role_id else {
+            rounds.extend(current.take());
+            continue;
+        };
+        if current.is_some_and(|(sender, _)| sender == role_id) {
+            if let Some((_, count)) = current.as_mut() {
+                *count += 1;
+            }
+        } else {
+            rounds.extend(current.take());
+            current = Some((role_id, 1));
+        }
+    }
+    rounds.extend(current);
+
+    let (sender, count) = *rounds.last()?;
+    let streak = rounds
+        .iter()
+        .rev()
+        .take_while(|(round_sender, round_count)| *round_sender == sender && *round_count == count)
+        .count();
+    Some((count, streak))
 }
 
 // ============================================================
