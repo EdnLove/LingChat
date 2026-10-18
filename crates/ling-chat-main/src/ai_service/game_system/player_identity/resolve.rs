@@ -15,7 +15,6 @@ impl RelationEndpoint {
             Self::Me(id) => format!("me:{id}"),
         }
     }
-
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -111,10 +110,7 @@ pub fn build_player_block(
         }
     }
 
-    let has_attitude = matches!(
-        relation.map(|r| r.source),
-        Some(RelationSource::Speaker)
-    );
+    let has_attitude = matches!(relation.map(|r| r.source), Some(RelationSource::Speaker));
     if !name.is_empty() || has_attitude {
         out.push_str("\n");
         out.push_str(&format!(
