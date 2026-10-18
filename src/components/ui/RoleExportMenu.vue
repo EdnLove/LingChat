@@ -34,7 +34,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from "vue";
-import { Upload } from "lucide-vue-next";
+import { Upload } from "@lucide/vue";
 import { useRoleImportExport } from "@/composables/useRoleImportExport";
 import type { ArchiveFormat } from "@/api/services/role-archive";
 

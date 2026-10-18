@@ -133,7 +133,7 @@
 import { onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
-import { Birdhouse, FolderOpen, PackageOpen, Plus, Rabbit, RefreshCcw } from "lucide-vue-next";
+import { Birdhouse, FolderOpen, PackageOpen, Plus, Rabbit, RefreshCcw } from "@lucide/vue";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { invoke } from "@tauri-apps/api/core";
 

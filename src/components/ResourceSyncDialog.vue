@@ -153,7 +153,7 @@ import { ref, computed, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
 const { t } = useI18n();
-import { Folder, Minus, Plus, RefreshCw, CheckCircle, XCircle } from "lucide-vue-next";
+import { Folder, Minus, Plus, RefreshCw, CheckCircle, XCircle } from "@lucide/vue";
 import type { ResourceSyncInfo, SyncFileEntry } from "@/composables/useUpdater";
 
 // ─── Props & Emits ───────────────────────────────────────────

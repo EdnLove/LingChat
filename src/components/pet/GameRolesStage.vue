@@ -141,7 +141,7 @@ import { isAndroid } from "@/utils/platform";
 import RoleAvatar from "./GameRoleAvatar.vue";
 import PetSpectrumRing from "./PetSpectrumRing.vue";
 import Live2DStage from "../game/live2d/Live2DStage.vue";
-import { Play, Pause, Settings, LogOut, Camera, Mic, MicOff } from "lucide-vue-next";
+import { Play, Pause, Settings, LogOut, Camera, Mic, MicOff } from "@lucide/vue";
 
 const { t } = useI18n();
 const gameStore = useGameStore();
