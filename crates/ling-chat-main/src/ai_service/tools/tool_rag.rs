@@ -377,7 +377,7 @@ mod tests {
 
     /// 禁用态引擎：LRU 与权限求交的逻辑不依赖真实模型。
     fn disabled_rag() -> ToolRag {
-        let engine = EmbeddingEngine::load(&PathBuf::from("__不存在的模型目录__"));
+        let engine = EmbeddingEngine::load(&PathBuf::from("__不存在的模型目录__"), false);
         assert!(!engine.is_enabled(), "该路径不应被识别为可用模型");
         ToolRag::new(engine)
     }

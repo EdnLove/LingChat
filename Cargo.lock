@@ -4326,7 +4326,6 @@ dependencies = [
  "tauri-plugin-store",
  "tempfile",
  "thiserror 2.0.21",
- "tokenizers",
  "tokio",
  "tokio-tungstenite 0.26.2",
  "tokio-util",
@@ -4344,11 +4343,15 @@ dependencies = [
 name = "ling-chat-notes"
 version = "0.5.2"
 dependencies = [
+ "anyhow",
  "chrono",
+ "ort",
  "serde",
  "serde_json",
  "tempfile",
  "thiserror 2.0.21",
+ "tokenizers",
+ "tracing",
  "uuid",
 ]
 

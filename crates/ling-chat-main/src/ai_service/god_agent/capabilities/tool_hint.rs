@@ -364,14 +364,18 @@ mod tests {
     async fn threshold_smoke_reports_scores_for_real_queries() {
         use crate::ai_service::tools::tool_rag::{AUTO_RECOMMEND_MIN_SCORE, AUTO_RECOMMEND_TOP_K};
 
-        let dll = repo_path("src-tauri/binaries/onnxruntime.dll");
-        assert!(dll.exists(), "onnxruntime.dll 不存在: {}", dll.display());
-        if let Err(e) = ort::init_from(&dll) {
-            eprintln!("ort::init_from 跳过（可能已初始化）: {e}");
+        // 只有 Windows 的 load-dynamic 模式暴露 ort::init_from；其余平台静态链接。
+        #[cfg(target_os = "windows")]
+        {
+            let dll = repo_path("src-tauri/binaries/onnxruntime.dll");
+            assert!(dll.exists(), "onnxruntime.dll 不存在: {}", dll.display());
+            if let Err(e) = ort::init_from(&dll) {
+                eprintln!("ort::init_from 跳过（可能已初始化）: {e}");
+            }
         }
 
         let model_dir = repo_path("data/third_party/embedding_model_bge_small_zh");
-        let engine = crate::ai_service::embedding::EmbeddingEngine::load_inner(&model_dir, true);
+        let engine = crate::ai_service::embedding::EmbeddingEngine::load(&model_dir, true);
         assert!(
             engine.is_enabled(),
             "引擎未启用，检查模型目录: {}",

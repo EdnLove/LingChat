@@ -30,9 +30,9 @@
 ### 检索方案
 
 ONNX 语义向量检索，模型 `bge-small-zh-v1.5`（512 维，uint8 量化约 23MB，单文件）。
-代码在 `crates/ling-chat-main/src/ai_service/embedding/`，API 只有
-`EmbeddingEngine::embed` 与 `cosine_similarity`，**将来记忆检索可直接复用挂在
-`AppState` 上的同一个实例**（`state.embedding`）。
+代码在 `crates/ling-chat-notes/src/embedding/`（main 的 `ai_service::embedding` 是
+re-export，调用路径不变），API 只有 `EmbeddingEngine::embed` 与 `cosine_similarity`，
+**将来记忆检索可直接复用挂在 `AppState` 上的同一个实例**（`state.embedding`）。
 
 选它而不是词法检索，是因为语义检索对「换个环境」→ `scene_switch` 这类非同词命中更稳；
 选它而不是更大的多语言模型，是因为工具只有 30~40 个、描述全中文，且模型文件会进每个
@@ -40,7 +40,7 @@ ONNX 语义向量检索，模型 `bge-small-zh-v1.5`（512 维，uint8 量化约
 
 模型与分词文件不进 git（`.gitignore` 的 `data/**` 排除整个 `data` 目录），靠
 `scripts/download_embedding_model.mjs` 获取；`pnpm run init` 已包含这一步。
-换模型只需要改 `embedding/engine.rs` 的 `MODEL_DIR_NAME` 与下载脚本的 `BASE_URL` / `FILES`。
+换模型只需要改 `crates/ling-chat-notes/src/embedding/engine.rs` 的 `MODEL_DIR_NAME` 与下载脚本的 `BASE_URL` / `FILES`。
 
 ### 常驻工具
 
