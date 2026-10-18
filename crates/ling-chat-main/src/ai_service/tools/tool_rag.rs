@@ -44,11 +44,14 @@ pub fn is_resident(name: &str) -> bool {
     name == TOOL_SEARCH_NAME || name == WEB_SEARCH_NAME
 }
 
+/// 工具名 → (语料指纹, 归一化向量)。
+type EmbeddingEntry = (u64, Arc<[f32]>);
+
 pub struct ToolRag {
     engine: Arc<EmbeddingEngine>,
     /// 工具名 -> (语料指纹, 归一化向量)。指纹变化或工具消失时自动失效，
     /// 因此插件热重载/卸载不需要任何主动通知。
-    embeddings: RwLock<HashMap<String, (u64, Arc<[f32]>)>>,
+    embeddings: RwLock<HashMap<String, EmbeddingEntry>>,
     /// 角色名 -> 激活工具。下标 0 为最近激活，用于 LRU 淘汰。
     activated: Mutex<HashMap<String, Vec<String>>>,
 }

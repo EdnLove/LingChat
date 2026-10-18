@@ -152,7 +152,7 @@ fn enqueue_prompt_line(
                 (PromptRole::Narrator, PromptRole::Narrator)
             ) && last.ttl.is_none()
                 && last.key.is_none()
-                && last.text.len() + text.len() + 1 <= MAX_QUEUED_LINE_CHARS
+                && last.text.len() + text.len() < MAX_QUEUED_LINE_CHARS
             {
                 last.text.push('\n');
                 last.text.push_str(&text);
@@ -190,7 +190,7 @@ fn take_prompt_batches(queue: Vec<QueuedPromptLine>) -> Vec<(PromptRole, String)
             if matches!(
                 (&last.0, &line.role),
                 (PromptRole::Narrator, PromptRole::Narrator)
-            ) && last.1.len() + line.text.len() + 1 <= MAX_QUEUED_LINE_CHARS
+            ) && last.1.len() + line.text.len() < MAX_QUEUED_LINE_CHARS
             {
                 last.1.push('\n');
                 last.1.push_str(&line.text);

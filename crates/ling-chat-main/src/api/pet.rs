@@ -295,16 +295,21 @@ pub fn spawn_hit_test_poll(window: tauri::WebviewWindow) {
 // 气泡窗整窗点击穿透：它叠在宠物窗上方，不穿透就会抢走头像的拖拽与点击。
 
 /// 两窗共用的宽度基准：视觉上必须一致，否则气泡窗与宠物窗明显错位。
+#[cfg(desktop)]
 const WINDOW_W: f64 = 264.0;
 /// 顶部留白：给头像圆框外圈的频谱圆环腾地方，头像带因此整体下移一段。
 /// 气泡定位要按它补偿，否则气泡与头像的间距会从 8 变成 34
 /// （与 constants.ts 的 PET_SPECTRUM_TOP_PAD_BASE 同步）
+#[cfg(desktop)]
 const PET_TOP_PAD: f64 = 26.0;
 /// 宠物窗高度 = 顶部留白 26 + 头像带 210 + 输入带 64
 /// （与 constants.ts 的 PET_WINDOW_H_BASE 同步）
+#[cfg(desktop)]
 const PET_WINDOW_H: f64 = 300.0;
 /// 气泡窗高度 = 气泡带 278 + 长尾余量 10 + 间隙 8
+#[cfg(desktop)]
 const BUBBLE_H: f64 = 296.0;
+#[cfg(desktop)]
 const BUBBLE_GAP: f64 = 8.0;
 
 /// 按宠物窗当前位置重算气泡窗位置。

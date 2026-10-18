@@ -1115,6 +1115,9 @@ pub(super) async fn publish_ordered(
 // consumer 句子处理
 // ============================================================
 
+/// 句子序号 → 台词表行下标。
+pub type SentenceLineLedger = Arc<Mutex<Vec<(usize, usize)>>>;
+
 /// `consume_sentence` 的最小依赖集。仅含句子处理真正用到的字段，
 /// 不要求 LLM / 工具，剧本 `dialogue` 事件可在未配置模型时直接构建。
 #[derive(Clone)]
@@ -1131,7 +1134,7 @@ pub struct SentenceDeps {
     /// 工具闭环下前导台词只做呈现，生成结束后要按台账把它先落的那些行抹掉
     /// （同一段原文已经在带 `tool_call` 的助手行里）。非生成路径（剧本固定台词）
     /// 传 `None`：那边没有句子序号，也不存在要抹的行。
-    pub sentence_lines: Option<Arc<Mutex<Vec<(usize, usize)>>>>,
+    pub sentence_lines: Option<SentenceLineLedger>,
 }
 
 impl From<&GeneratorDeps> for SentenceDeps {
@@ -1161,6 +1164,7 @@ pub struct ReplyOverrides {
 ///
 /// 供 MessageGenerator 的 consumer 池与剧本 `dialogue` 事件复用。
 /// `overrides` 让固定台词覆盖响应字段（显示名/副标题/时长），生成路径传默认值。
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn consume_sentence(
     deps: &SentenceDeps,
     sentence: String,

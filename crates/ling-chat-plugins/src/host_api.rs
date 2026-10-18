@@ -19,6 +19,9 @@
 //! 新增宿主能力时，`#[pyfunction]` 直接加在下面的 `plugin_host` 模块里，
 //! 实现放在本文件上方，不要另开文件——插件作者看到的是一个模块。
 
+// 交叉 target 下 clippy 会对已用 const 初始化的 thread_local 误报（issue #13422）。
+#![allow(clippy::missing_const_for_thread_local)]
+
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::OnceLock;
