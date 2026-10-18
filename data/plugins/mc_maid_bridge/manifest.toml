@@ -133,8 +133,15 @@ script = "tools.py"
 timeout_ms = 15000
 
 [[tools]]
+name = "maid_give_item"
+description = "让女仆把她背包里的东西交给玩家。item 写物品的中文名、英文 id 或从「看一眼周围」里拿到的 id（苹果、面包、熟牛肉、铁镐、钻石剑、火把……），count 写数量，默认 1，最多 64。玩家说「把铁镐给我」「给我点吃的」时用它。她会从背包里拿出来直接放进玩家背包，装不下的掉在玩家脚下；她身上没有这件东西、玩家不在身边或离得太远时会失败并说明原因。只交她背包里的东西，她手上正在用的工具不算。不知道她背包里有什么时，先用 maid_look_around 看一眼；认不出物品时失败结果里也会列出她背包里的东西（带 id），照 id 再说一次即可。这个工具只负责把东西交出去，不保证玩家拿去做什么。"
+parameters = '{ "type":"object", "properties":{ "item":{ "type":"string", "description":"物品中文名或英文 id（如 铁镐、minecraft:iron_pickaxe）" }, "count":{ "type":"integer", "minimum":1, "maximum":64, "description":"要交几件（默认 1，最多 64）" } }, "required":["item"] }'
+script = "tools.py"
+timeout_ms = 15000
+
+[[tools]]
 name = "maid_look_around"
-description = "看一眼女仆身边现在有什么。返回她正前方挡着的方块或生物、脚下踩着哪、头顶有没有遮挡、附近一圈的活物、附近能挖的方块（中文名与方块 id）、以及玩家在不在她身边。玩家问她「你周围有什么」「你看到什么了」，或者玩家让你挖某种方块但说不准是哪种时，先用它看一眼：返回的方块 id 可以直接当 maid_mine 的 target。不要凭印象编。距离只说近/中/远，活物不说方位。"
+description = "看一眼女仆身边现在有什么。返回她正前方挡着的方块或生物、脚下踩着哪、头顶有没有遮挡、附近一圈的活物、附近能挖的方块（中文名与方块 id）、她背包里有什么（物品名、id 与数量）、以及玩家在不在她身边。玩家问她「你周围有什么」「你看到什么了」，或者玩家让你挖某种方块但说不准是哪种时，先用它看一眼：返回的方块 id 可以直接当 maid_mine 的 target。不要凭印象编。距离只说近/中/远，活物不说方位。"
 parameters = '{ "type":"object", "properties":{} }'
 script = "tools.py"
 timeout_ms = 15000

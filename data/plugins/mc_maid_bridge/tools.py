@@ -1,4 +1,4 @@
-"""九个工具的入口（manifest 的 `[[tools]]` 指向本文件），外加「她身边那一圈」的措辞。
+"""十个工具的入口（manifest 的 `[[tools]]` 指向本文件），外加「她身边那一圈」的措辞。
 
 `run(ctx)` 返回的文本就是模型看到的结果，所以说实话最要紧：没连上、没绑定女仆、模组说
 办不到，一律如实回报，绝不假装已经执行——模型会照着这个结果跟玩家交代。
@@ -12,6 +12,7 @@
   都能被点名；她会先切到攻击模式，没有武器就如实失败。
 - 挖掘（挖玩家看着的那块、或附近的某一种方块）：翻成一条 `maid_mine` 帧。受理只代表
   开始挖了；挖穿、挖够、走不到都由 `maid_mine_done` 事件旁白交代。
+- 交物品（把她背包里的东西交给玩家）：同步完成，给了几件、她身上有没有，当场回给模型。
 - 查询（看一眼周围）：现取一份快照翻成几句事实，只回给模型看，不写台词表。
 - 看图（看一眼玩家屏幕）：抓一张画面交给宿主，宿主把它当图片附给模型——她这才看得到
   你搭的爱心是什么形状。
@@ -33,9 +34,13 @@ from wording import (
     BLOCK_NAMES,
     DIMENSION_NAMES,
     MOB_NAMES,
+    as_int,
     attack_style,
     attack_target,
     heard_sounds,
+    item_choices,
+    item_name,
+    item_target,
     name_of,
     mine_choices,
     mine_target,
@@ -58,14 +63,15 @@ CARRY_TIMEOUT_MS = 1500
 # 去编「我看见你了」，而真正要紧的只是主人有没有走远。
 OWNER_NEAR = 30.0
 
-# 「你此刻：附近有…」里最多念几只活物。按需查询能列十几只，全念出来太吵。
-CARRY_CREATURE_LIMIT = 4
+# 「你此刻：附近有…」里最多念几只活物。模组两档都只给最近 3 个，这里再兜一层。
+CARRY_CREATURE_LIMIT = 3
 
 LOOK_AROUND_TOOL = "maid_look_around"
 SEE_SCREEN_TOOL = "maid_see_screen"
 SET_TASK_TOOL = "maid_set_task"
 ATTACK_TOOL = "maid_attack"
 MINE_TOOL = "maid_mine"
+GIVE_TOOL = "maid_give_item"
 
 # 抓屏时按这个关键词找游戏窗口（标题或进程名命中即可），找不到就抓整个屏幕。
 DEFAULT_SCREEN_WINDOW = "Minecraft"
@@ -302,6 +308,64 @@ def _mine_text(frame):
     return "".join(parts)
 
 
+def _give_item(ctx):
+    """把她背包里的东西交给玩家：同步完成，成败当场给答复。"""
+    maid, error = ready(ctx)
+    if not maid:
+        return {"ok": False, "error": error}
+
+    args = ctx.get("args") or {}
+    raw = args.get("item")
+    raw = raw.strip() if isinstance(raw, str) else ""
+    target = item_target(raw)
+    if not target:
+        if not raw:
+            return {"ok": False, "error": f"没说要给你哪件东西。可以说 {item_choices()}。"}
+        # 认不出的名字照样发给模组：失败回执会带背包清单，模型能按 id 再来一次
+        target = raw
+    try:
+        count = int(args.get("count"))
+    except (TypeError, ValueError):
+        count = 1
+    count = max(1, min(64, count))
+
+    response, error = ask(
+        {"type": GIVE_TOOL, "data": {"maid_id": maid, "item": target, "count": count}},
+        ACTION_TIMEOUT_MS,
+    )
+    if error:
+        return {"ok": False, "error": error}
+    frame = response.get("data") or {}
+    if response.get("type") == "error":
+        return {"ok": False, "error": (frame.get("message") or "").strip() or "游戏那边没能把东西交给你"}
+    if not frame.get("accepted"):
+        return {"ok": False, "error": _give_error(frame)}
+    return {"ok": True, "message": _give_text(frame)}
+
+
+def _give_text(frame):
+    """交物品的回执 → 一句话。只说她真的给了多少，不替玩家收下。"""
+    name = item_name(frame.get("item"))
+    given = as_int(frame.get("count"), 1)
+    wanted = as_int(frame.get("requested"), given)
+    if given < wanted:
+        return f"她身上只有{given}个{name}，都交给你了。"
+    return f"把{given}个{name}交给了你。"
+
+
+def _give_error(frame):
+    """失败回执 → 原因；模组带了背包清单时一并列出，模型下一句就能按 id 改口。"""
+    reason = (frame.get("reason") or "").strip() or "游戏拒绝了这次交接"
+    available = [one for one in (frame.get("available") or []) if isinstance(one, dict) and one.get("item")]
+    if not available:
+        return reason
+    listed = "、".join(
+        f"{item_name(one.get('item'))}（{one.get('item')}）×{as_int(one.get('count'), 1)}"
+        for one in available
+    )
+    return f"{reason}。她背包里有：{listed}。要哪件就按 id 再说。"
+
+
 def _look_around(ctx):
     """看一眼她周围：取一份快照翻成几句事实给模型。
 
@@ -312,7 +376,7 @@ def _look_around(ctx):
     if not maid:
         return {"ok": False, "error": error}
 
-    data, error = snapshot(maid, LOOK_TIMEOUT_MS)
+    data, error = snapshot(maid, LOOK_TIMEOUT_MS, "query")
     if error:
         return {"ok": False, "error": error}
     return {"ok": True, "message": _look_around_text(data)}
@@ -338,13 +402,16 @@ def _see_screen(ctx):
     }
 
 
-def snapshot(maid_id, timeout_ms):
+def snapshot(maid_id, timeout_ms, profile="auto"):
     """现取一份她身边的快照。返回 (数据, 错误说明)；出错时数据是 None。
 
     工具「看一眼周围」与「玩家开口时顺手带一份」共用这条路：帧、超时口径、老模组
-    认不出这个帧时的说法都只有一处。
+    认不出这个帧时的说法都只有一处。profile 决定模组用哪一档：auto 是开口时顺手带的
+    近处快照（看得见按工作范围、看不见只听很近的声音），query 是玩家明确问周围有什么
+    （看得见放宽到 32 格，并附方块与背包清单）。
     """
-    response, error = ask({"type": LOOK_AROUND_TOOL, "data": {"maid_id": maid_id}}, timeout_ms)
+    data = {"maid_id": maid_id, "profile": profile}
+    response, error = ask({"type": LOOK_AROUND_TOOL, "data": data}, timeout_ms)
     if error:
         return None, error
     if response.get("type") == "error":
@@ -405,9 +472,9 @@ def creature_text(data):
 
 
 def _look_around_text(data):
-    """她身边这一圈，说成四句事实：站位 → 正前方 → 玩家 → 附近的活物。
+    """她身边这一圈，说成几句事实：站位 → 正前方 → 能挖的方块 → 背包 → 玩家 → 活物。
 
-    一律不给数字：格数、血量、光照写进上下文，模型就会照本宣科地念出来。
+    数字只出现在物品数量上：格数、血量、光照写进上下文，模型就会照本宣科地念出来。
     """
     dimension = name_of(DIMENSION_NAMES, data.get("dimension"), "某个世界")
     foot = name_of(BLOCK_NAMES, (data.get("standing_on") or {}).get("id"), "说不清的东西")
@@ -433,6 +500,11 @@ def _look_around_text(data):
     elif blocks is not None:
         lines.append("附近没看到能挖的方块。")
 
+    # 老模组同样没有 backpack：不替它说「背包是空的」
+    backpack = data.get("backpack")
+    if backpack is not None:
+        lines.append(_backpack_text(backpack))
+
     lines.append(_owner_phrase(data.get("owner") or {}) + "。")
 
     creatures = creature_text(data)
@@ -449,6 +521,21 @@ def _blocks_text(blocks):
         name = BLOCK_NAMES.get(raw)
         listed.append(f"{name}（{raw}）" if name else raw)
     return "附近能挖的方块有" + "、".join(listed) + "。"
+
+
+def _backpack_text(items):
+    """她背包里有什么 → 一句带 id 的清单，模型可以直接拿 id 去调 maid_give_item。"""
+    listed = []
+    for one in items or []:
+        if not isinstance(one, dict):
+            continue
+        raw = (one.get("item") or "").strip()
+        if not raw:
+            continue
+        count = as_int(one.get("count"), 1)
+        piece = f"{item_name(raw)}（{raw}）"
+        listed.append(f"{piece}×{count}" if count > 1 else piece)
+    return "你的背包里有" + "、".join(listed) + "。" if listed else "你的背包里没有别的东西。"
 
 
 def _footing_phrase(data):
@@ -495,4 +582,5 @@ TOOLS = {
     SET_TASK_TOOL: _set_task,
     ATTACK_TOOL: _attack,
     MINE_TOOL: _mine,
+    GIVE_TOOL: _give_item,
 }

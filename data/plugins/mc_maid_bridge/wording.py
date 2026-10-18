@@ -329,6 +329,7 @@ BLOCK_NAMES = {
     "minecraft:glass": "玻璃",
     "minecraft:glass_pane": "玻璃板",
     "minecraft:oak_leaves": "橡树树叶",
+    "minecraft:rose_bush": "玫瑰丛",
     "minecraft:torch": "火把",
     "minecraft:crafting_table": "工作台",
     "minecraft:chest": "箱子",
@@ -873,15 +874,51 @@ def mine_target(raw):
         return found
     if ":" in lowered and " " not in lowered:
         return lowered
-    if lowered.isascii() and lowered.replace("_", "").isalnum():
-        # 英文短名按原版方块认；模组方块请写全命名空间
-        return "minecraft:" + lowered
+    spaced = lowered.replace(" ", "_").replace("-", "_")
+    if spaced.isascii() and spaced.replace("_", "").isalnum():
+        # 英文短名按原版方块认；空格与连字符按 id 的写法归一（rose bush → rose_bush）
+        return "minecraft:" + spaced
     return ""
 
 
 def mine_choices():
     """认不出方块时列给模型看的例子。"""
     return "石头、圆石、泥土、沙子、木头（任意原木）、铁矿（浅层与深层都算）、钻石矿，或者 looked"
+
+
+_ITEM_BY_NAME = {name: ident for ident, name in ITEM_NAMES.items()}
+
+
+def item_target(raw):
+    """要交给玩家的物品：中文名、英文 id，或夹在说明里的 id。认不出给空串。
+
+    方块名也认（石头、橡木原木这类在物品栏里就是方块本身）；只有标签（木头）不行，
+    交东西得是具体某一件。
+    """
+    text = (raw or "").strip()
+    lowered = text.lower()
+    if not text:
+        return ""
+    known = _ITEM_BY_NAME.get(text)
+    if not known:
+        block = _BLOCK_BY_NAME.get(text)
+        known = block if block and not block.startswith("#") else ""
+    if known:
+        return known
+    found = _identifier_in(lowered)
+    if found:
+        return found
+    if ":" in lowered and " " not in lowered:
+        return lowered
+    spaced = lowered.replace(" ", "_").replace("-", "_")
+    if spaced.isascii() and spaced.replace("_", "").isalnum():
+        return "minecraft:" + spaced
+    return ""
+
+
+def item_choices():
+    """认不出物品时列给模型看的例子。"""
+    return "苹果、面包、熟牛肉、铁镐、钻石剑、火把"
 
 
 def sighting(one):

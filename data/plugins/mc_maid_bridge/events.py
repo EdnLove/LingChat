@@ -214,6 +214,11 @@ def item_fed(data):
     return f"玩家喂你吃了{_item_list(data.get('items'))}。"
 
 
+def maid_ate(data):
+    """她自己从背包里找东西吃了（车万女仆的进食系统）。"""
+    return f"你自己吃了{_item_list(data.get('items'))}。"
+
+
 def maid_carried(data):
     """被 Carry On 抱了起来。她主人才能抱她（那个模组只允许主人动驯服生物）。"""
     return "玩家把你抱了起来。"
@@ -269,10 +274,10 @@ def threat_near(data):
     离我不远」，而这些细节对玩家没用，她该知道的只是「有危险在靠近」。
     """
     who = name_of(MOB_NAMES, data.get("type"), "什么东西")
-    text = f"有{who}靠过来了。"
     if not data.get("visible"):
-        text += "你还没看到它。"
-    return text
+        # 看不见的只剩声音，而且是模组筛过的近处（默认 6 格）；不说「靠过来了」
+        return f"听到{who}的声音，就在附近。"
+    return f"有{who}靠过来了。"
 
 
 def action_done(data):
@@ -348,6 +353,7 @@ FORMATTERS = {
     "item_pickup": item_pickup,
     "item_received": item_received,
     "item_fed": item_fed,
+    "maid_ate": maid_ate,
     "maid_carried": maid_carried,
     "maid_dropped": maid_dropped,
     "player_advancement": player_advancement,
@@ -361,6 +367,7 @@ EVENT_TTL = {
     "item_pickup": 5,
     "item_received": 30,
     "item_fed": 30,
+    "maid_ate": 60,
     "item_gift": 60,
     "maid_hurt": 60,
     "low_health": 60,
