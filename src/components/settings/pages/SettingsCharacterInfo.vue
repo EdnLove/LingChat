@@ -380,8 +380,10 @@ import {
   beginCharacterEdit,
   discardCharacterEdit,
   commitCharacterEdit,
+  getLive2dFilePath,
   listCharacterCostumes,
 } from "../../../api/services/character";
+import { resolveLive2dVariant } from "@/types/live2d";
 import { characterEditorKey } from "@/composables/useCharacterEditor";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { Icon } from "../../base";
@@ -1261,11 +1263,36 @@ function applySettingsToRuntime() {
   if (role) role.clothes = structuredClone(toRaw(localSettings.value.clothes)) ?? [];
 }
 
+/**
+ * 保存前校验：实际会被加载的那个 variant 的模型文件是否还在。
+ *
+ * 走 `getLive2dFilePath` 而不直接拼路径，是为了让 editId 生效——用户刚在草稿里
+ * 导入的模型要从草稿目录解析，才不会被误判成缺失。
+ */
+async function isLive2dModelAvailable(): Promise<boolean> {
+  const live2d = localSettings.value.live2d;
+  if (!live2d) return false;
+  const variant = resolveLive2dVariant(live2d, localSettings.value.clothes_name ?? "");
+  if (!variant?.model) return false;
+  try {
+    await getLive2dFilePath(props.roleId!, variant.model, editId.value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** 落盘 + 运行时热更。返回是否成功，成功与否由调用方决定要不要关弹窗。 */
 async function persistSettings(): Promise<boolean> {
   if (!props.roleId || !editId.value || resourceBusy.value || saving.value) return false;
   saving.value = true;
   try {
+    // 配了 Live2D 但模型文件取不到时改回静态立绘，否则运行时要先建一套
+    // WebGL 上下文、失败之后才退回静态
+    if (localSettings.value.live2d && !(await isLive2dModelAvailable())) {
+      localSettings.value.avatar_mode = "image";
+      localSettings.value.avatar_mode_p = "image";
+    }
     await commitCharacterEdit(props.roleId, editId.value, localSettings.value);
     editId.value = undefined;
     editRoleId.value = undefined;

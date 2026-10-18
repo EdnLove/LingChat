@@ -43,7 +43,7 @@ use ling_chat_main::utils::prompt::PromptRole;
 /// 全局共享的 reqwest Client（连接池复用，进程内单例）。
 static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 
-/// 插件脚本在 spawn_blocking 线程执行，线程上无 tokio runtime 上下文；
+/// 插件脚本在独立线程执行，线程上无 tokio runtime 上下文；
 /// 需要异步能力（reqwest / 宿主 async 命令）时，用这个独立多线程 runtime 驱动。
 static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
 
@@ -145,7 +145,7 @@ fn apply_map_args(
 
 /// 发送请求，把响应转成 Python dict 返回。
 ///
-/// 插件脚本在 `spawn_blocking` 线程内执行，线程上无 tokio runtime，
+/// 插件脚本在独立线程内执行，线程上无 tokio runtime，
 /// 用独立 runtime 的 `block_on` 阻塞等待，不会卡住 tokio runtime 主线程。
 fn send_and_to_py(req: reqwest::RequestBuilder, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
     let json = runtime()

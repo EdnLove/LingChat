@@ -425,6 +425,14 @@ def _look_around_text(data):
     else:
         lines.append("正前方没有挡着的东西，视线是通的。")
 
+    # 老模组不返回 blocks：这时不能替它说「没有」，跳过这一句
+    blocks = data.get("blocks")
+    listed = [one for one in (blocks or []) if isinstance(one, str) and one]
+    if listed:
+        lines.append(_blocks_text(listed))
+    elif blocks is not None:
+        lines.append("附近没看到能挖的方块。")
+
     lines.append(_owner_phrase(data.get("owner") or {}) + "。")
 
     creatures = creature_text(data)
@@ -432,6 +440,15 @@ def _look_around_text(data):
     if data.get("truncated"):
         lines.append("更远的没列出来。")
     return "".join(lines)
+
+
+def _blocks_text(blocks):
+    """附近能挖的方块 → 一句带 id 的清单，模型可以直接拿 id 去调 maid_mine。"""
+    listed = []
+    for raw in blocks:
+        name = BLOCK_NAMES.get(raw)
+        listed.append(f"{name}（{raw}）" if name else raw)
+    return "附近能挖的方块有" + "、".join(listed) + "。"
 
 
 def _footing_phrase(data):

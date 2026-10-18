@@ -311,9 +311,17 @@ BLOCK_NAMES = {
     "minecraft:packed_ice": "浮冰",
     "minecraft:farmland": "耕地",
     "minecraft:dirt_path": "土径",
+    "#minecraft:logs": "原木",
     "minecraft:oak_log": "橡木原木",
     "minecraft:spruce_log": "云杉原木",
     "minecraft:birch_log": "白桦原木",
+    "minecraft:jungle_log": "丛林原木",
+    "minecraft:acacia_log": "金合欢原木",
+    "minecraft:dark_oak_log": "深色橡木原木",
+    "minecraft:mangrove_log": "红树原木",
+    "minecraft:cherry_log": "樱花原木",
+    "minecraft:crimson_stem": "绯红菌柄",
+    "minecraft:warped_stem": "诡异菌柄",
     "minecraft:oak_planks": "橡木木板",
     "minecraft:spruce_planks": "云杉木板",
     "minecraft:oak_door": "橡木门",
@@ -633,9 +641,12 @@ MINE_LOOKED = frozenset(
 # 方块的口语说法。BLOCK_NAMES 里的中文名已经能反查，这里补矿石、原木这类常用但
 # 不在「身边一圈」表里的说法。认不出的英文短名按原版方块放行，模组会如实报「附近没有」。
 BLOCK_ALIASES = {
-    "木头": "minecraft:oak_log",
-    "原木": "minecraft:oak_log",
-    "树干": "minecraft:oak_log",
+    # 泛称走方块标签：哪片林子就砍哪种原木，不再只认橡木
+    "木头": "#minecraft:logs",
+    "原木": "#minecraft:logs",
+    "树干": "#minecraft:logs",
+    "树木": "#minecraft:logs",
+    "树": "#minecraft:logs",
     "橡木": "minecraft:oak_log",
     "云杉木": "minecraft:spruce_log",
     "白桦木": "minecraft:birch_log",
@@ -820,8 +831,29 @@ def attack_target(raw):
     return ""
 
 
+# 模型可能把「看一眼周围」里的「中文名（id）」整段抄回来，也可能把 id 夹在解释里。
+# 认方块名之前先抠一次 id，比让它整段报错好。这里手写扫一遍而不用 re：插件脚本跑在
+# 2MB 栈的阻塞线程上，沿 bridge → wording → re 再进 re 自己的导入，层数一深就爆栈。
+_ID_CHARS = frozenset("#abcdefghijklmnopqrstuvwxyz0123456789_/:")
+
+
+def _identifier_in(text):
+    """从一段话里抠出第一个 `namespace:id`（可带 `#` 标签前缀），找不到给空串。"""
+    run = []
+    for ch in text + " ":
+        if ch in _ID_CHARS:
+            run.append(ch)
+            continue
+        token = "".join(run)
+        run = []
+        namespace, _, path = token.partition(":")
+        if namespace and path:
+            return token
+    return ""
+
+
 def mine_target(raw):
-    """挖掘目标：方块的中文名、英文 id，或 looked（玩家正看着的那块）。
+    """挖掘目标：方块的中文名、英文 id、方块标签，或 looked（玩家准星指着的方向）。
 
     空字符串按 looked 处理：玩家说「把这块挖了」时模型多半不给 target。认不出的中文
     说法给空串，由工具报错并列出几个例子——瞎猜一个方块挖出去比报错更糟。
@@ -836,6 +868,9 @@ def mine_target(raw):
     known = _BLOCK_BY_NAME.get(text)
     if known:
         return known
+    found = _identifier_in(lowered)
+    if found:
+        return found
     if ":" in lowered and " " not in lowered:
         return lowered
     if lowered.isascii() and lowered.replace("_", "").isalnum():
@@ -846,7 +881,7 @@ def mine_target(raw):
 
 def mine_choices():
     """认不出方块时列给模型看的例子。"""
-    return "石头、圆石、泥土、沙子、橡木原木、铁矿、钻石矿，或者 looked"
+    return "石头、圆石、泥土、沙子、木头（任意原木）、铁矿（浅层与深层都算）、钻石矿，或者 looked"
 
 
 def sighting(one):
