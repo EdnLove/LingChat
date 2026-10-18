@@ -2,7 +2,7 @@ package com.lingchat.maidbridge.mixin;
 
 import com.github.tartaricacid.touhoulittlemaid.entity.ai.brain.task.MaidFollowOwnerTask;
 import com.github.tartaricacid.touhoulittlemaid.entity.passive.EntityMaid;
-import com.lingchat.maidbridge.maid.LongTaskGuard;
+import com.lingchat.maidbridge.action.LongTaskGuard;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.LivingEntity;
 import org.spongepowered.asm.mixin.Mixin;

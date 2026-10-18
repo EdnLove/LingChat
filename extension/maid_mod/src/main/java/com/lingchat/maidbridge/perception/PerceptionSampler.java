@@ -5,13 +5,19 @@ import com.google.gson.JsonObject;
 import com.lingchat.maidbridge.LingChatMaidBridge;
 import com.lingchat.maidbridge.MaidBridgeConfig;
 import com.lingchat.maidbridge.bridge.BridgeServer;
-import com.lingchat.maidbridge.item.BackpackWatcher;
-import com.lingchat.maidbridge.item.ItemReporter;
+import com.lingchat.maidbridge.perception.carry.CarryReporter;
+import com.lingchat.maidbridge.perception.event.DeathReporter;
+import com.lingchat.maidbridge.perception.event.HurtReporter;
+import com.lingchat.maidbridge.perception.item.BackpackWatcher;
+import com.lingchat.maidbridge.perception.item.ItemReporter;
 import com.lingchat.maidbridge.maid.MaidQueries;
 import com.lingchat.maidbridge.maid.MonitoredMaidHandler;
 import com.lingchat.maidbridge.perception.nearby.Surroundings;
 import com.lingchat.maidbridge.perception.nearby.SurroundingsDiff;
 import com.lingchat.maidbridge.perception.nearby.SurroundingsReader;
+import com.lingchat.maidbridge.perception.world.PerceptionDiff;
+import com.lingchat.maidbridge.perception.world.PerceptionReader;
+import com.lingchat.maidbridge.perception.world.PerceptionSnapshot;
 import net.minecraft.server.MinecraftServer;
 
 /**

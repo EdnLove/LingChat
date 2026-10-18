@@ -55,6 +55,22 @@ systemProp.https.proxyPort=7890
 Gradle 发行包走的是腾讯云镜像（见 `gradle/wrapper/gradle-wrapper.properties`），不受影响。
 依赖下载过一次后会进本地缓存，之后 `./gradlew build --offline` 也能用。
 
+## 代码结构
+
+`src/main/java/com/lingchat/maidbridge/` 按职责分：
+
+| 目录 | 管什么 |
+| --- | --- |
+| `action/` | 会改变世界或女仆状态的行为。`core` 是通用动作框架（走到/坐下/躺下），`attack`、`mine`、`task`、`give`、`feed` 各自独立；`LongTaskGuard` 判断「她手上有没有活」。 |
+| `bridge/` | 本机 WebSocket、信封、路由、协议常量。 |
+| `chat/` | 游戏内聊天双向：玩家打字推给 LingChat，角色回复变成气泡。 |
+| `perception/` | 一切「观察世界」。`world` 全局采样、`nearby` 身边采样、`query` 按需查询、`event` 受伤/死亡/成就、`item` 物品与背包、`carry` 抱放；`EventFrames`、`PerceptionProfiles`、`PerceptionSampler` 是这几层共用的帧外形、半径与采样门控。 |
+| `maid/` | 女仆身份、查询、监控目标、状态与背包只读清单。 |
+| `integration/` | 可选模组适配；目前只有 `carry`（Carry On）。 |
+| `mixin/` | NeoForge mixin，包名被 `lingchat_maid_bridge.mixins.json` 固定，不要随意移动。 |
+
+判定与读世界分开：`*Diff`、`*Rules`、`BackpackDiff` 是纯逻辑，能脱开 Minecraft 跑单测；`*Reader`、`MaidActuator`、`MineTargets` 才碰游戏。
+
 ## 配置
 
 `config/lingchat_maid_bridge-common.toml`：

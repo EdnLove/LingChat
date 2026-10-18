@@ -1,7 +1,7 @@
 package com.lingchat.maidbridge.perception;
 
 import com.google.gson.JsonObject;
-import com.lingchat.maidbridge.action.ActionFrames;
+import com.lingchat.maidbridge.action.core.ActionFrames;
 import com.lingchat.maidbridge.perception.nearby.SurroundingsDiff;
 
 /**

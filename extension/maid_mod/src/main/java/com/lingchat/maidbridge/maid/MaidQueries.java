@@ -9,6 +9,7 @@ import com.lingchat.maidbridge.bridge.Envelope;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
@@ -16,6 +17,8 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
 
 /** 查女仆、查她的主人，以及把女仆序列化成 {@code maid_status} 里的字段。 */
 public final class MaidQueries {
@@ -57,6 +60,20 @@ public final class MaidQueries {
     /** 女仆的主人；不是玩家（没主人、主人是别的生物）时给 null。 */
     public static ServerPlayer owner(EntityMaid maid) {
         return maid.getOwner() instanceof ServerPlayer player ? player : null;
+    }
+
+    /**
+     * 玩家准星射线的落点，最多 distance 格；没指着方块时给 null。
+     *
+     * <p>挖掘拿它当区域锚点，「看一眼周围」拿它决定方块清单以哪片为中心；两边问的是
+     * 同一件事，所以放在这里，不让感知去依赖挖掘的实现。
+     */
+    public static BlockPos gazeAt(ServerPlayer player, double distance) {
+        if (player == null) {
+            return null;
+        }
+        HitResult hit = player.pick(distance, 1.0F, false);
+        return hit.getType() == HitResult.Type.BLOCK ? ((BlockHitResult) hit).getBlockPos() : null;
     }
 
     /** 只拿得到已加载的女仆；女仆走远到区块卸载后就查不到了。 */

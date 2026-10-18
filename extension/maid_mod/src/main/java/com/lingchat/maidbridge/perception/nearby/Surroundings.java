@@ -5,7 +5,7 @@ import com.google.gson.JsonObject;
 import com.lingchat.maidbridge.bridge.Envelope;
 import com.lingchat.maidbridge.bridge.Protocol;
 import com.lingchat.maidbridge.perception.EventFrames;
-import com.lingchat.maidbridge.perception.PerceptionSnapshot;
+import com.lingchat.maidbridge.perception.world.PerceptionSnapshot;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;

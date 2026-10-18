@@ -8,7 +8,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.lingchat.maidbridge.MaidBridgeConfig;
-import com.lingchat.maidbridge.action.MaidActuator;
+import com.lingchat.maidbridge.action.core.MaidActuator;
 import com.lingchat.maidbridge.bridge.Envelope;
 import com.lingchat.maidbridge.bridge.MessageHandler;
 import com.lingchat.maidbridge.bridge.Protocol;

@@ -1,29 +1,29 @@
 package com.lingchat.maidbridge;
 
-import com.lingchat.maidbridge.action.MaidActionController;
-import com.lingchat.maidbridge.action.MaidActionHandler;
-import com.lingchat.maidbridge.attack.MaidAttackController;
-import com.lingchat.maidbridge.attack.MaidAttackHandler;
+import com.lingchat.maidbridge.action.core.MaidActionController;
+import com.lingchat.maidbridge.action.core.MaidActionHandler;
+import com.lingchat.maidbridge.action.attack.MaidAttackController;
+import com.lingchat.maidbridge.action.attack.MaidAttackHandler;
 import com.lingchat.maidbridge.bridge.BridgeServer;
 import com.lingchat.maidbridge.bridge.MessageRouter;
 import com.lingchat.maidbridge.bridge.Protocol;
-import com.lingchat.maidbridge.carry.CarryOnPresent;
+import com.lingchat.maidbridge.integration.carry.CarryOnPresent;
 import com.lingchat.maidbridge.chat.ChatPushListener;
 import com.lingchat.maidbridge.chat.SendChatHandler;
-import com.lingchat.maidbridge.item.BackpackWatcher;
-import com.lingchat.maidbridge.item.ItemReporter;
-import com.lingchat.maidbridge.item.MaidFeeder;
-import com.lingchat.maidbridge.item.MaidGiveItemHandler;
+import com.lingchat.maidbridge.perception.item.BackpackWatcher;
+import com.lingchat.maidbridge.perception.item.ItemReporter;
+import com.lingchat.maidbridge.action.feed.MaidFeeder;
+import com.lingchat.maidbridge.action.give.MaidGiveItemHandler;
 import com.lingchat.maidbridge.maid.MaidStatusHandler;
-import com.lingchat.maidbridge.maid.MaidTaskHandler;
+import com.lingchat.maidbridge.action.task.MaidTaskHandler;
 import com.lingchat.maidbridge.maid.MonitoredMaidHandler;
-import com.lingchat.maidbridge.mine.MaidMineController;
-import com.lingchat.maidbridge.mine.MaidMineHandler;
-import com.lingchat.maidbridge.perception.AchievementReporter;
-import com.lingchat.maidbridge.perception.DeathReporter;
-import com.lingchat.maidbridge.perception.HurtReporter;
+import com.lingchat.maidbridge.action.mine.MaidMineController;
+import com.lingchat.maidbridge.action.mine.MaidMineHandler;
+import com.lingchat.maidbridge.perception.event.AchievementReporter;
+import com.lingchat.maidbridge.perception.event.DeathReporter;
+import com.lingchat.maidbridge.perception.event.HurtReporter;
 import com.lingchat.maidbridge.perception.PerceptionSampler;
-import com.lingchat.maidbridge.perception.nearby.LookAroundHandler;
+import com.lingchat.maidbridge.perception.query.LookAroundHandler;
 import net.minecraft.server.MinecraftServer;
 import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.IEventBus;
@@ -66,7 +66,7 @@ public class LingChatMaidBridge {
         // 类型可能在类校验阶段就被解析，try/catch 兜不住「类不存在」。
         if (CarryOnPresent.LOADED) {
             try {
-                Class.forName("com.lingchat.maidbridge.carry.CarryOnEvents")
+                Class.forName("com.lingchat.maidbridge.integration.carry.CarryOnEvents")
                         .getMethod("register")
                         .invoke(null);
             } catch (Throwable brokenCarryOn) {

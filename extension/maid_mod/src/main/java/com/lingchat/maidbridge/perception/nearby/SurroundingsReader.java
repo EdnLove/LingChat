@@ -2,7 +2,7 @@ package com.lingchat.maidbridge.perception.nearby;
 
 import com.github.tartaricacid.touhoulittlemaid.entity.passive.EntityMaid;
 import com.lingchat.maidbridge.maid.MaidQueries;
-import com.lingchat.maidbridge.perception.PerceptionReader;
+import com.lingchat.maidbridge.perception.world.PerceptionReader;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;

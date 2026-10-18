@@ -2,7 +2,7 @@ package com.lingchat.maidbridge.perception.nearby;
 
 import com.google.gson.JsonObject;
 import com.lingchat.maidbridge.perception.EventFrames;
-import com.lingchat.maidbridge.perception.PerceptionDiff;
+import com.lingchat.maidbridge.perception.world.PerceptionDiff;
 import com.lingchat.maidbridge.perception.nearby.Surroundings.Nearby;
 import java.util.ArrayList;
 import java.util.List;
