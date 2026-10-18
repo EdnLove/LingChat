@@ -6,13 +6,11 @@
       @click="handleClose"
     >
       <div
-        class="flex h-[85dvh] w-full max-w-4xl flex-col overflow-hidden rounded-3xl border border-white/20 bg-[linear-gradient(135deg,rgba(255,255,255,0.15)_0%,rgba(255,255,255,0.05)_100%)] text-white shadow-[0_20px_60px_rgba(0,0,0,0.4),inset_0_0_1px_rgba(255,255,255,0.3)]"
+        class="glass-effect flex h-[85dvh] w-full max-w-4xl flex-col overflow-hidden rounded-3xl text-white"
         @click.stop
       >
         <!-- Header -->
-        <div
-          class="flex items-center justify-between border-b border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.1)_0%,rgba(255,255,255,0.05)_100%)] p-6"
-        >
+        <div class="flex items-center justify-between border-b border-white/10 bg-white/5 p-6">
           <div class="flex items-center gap-4">
             <div
               class="flex h-12 w-12 items-center justify-center rounded-xl bg-white/10 shadow-inner"
@@ -118,7 +116,7 @@
                     :min="field.min"
                     :max="field.max"
                     :placeholder="field.placeholder"
-                    class="form-control rounded-xl border border-white/10 bg-black/20 px-3.5 py-2.5 text-sm text-white transition-all duration-200 outline-none"
+                    class="glass-input"
                   />
                   <DialogueExamplesEditor
                     v-else-if="field.type === 'examples'"
@@ -131,13 +129,13 @@
                     :id="field.key"
                     v-model="fieldModel(field).value"
                     :rows="field.rows || 4"
-                    class="form-control rounded-xl border border-white/10 bg-black/20 px-3.5 py-2.5 font-mono text-sm leading-relaxed text-white transition-all duration-200 outline-none"
+                    class="glass-input font-mono"
                   ></textarea>
                   <select
                     v-else-if="field.type === 'select'"
                     :id="field.key"
                     v-model="fieldModel(field).value"
-                    class="form-control rounded-xl border border-white/10 bg-black/20 px-3.5 py-2.5 text-sm text-white transition-all duration-200 outline-none"
+                    class="glass-input"
                   >
                     <option
                       v-for="opt in resolveFieldOptions(field)"
@@ -186,7 +184,7 @@
                     </p>
                   </div>
                   <button
-                    class="relation-btn shrink-0"
+                    class="btn-sm btn-sm-ghost shrink-0"
                     :disabled="relationsSaving || relationsLoading"
                     @click="saveRelations"
                   >
@@ -212,10 +210,10 @@
                       class="w-44 shrink-0"
                       :options="relationOptionsFor(row)"
                     />
-                    <ExpandableInput v-model="row.text" class="relation-input flex-1" />
-                    <button class="relation-btn" @click="removeRelationRow(idx)">×</button>
+                    <ExpandableInput v-model="row.text" class="glass-input flex-1" />
+                    <button class="btn-sm btn-sm-ghost" @click="removeRelationRow(idx)">×</button>
                   </div>
-                  <button class="relation-btn" @click="addRelationRow">
+                  <button class="btn-sm btn-sm-ghost" @click="addRelationRow">
                     {{ $t("settings.identity.addRelation") }}
                   </button>
                 </template>
@@ -270,7 +268,7 @@
                         v-model="gsvEmoField(cat, 'gsv_emo_voice_files').value"
                         type="text"
                         :placeholder="$t('settings.characterInfo.gsvEmo.voiceFilePlaceholder')"
-                        class="form-control rounded-xl border border-white/10 bg-black/20 px-3.5 py-2.5 text-sm text-white transition-all duration-200 outline-none"
+                        class="glass-input"
                       />
                     </div>
                     <div class="flex flex-col gap-2">
@@ -281,7 +279,7 @@
                         v-model="gsvEmoField(cat, 'gsv_emo_texts').value"
                         type="text"
                         :placeholder="$t('settings.characterInfo.gsvEmo.textPlaceholder')"
-                        class="form-control rounded-xl border border-white/10 bg-black/20 px-3.5 py-2.5 text-sm text-white transition-all duration-200 outline-none"
+                        class="glass-input"
                       />
                     </div>
                   </div>
@@ -301,7 +299,6 @@
                 :resource-clothes="draftClothes"
                 :initial-costume="avatarCostume"
               />
-
 
               <Live2DSettings
                 v-if="activeTab === 'live2d' && props.roleId"
@@ -340,9 +337,7 @@
         </div>
 
         <!-- Footer -->
-        <div
-          class="flex justify-between gap-3 border-t border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.05)_0%,rgba(255,255,255,0.1)_100%)] p-4"
-        >
+        <div class="flex justify-between gap-3 border-t border-white/10 bg-white/5 p-4">
           <!-- 危险操作区：删除角色 -->
           <div class="flex items-center">
             <button
@@ -1165,11 +1160,7 @@ const fieldModel = (field: FieldSchema) => {
     set: (val: any) => {
       const isBlank = val === "" || val === null || val === undefined || Number.isNaN(Number(val));
       const coerced =
-        field.type === "number"
-          ? field.nullable && isBlank
-            ? undefined
-            : Number(val)
-          : val;
+        field.type === "number" ? (field.nullable && isBlank ? undefined : Number(val)) : val;
       let target: any;
       if (field.parent) {
         if (
@@ -1239,9 +1230,7 @@ const relationOptionsFor = (row: { target: string }) => {
       label: item.label,
       value: item.value,
       group:
-        item.group === "ai"
-          ? t("settings.identity.targetAi")
-          : t("settings.identity.targetMe"),
+        item.group === "ai" ? t("settings.identity.targetAi") : t("settings.identity.targetMe"),
       disabled: item.value !== row.target && used.has(item.value),
     }));
   // 目标已被删除时保留原值，避免静默丢数据
@@ -1530,58 +1519,6 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-/* 关系区块的小控件（原生元素 + 纯 CSS） */
-.relation-input {
-  border-radius: 0.75rem;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(0, 0, 0, 0.25);
-  padding: 0.375rem 0.625rem;
-  font-size: 0.8125rem;
-  color: #fff;
-  outline: none;
-  transition: border-color 0.2s ease;
-}
-.relation-input:focus {
-  border-color: rgba(121, 217, 255, 0.5);
-}
-/* 原生 select 下拉弹层跟随深色主题，避免白底黑字 */
-.relation-input,
-.form-control {
-  color-scheme: dark;
-}
-/* 显式设置选项背景，兜底 color-scheme 未生效的情况 */
-.relation-input option,
-.form-control option {
-  background-color: #1e1e2e;
-  color: #e2e8f0;
-}
-.relation-input option:checked,
-.form-control option:checked {
-  background-color: #3b82f6;
-  color: #ffffff;
-}
-.relation-btn {
-  cursor: pointer;
-  border-radius: 0.5rem;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.06);
-  padding: 0.3rem 0.7rem;
-  font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.85);
-  transition:
-    background 0.2s ease,
-    border-color 0.2s ease;
-}
-.relation-btn:hover:not(:disabled) {
-  background: rgba(121, 217, 255, 0.18);
-  border-color: rgba(121, 217, 255, 0.45);
-}
-.relation-btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.45;
-}
-
-/* 表单控件 :focus 选中状态 */
 /* Vertical sidebar: thin custom scrollbar (Webkit + Firefox). */
 .tab-sidebar-scroll {
   scrollbar-width: thin;
@@ -1599,11 +1536,5 @@ onUnmounted(() => {
 }
 .tab-sidebar-scroll::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.32);
-}
-
-.form-control:focus {
-  border-color: #79d9ff;
-  background: rgba(0, 0, 0, 0.3);
-  box-shadow: 0 0 0 3px rgba(121, 217, 255, 0.2);
 }
 </style>
