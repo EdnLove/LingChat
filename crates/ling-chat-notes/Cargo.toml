@@ -18,6 +18,11 @@ tracing = { workspace = true }
 tempfile = "3"
 thiserror = "2"
 
+# 向量检索：复用系统 SQLite（与主 crate 的 sqlx 共享 libsqlite3-sys 0.30），
+# sqlite-vec 扩展由 cc 静态编译进二进制。
+rusqlite = "0.32"
+sqlite-vec = "0.1.9"
+
 # 文本嵌入分词与推理（Tool RAG / 笔记检索共用）。
 tokenizers = "0.22"
 ort = { version = "=2.0.0-rc.13", default-features = false, features = [
@@ -37,13 +42,18 @@ ort = { version = "=2.0.0-rc.13", default-features = false, features = [
 ort = { version = "=2.0.0-rc.13", default-features = false, features = [
     "webgpu",
     "download-binaries",
+    "tls-native",
 ] }
 
 [target.'cfg(all(target_os = "linux", target_arch = "aarch64"))'.dependencies]
-ort = { version = "=2.0.0-rc.13", default-features = false, features = ["download-binaries"] }
+ort = { version = "=2.0.0-rc.13", default-features = false, features = [
+    "download-binaries",
+    "tls-native",
+] }
 
 [target.'cfg(all(target_os = "macos", target_arch = "aarch64"))'.dependencies]
 ort = { version = "=2.0.0-rc.13", default-features = false, features = [
     "coreml",
     "download-binaries",
+    "tls-native",
 ] }
