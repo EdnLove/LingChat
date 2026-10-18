@@ -290,7 +290,7 @@ mod tests {
             schedule::UpdateTodo.definition(),
             schedule::DeleteTodo.definition(),
             memory::GetCurrentMemory.definition(),
-            memory::GetNotes.definition(),
+            memory::GetNotes::new("__test__").definition(),
             memory::AddNote.definition(),
             memory::UpdateNote.definition(),
             memory::DeleteNote.definition(),

@@ -123,6 +123,31 @@ impl VectorStore {
         Ok(())
     }
 
+    /// 在一个事务内批量删除；不存在的 ID 视为成功。
+    pub fn delete_many<'a, I>(&self, ids: I) -> Result<(), VectorError>
+    where
+        I: IntoIterator<Item = &'a str>,
+    {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        {
+            let mut delete = tx.prepare_cached(&format!("DELETE FROM {TABLE} WHERE id = ?1"))?;
+            for id in ids {
+                delete.execute([id])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// 列出库内所有外部 ID（不含向量），供调用方对账清理。
+    pub fn ids(&self) -> Result<Vec<String>, VectorError> {
+        let conn = self.conn()?;
+        let mut stmt = conn.prepare(&format!("SELECT id FROM {TABLE}"))?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
     /// 按余弦距离返回最相近的 top_k 条记录。
     pub fn search(&self, query: &[f32], top_k: usize) -> Result<Vec<VectorHit>, VectorError> {
         if top_k == 0 {
@@ -199,6 +224,15 @@ mod tests {
         store.delete("c").unwrap();
         store.delete("c").unwrap();
         assert_eq!(store.search(&axis(0), 10).unwrap().len(), 2);
+
+        let mut ids = store.ids().unwrap();
+        ids.sort();
+        assert_eq!(ids, vec!["a".to_string(), "b".to_string()]);
+
+        store.delete_many(["a", "不存在的 ID"]).unwrap();
+        let mut ids = store.ids().unwrap();
+        ids.sort();
+        assert_eq!(ids, vec!["b".to_string()]);
     }
 
     #[test]
