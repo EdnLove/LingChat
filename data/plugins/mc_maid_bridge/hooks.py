@@ -29,6 +29,7 @@ from plugin_host import (
     read_context,
     send_user_message,
     set_auto_mode,
+    set_reply_length_mode,
     trigger_proactive,
 )
 
@@ -52,7 +53,7 @@ def _entry_hint():
         f"- {maid}在 LingChat 回的话会同步显示成游戏内女仆的聊天气泡，照常说话即可。\n"
         f"- {player}在游戏里打出的话会当成{player}自己的发言送过来，和在输入框里发的一句一样。\n"
         f"- {player}那句话后面若还跟着一句「（{maid}此刻：…）」，那是{maid}当时看到的情形"
-        f"（脚下踩着哪、头顶遮没遮住、{player}在不在{maid}身边、身边有什么活物），"
+        f"（光线暗不暗、{player}在不在{maid}身边、身边有什么活物），"
         f"不是{player}说的话。\n"
         "- 游戏里的变化会写成旁白，直接以第三人称叙事句出现（换地形、天黑、下雨、受伤、"
         f"有生物死亡、{player}丢给{maid}或喂{maid}东西、{player}把{maid}抱起来或放下、"
@@ -102,6 +103,9 @@ def on_ws(ctx):
         # 一句就停住，游戏里也就一直不冒下一句，看起来跟桥断了没两样。
         # 只负责开：断开时不还回去（用户要的就是这个语义）。
         set_auto_mode(True)
+        # 游戏里的气泡装不下长篇大论；连上就切短档（1~2 句）。这一刻可能还没进入
+        # 对话，设置会被拒，玩家从 MC 开口前还会再重申一次（见 _handle_chat）。
+        _use_short_replies()
         _append_entry_hint()
     elif event == "message":
         _handle_frame(ctx, payload.get("data"))
@@ -143,6 +147,18 @@ def on_line_shown(ctx):
             "kaomoji": kaomoji_for(emotion),
         },
     })
+
+
+def _use_short_replies(quiet=False):
+    """把回复台词数量切到短档（1~2 句）。
+
+    连接那一刻 LingChat 可能还在主菜单、没进入对话，宿主会拒绝这次设置；所以玩家
+    每次从 MC 开口、真正要生成回复之前还会再调一次（见 `_handle_chat`）。档位没变时
+    宿主不写任何台词，重复调用是安全的。
+    """
+    result = set_reply_length_mode("short")
+    if not result.get("ok") and not quiet:
+        print(f"[mc_maid_bridge] 没能把回复长度切成短档：{result.get('error')}")
 
 
 def _bind_maid(ctx):
@@ -195,6 +211,9 @@ def _handle_chat(ctx, chat):
     else:
         text = message
     note = _carry(chat)
+    # 连接时可能还没进入对话，短档设置被拒；真正要生成回复前再重申一次。幂等，
+    # 档位没变时不往台词表写任何行。
+    _use_short_replies(quiet=True)
     # 与玩家在输入框里发一句走同一条路：写进台词历史、按当前配置生成回复，
     # 所以聊天窗里看得到，角色的回话也会顺着 on_line_shown 变成游戏内气泡。
     send_user_message(f"{text}\n{note}" if note else text)
@@ -203,9 +222,10 @@ def _handle_chat(ctx, chat):
 def _carry(chat):
     """随这次发言带一句她此刻的处境。
 
-    身边那一圈（附近有什么活物、玩家进出视线、头顶遮挡、脚下踩到什么）不再逐条写成
-    旁白——一整晚下来能把台词表塞满，而她要的只是「知道周围有什么」。改成开口这一刻
-    现取一份快照带过去：一次发言带一次，说完就随那行留在历史里。
+    身边那一圈（附近有什么活物、玩家在不在、光线暗不暗）不再逐条写成旁白——一整晚
+    下来能把台词表塞满，而她要的只是「知道周围有什么」。改成开口这一刻现取一份快照
+    带过去：一次发言带一次，说完就随那行留在历史里。脚下与头顶只报变化（见 events/
+    world.py 的 ground_change / shelter_change），不随每句话重复。
 
     女仆 id 直接用帧里的：模组只在「说话的人正是这只女仆的主人」时才转发，帧里必然带着
     她的 uuid，不必再问一次游戏。取不到就这一轮不带，玩家的话照常送。

@@ -34,6 +34,11 @@ import net.neoforged.neoforge.event.entity.living.LivingEntityUseItemEvent;
 public final class ItemReporter {
     /** 最后一下之后等这么久再报（tick）。 */
     private static final int DEBOUNCE_TICKS = 10;
+    /**
+     * 她自己吃饭的去抖：一口与下一口之间大约隔 32 tick，用丢东西那套 10 tick 会把
+     * 一顿饭拆成好几条旁白。改成「停下这么久才算吃完」，一顿只报一条 ×N。
+     */
+    private static final int MEAL_DEBOUNCE_TICKS = 120;
 
     private static final Map<String, Integer> gifts = new LinkedHashMap<>();
     private static String giftMaid = "";
@@ -153,7 +158,7 @@ public final class ItemReporter {
         }
         selfFeeds.merge(itemId(used), 1, Integer::sum);
         selfFeedMaid = maid.getStringUUID();
-        selfFeedCooldown = DEBOUNCE_TICKS;
+        selfFeedCooldown = MEAL_DEBOUNCE_TICKS;
     }
 
     /** 每个服务端 tick 调一次：去抖到点就把攒下的推出去。 */

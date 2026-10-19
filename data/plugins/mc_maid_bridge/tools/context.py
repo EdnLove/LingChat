@@ -8,7 +8,7 @@
 
 from bridge import ask
 from naming import names, narrate
-from wording import BLOCK_NAMES, heard_sounds, name_of, sighting
+from wording import heard_sounds, light_band, light_phrase, sighting
 
 # 玩家说话时顺手取快照的超时：给得很短，玩家那句话不能被一次查询拖住（游戏暂停时
 # 模组答不上来，这一轮就不带，照常把话送进对话）。
@@ -40,17 +40,18 @@ def snapshot(maid_id, timeout_ms, profile="auto"):
 def carry_text(data):
     """一份快照 → 一句「角色此刻的处境」，附在玩家的发言后面。
 
-    只挑此刻要紧的说：脚下与头顶、玩家在不在身边、附近有什么活物。正前方那一眼留给
-    工具那句——玩家问起来才需要那么细，每句话都带上就成了噪音。
+    只挑此刻会变、又会影响她反应的说：光线暗不暗、玩家在不在身边、附近有什么活物。
+    脚下与头顶不在这里念——它们只在变化时由 ground_change / shelter_change 写成旁白，
+    每句话都重复「脚下是草方块」会把模型教成照本宣科的复述机。正前方那一眼也留给
+    工具那句，玩家问起来才需要那么细。
     帧里没有 owner 字段说明这压根不是快照（多半是别的东西回了信），那就什么都不带。
     """
     if "owner" not in data:
         return ""
     maid, player = names()
     parts = []
-    foot = _footing_phrase(data)
-    if foot:
-        parts.append(foot)
+    if light_band(data.get("light")) in ("dark", "dim"):
+        parts.append(light_phrase(data.get("light")))
     parts.append(owner_phrase(data.get("owner") or {}, maid, player))
     creatures = creature_phrase(data)
     if creatures:
@@ -86,18 +87,6 @@ def creature_text(data):
     """同上，但成句：没有活物就什么都说不出来（空串）。"""
     phrase = creature_phrase(data)
     return f"{phrase}。" if phrase else ""
-
-
-def _footing_phrase(data):
-    """脚下踩着哪。「近/中/远」的档位在这句里没意义，所以单独拎出来。"""
-    foot = name_of(BLOCK_NAMES, (data.get("standing_on") or {}).get("id"), "")
-    if not foot:
-        return ""
-    # 下界与末地没有天空，「头顶有没有遮挡」在那里无从谈起
-    roof = ""
-    if data.get("has_sky"):
-        roof = "，头顶有遮挡" if data.get("sheltered") else "，头顶是露天的"
-    return f"脚下是{foot}{roof}"
 
 
 def owner_phrase(owner, maid=None, player=None):

@@ -965,6 +965,30 @@ def nearness_place(distance):
     return {"近": "近处", "中": "不远处", "远": "远处"}[nearness(distance)]
 
 
+# 光照档：0-3 一片漆黑（会刷怪），4-7 昏暗，8 以上算亮。问「周围有什么」时三档都说，
+# 随发言携带的那句只在暗的时候带——大白天每句都念「光线明亮」是噪音。
+LIGHT_DARK_MAX = 3
+LIGHT_DIM_MAX = 7
+LIGHT_PHRASES = {"dark": "四周一片漆黑", "dim": "光线昏暗", "bright": "光线明亮"}
+
+
+def light_band(raw):
+    """0-15 的光照 → dark / dim / bright；说不清时给空串（老模组没有这个字段）。"""
+    value = as_int(raw, -1)
+    if value < 0:
+        return ""
+    if value <= LIGHT_DARK_MAX:
+        return "dark"
+    if value <= LIGHT_DIM_MAX:
+        return "dim"
+    return "bright"
+
+
+def light_phrase(raw):
+    """光照 → 「光线昏暗」这类说法；说不清时给空串。"""
+    return LIGHT_PHRASES.get(light_band(raw), "")
+
+
 def as_int(value, default=0):
     """配置与事件里的数字可能是浮点（前端表单、JSON）或字符串。"""
     try:

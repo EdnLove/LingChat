@@ -26,10 +26,17 @@ def item_pickup(data):
 
 
 def item_received(data):
-    """背包里多出东西，多半是玩家在女仆界面里放进去的。界面那条路没有事件可挂，
-    模组只能前后比一次，所以这里只说「多了什么」，不硬认是谁放的。"""
-    maid, _ = names()
-    return f"{maid}的背包里多了{_item_list(data.get('items'))}。"
+    """背包里多出东西。界面那条路没有事件可挂，模组只能前后比一次。
+
+    主人在旁边（模组判的 `from_owner`）就按「主人放进来的」说：女仆界面必须贴身才
+    打得开，这个距离内没有第二条路能把东西塞进去。主人不在旁边时只说「多了什么」，
+    不替别人认领。
+    """
+    maid, player = names()
+    items = _item_list(data.get("items"))
+    if data.get("from_owner"):
+        return f"{player}往{maid}的背包里放了{items}。"
+    return f"{maid}的背包里多了{items}。"
 
 
 def item_fed(data):

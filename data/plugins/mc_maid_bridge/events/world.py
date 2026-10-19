@@ -2,7 +2,7 @@
 
 from events.spec import EventSpec
 from naming import names
-from wording import BIOME_NAMES, DIMENSION_NAMES, name_of
+from wording import BIOME_NAMES, BLOCK_NAMES, DIMENSION_NAMES, name_of
 
 
 def snapshot(data):
@@ -56,6 +56,33 @@ def low_health(data):
     return f"{who}伤得很重，再挨一下就撑不住了。"
 
 
+def shelter_change(data):
+    """头顶从露天变成有遮挡，或反过来。模组只在这件事真的翻转时推。"""
+    maid, _ = names()
+    if data.get("sheltered"):
+        return f"{maid}走进了有遮挡的地方，头顶看不到天了。"
+    return f"{maid}走出了遮挡，头顶又见天了。"
+
+
+def ground_change(data):
+    """脚下换了一种值得说的地。走在石头、泥土、木板上不报，所以这里可以直说。"""
+    maid, _ = names()
+    kind = (data.get("kind") or "").strip()
+    phrases = {
+        "water": f"{maid}踩进了水里。",
+        "lava": f"{maid}踩进了岩浆里。",
+        "fire": f"{maid}踩到了火里。",
+        "snow": f"{maid}踩进了雪里。",
+        "sand": f"{maid}走到了沙地上。",
+        "farmland": f"{maid}踩进了耕地里。",
+        "ice": f"{maid}踩到了冰面上。",
+    }
+    if kind in phrases:
+        return phrases[kind]
+    block = name_of(BLOCK_NAMES, data.get("block"), "另一种地面")
+    return f"{maid}脚下换成了{block}。"
+
+
 def _weather_phrase(data):
     if data.get("thundering"):
         return "外面在打雷"
@@ -71,4 +98,11 @@ SPECS = {
     "time_phase_change": EventSpec(time_phase, ttl=300),
     "weather_change": EventSpec(weather, ttl=300),
     "low_health": EventSpec(low_health, urgent=True, ttl=60, snapshot=True),
+    "shelter_change": EventSpec(shelter_change, ttl=90),
+    # 岩浆和火踩上去就在掉血，值得当场提醒；水、雪、沙这类只记一笔
+    "ground_change": EventSpec(
+        ground_change,
+        ttl=90,
+        urgent_when=lambda data: (data.get("kind") or "") in ("lava", "fire"),
+    ),
 }

@@ -53,6 +53,11 @@ def current_names() -> Dict[str, Any]:
 def set_auto_mode(enabled: bool) -> Dict[str, Any]:
     """切换主界面的「自动模式」（自动逐句推进对话）。不落盘，断开不还原。成功 {ok}。"""
 
+def set_reply_length_mode(mode: str) -> Dict[str, Any]:
+    """切换回复台词数量档位：short（1~2 句）/ normal（3~5 句）/ free（不限制）。
+    要求已经进入对话。档位没变时不写台词，重复调用安全。
+    成功 {ok, mode}；失败 {ok: False, error}。"""
+
 def read_context(
     *,
     start: Optional[int] = ...,

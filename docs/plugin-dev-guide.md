@@ -871,6 +871,30 @@ def on_connect():
     set_auto_mode(True)   # 玩家在游戏里，让主界面自己推进
 ```
 
+### `set_reply_length_mode(mode)`
+
+切换回复台词数量档位，对应设置页里的「对话长度」：
+
+| `mode`   | 含义   |
+| -------- | ------ |
+| `short`  | 1~2 句 |
+| `normal` | 3~5 句 |
+| `free`   | 不限制 |
+
+典型用法是插件接入游戏 / 外部程序时切到 `short`——游戏内气泡装不下长篇，逐句自动推进也会拖得很长。
+
+- **要求已经进入对话**：主菜单、剧本编辑器试玩、剧本模式下会返回 `ok: false`。连接建立得早时可以先调一次，等真正要发消息前再调一次（幂等）。
+- 档位没变化时**不写任何台词**；变化时宿主往台词表写一条系统提示，从下一轮起生效。
+- 与 `set_auto_mode` 一样，断开连接不会自动还原。
+
+返回：成功 `{ "ok": true, "mode": "short" }`；失败 `{ "ok": false, "error": "..." }`。
+
+```python
+from plugin_host import set_reply_length_mode
+
+set_reply_length_mode("short")
+```
+
 ### 台词历史（上下文源）：`read_context` / `edit_context` / `compress_context`
 
 这三个函数操作**当前对话的台词历史**（内部叫 `line_list`）——即「LLM 上下文」的**源**：每轮发给 LLM 的上下文都是它按各角色视角渲染出来的。三点务必记牢：

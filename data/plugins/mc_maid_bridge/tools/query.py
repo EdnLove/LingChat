@@ -12,6 +12,7 @@ from wording import (
     MOB_NAMES,
     as_int,
     item_name,
+    light_phrase,
     name_of,
     nearness_place,
 )
@@ -69,15 +70,21 @@ def _see_screen(ctx):
 
 
 def _look_around_text(data):
-    """她身边这一圈，说成几句事实：站位 → 正前方 → 能挖的方块 → 背包 → 玩家 → 活物。
+    """她身边这一圈，说成几句事实：站位与光线 → 正前方 → 能挖的方块 → 背包 → 玩家 → 活物。
 
-    数字只出现在物品数量上：格数、血量、光照写进上下文，模型就会照本宣科地念出来。
+    距离只给近 / 中 / 远，格数与血量不写：数字一进上下文，模型就会照本宣科地念出来。
+    光照也只给档位（明亮 / 昏暗 / 漆黑），不给 0-15 的原始数值。
     """
     maid, player = names()
     dimension = name_of(DIMENSION_NAMES, data.get("dimension"), "某个世界")
     foot = name_of(BLOCK_NAMES, (data.get("standing_on") or {}).get("id"), "说不清的东西")
-    roof = "头顶有遮挡，看不到天" if data.get("sheltered") else "头顶是露天的"
-    lines = [f"{maid}正站在{dimension}，脚下是{foot}，{roof}。"]
+    # 下界与末地没有天空，不谈头顶
+    roof = "" if data.get("has_sky") is False else (
+        "头顶有遮挡，看不到天" if data.get("sheltered") else "头顶是露天的"
+    )
+    light = light_phrase(data.get("light"))
+    place = "，".join(one for one in (f"脚下是{foot}", roof, light) if one)
+    lines = [f"{maid}正站在{dimension}，{place}。"]
 
     look = data.get("looking_at") or {}
     look_kind = (look.get("kind") or "").strip()

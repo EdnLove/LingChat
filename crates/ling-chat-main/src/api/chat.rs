@@ -106,7 +106,13 @@ pub async fn set_reply_length_mode(app: AppHandle, mode: String) -> Result<Strin
         .await
         .map_err(|e| format!("写入系统提示台词失败: {e}"))?;
     gs.set_variable(REPLY_LENGTH_VAR_KEY, serde_json::json!(new_mode.as_str()));
-    Ok(new_mode.as_str().to_string())
+    let mode = new_mode.as_str().to_string();
+    // 插件也会调这个命令（连上 MC 自动切短档），设置页可能已经挂在 KeepAlive 里，
+    // 不广播的话它会一直显示旧档位。先放锁再广播，别让前端处理事件时撞上同一把锁。
+    drop(gs);
+    drop(svc);
+    let _ = app.emit("reply-length:changed", serde_json::json!({ "mode": mode }));
+    Ok(mode)
 }
 
 /// 一轮对话的公共流程：截图处理 → 组装生成依赖 → 入队生成。

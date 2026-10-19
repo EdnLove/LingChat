@@ -4,7 +4,8 @@
 //! - **HTTP**：`http_get` / `http_post`，复用 `factory::build_http_client`
 //!   （webpki-roots，Android 兼容），返回 `{ status, ok, body }`。
 //! - **宿主控制**：`switch_character`（完整切换当前角色）、`current_names`（当前角色名
-//!   与玩家名，写旁白用）、`set_auto_mode`（切换主界面的自动推进），以及台词历史
+//!   与玩家名，写旁白用）、`set_auto_mode`（切换主界面的自动推进）、
+//!   `set_reply_length_mode`（切换回复台词数量档位），以及台词历史
 //!   （上下文源）的 `read_context` / `edit_context` / `add_prompt_line` / `compress_context`。
 //! - **读素材**：`read_data_file`，把 `data/` 下的文件（角色立绘、TTS 语音等）
 //!   读成 base64 交给插件；只允许 `data/` 内的相对路径，且必须落在该插件
@@ -954,6 +955,30 @@ mod plugin_host {
             return Ok(super::no_host(vm));
         };
         let result = super::set_auto_mode_impl(&app, enabled);
+        Ok(super::value_to_pyobject(vm, &result))
+    }
+
+    /// 切换回复台词数量档位：`short`（1~2 句）/ `normal`（3~5 句）/ `free`（不限制）。
+    /// 对应设置页「对话长度」那一项。
+    ///
+    /// 用法：`set_reply_length_mode("short")`
+    ///
+    /// 要求已经进入对话；主菜单、剧本编辑器试玩中会被拒。档位没变化时不写任何台词，
+    /// 重复调用是安全的。
+    ///
+    /// 返回：成功 `{ "ok": true, "mode": "short" }`；
+    /// 失败 `{ "ok": false, "error": "..." }`（不抛异常）。
+    #[pyfunction]
+    fn set_reply_length_mode(mode: String, vm: &VirtualMachine) -> PyResult<PyObjectRef> {
+        let Some(app) = crate::app_handle() else {
+            return Ok(super::no_host(vm));
+        };
+        let result = super::runtime().block_on(async move {
+            match ling_chat_main::api::chat::set_reply_length_mode(app, mode).await {
+                Ok(mode) => serde_json::json!({ "ok": true, "mode": mode }),
+                Err(error) => serde_json::json!({ "ok": false, "error": error }),
+            }
+        });
         Ok(super::value_to_pyobject(vm, &result))
     }
 

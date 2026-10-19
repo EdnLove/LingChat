@@ -605,8 +605,8 @@ host = types.ModuleType('plugin_host')
 def _stub(*args, **kwargs):
     return {}
 for _name in ('add_prompt_line', 'read_context', 'send_user_message', 'set_auto_mode',
-              'trigger_proactive', 'ws_open', 'ws_request', 'ws_send', 'ws_status',
-              'capture_screen'):
+              'set_reply_length_mode', 'trigger_proactive', 'ws_open', 'ws_request',
+              'ws_send', 'ws_status', 'capture_screen'):
     setattr(host, _name, _stub)
 host.current_names = lambda: {'ok': True, 'ai_name': '咲夜', 'user_name': '用户酱'}
 sys.modules['plugin_host'] = host
