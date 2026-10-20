@@ -360,6 +360,7 @@ pub fn sys_prompt_builder_by_settings_with_player(
 // ============================================================
 
 /// 系统消息提示词转换器，假如有系统消息或者剧情提示，通过下面这个函数进行提示词转换。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PromptRole {
     /// 系统提示，如时间，错误报告等
     System,

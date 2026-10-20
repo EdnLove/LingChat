@@ -160,7 +160,10 @@ impl MemoryBuilder {
                             .map(|l| {
                                 let name = match l.sender_role_id() {
                                     Some(0)
-                                        if self.player_alias.as_deref().is_some_and(|s| !s.is_empty())
+                                        if self
+                                            .player_alias
+                                            .as_deref()
+                                            .is_some_and(|s| !s.is_empty())
                                             && l.base.identity_id.is_some()
                                             && l.base.identity_id == self.player_identity_id =>
                                     {

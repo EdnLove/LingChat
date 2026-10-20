@@ -3,12 +3,12 @@ use serde_json::{Value, json};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::AppState;
+use crate::ai_service::game_system::player_identity::runtime_relations;
 use crate::ai_service::types::{LineAttributeExt, LineBase, ToolDefinition};
 use crate::api::character::{ClothesItem, read_character_settings, scan_clothes};
 use crate::config::AppConfig;
 use crate::db::entities::line::LineAttribute;
 use crate::db::managers::role_repo::RoleRepo;
-use crate::ai_service::game_system::player_identity::runtime_relations;
 use crate::utils::prompt::{PromptOptions, sys_prompt_builder_by_settings_with_player};
 
 use super::executor::{Tool, ToolContext, ToolError, ToolResult};

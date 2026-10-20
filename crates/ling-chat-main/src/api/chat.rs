@@ -204,6 +204,7 @@ async fn dispatch_chat_turn(
         generation: preview_generation,
         is_preview: false,
         transient_image,
+        round_anchor_hint: None,
     };
 
     // Notify proactive system of user input
@@ -270,6 +271,8 @@ async fn dispatch_chat_turn(
         {
             let mut gs = preamble_gs.lock().await;
             gs.flush_pending_prompt_lines(&preamble_db).await;
+            // 上一轮评估排队的近期记忆，赶在玩家消息落库之前落位。
+            gs.flush_recent_memories(&preamble_db).await;
         }
 
         // 系统台词先于本轮玩家消息落库；sender_role_id 保持 None，不计入玩家消息序号。
@@ -666,6 +669,8 @@ pub async fn trigger_ai_response(
         generation: preview_generation,
         is_preview: false,
         transient_image,
+        // 这一轮没有玩家 user 行（纯图片/通知触发），不挂旁白。
+        round_anchor_hint: None,
     };
     let gen_lock = state.generation_lock.clone();
     tokio::spawn(async move {
