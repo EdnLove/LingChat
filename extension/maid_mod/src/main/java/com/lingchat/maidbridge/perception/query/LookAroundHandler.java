@@ -10,8 +10,10 @@ import com.lingchat.maidbridge.perception.PerceptionProfiles;
 import com.lingchat.maidbridge.perception.nearby.Surroundings;
 import com.lingchat.maidbridge.perception.nearby.SurroundingsReader;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.item.ItemStack;
 
 /**
  * {@code maid_look_around}：按需取一份她身边的快照。
@@ -25,7 +27,7 @@ import net.minecraft.server.level.ServerPlayer;
  * 两档都只列最近 3 个活物。
  */
 public class LookAroundHandler implements MessageHandler {
-    /** 附近方块扫多大：水平与竖直跟 {@code maid_mine} 在身边找方块时同一口径。 */
+    /** 附近方块扫多大：水平 24 格（挖掘找 32，清单只要看得出有哪种方块就够），竖直只从她脚下往上。 */
     private static final int BLOCK_RADIUS = 24;
     private static final int BLOCK_VERTICAL = 8;
     /** 方块种类最多列几种：模型只需要一个能下手的清单，不是一份完整普查。 */
@@ -64,7 +66,16 @@ public class LookAroundHandler implements MessageHandler {
                 snapshot,
                 SurroundingsReader.blocksNearby(maid, center, BLOCK_RADIUS, BLOCK_VERTICAL, BLOCK_LIMIT));
         // 背包清单只给按需查询：模型要能看见她身上有什么，才谈得上「把那个给我」
-        Envelope.data(response).add("backpack", MaidInventory.stacks(maid, BACKPACK_LIMIT));
+        JsonObject body = Envelope.data(response);
+        body.add("backpack", MaidInventory.stacks(maid, BACKPACK_LIMIT));
+        // 最后一格是头饰栏：顶在头上，不算背包存货，单独说
+        ItemStack headwear = MaidInventory.headwear(maid);
+        if (!headwear.isEmpty()) {
+            JsonObject head = new JsonObject();
+            head.addProperty("item", BuiltInRegistries.ITEM.getKey(headwear.getItem()).toString());
+            head.addProperty("count", headwear.getCount());
+            body.add("headwear", head);
+        }
         return response;
     }
 }

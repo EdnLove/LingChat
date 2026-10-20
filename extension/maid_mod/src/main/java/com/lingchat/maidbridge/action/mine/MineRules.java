@@ -14,15 +14,17 @@ public final class MineRules {
     /** 她手到方块中心的距离。原版玩家的方块交互距离约 4.5 格，取同一个口径。 */
     public static final double REACH = 4.5;
     /** 找同类方块看多远。跟随模式下她本来就在主人附近活动，够用。 */
-    public static final int FIND_RADIUS = 24;
+    public static final int FIND_RADIUS = 32;
     /** 玩家准星当区域锚点时看多远：指着远处的林子或矿壁也算数，不必凑到跟前。 */
     public static final double ANCHOR_RAY = 32.0;
     /** 指着的那一片多大：以准星落点为中心，这么远内的同类方块都算「那一片」。 */
     public static final int ANCHOR_RANGE = 8;
     /** 一次最多试几块：地形复杂时每一块都要找落脚点，全试一遍太贵。 */
-    public static final int FIND_LIMIT = 8;
+    public static final int FIND_LIMIT = 12;
     /** 单块挖这么久还没成（含走路）就换个说法：卡在墙后、水底这类地方不留悬案。 */
     public static final int TARGET_TIMEOUT_TICKS = 1200;
+    /** 为了够到目标最多先挖穿几块挡路的方块：再多就成了她自己在乱挖矿道。 */
+    public static final int PATH_LIMIT = 24;
 
     private MineRules() {
     }

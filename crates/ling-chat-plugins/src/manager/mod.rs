@@ -12,7 +12,7 @@ mod store;
 mod tools;
 mod websocket;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
@@ -24,7 +24,7 @@ use ling_chat_main::plugin_contract::PluginResourceEntry;
 
 use super::python_backend;
 use super::signal::SignalRegistry;
-use super::types::{PluginInfo, PluginRunEnv, ResourceKind};
+use super::types::{PluginInfo, PluginRunEnv, ResourceKind, WsState};
 use crate::manager::deps::{dependency_error, unmet_dependencies};
 use crate::manager::store::PluginStore;
 use crate::manager::websocket::{WsHub, ws_open_input};
@@ -151,6 +151,43 @@ impl PluginManager {
         }
     }
 
+    /// 是否有插件正在接管 TTS 播放。
+    ///
+    /// 条件：已启用、加载无错、manifest 声明了 `[tts]`、对应的布尔配置为真；
+    /// 声明了 `ws_conn` 时该连接还必须处于 Connected（断线回落到本机播放）。
+    /// 多个插件声明时先到先得，返回插件 id。
+    pub async fn tts_takeover(&self) -> Option<String> {
+        let records = self.store.lock().await;
+        for record in records.values() {
+            if !record.state.enabled || record.error.is_some() {
+                continue;
+            }
+            let Some(tts) = &record.manifest.tts else {
+                continue;
+            };
+            let enabled = record
+                .state
+                .config
+                .get(&tts.config)
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false);
+            if !enabled {
+                continue;
+            }
+            if let Some(conn) = &tts.ws_conn {
+                let connected = self
+                    .ws
+                    .state_of(&record.manifest.id, conn)
+                    .is_some_and(|state| state == WsState::Connected);
+                if !connected {
+                    continue;
+                }
+            }
+            return Some(record.manifest.id.clone());
+        }
+        None
+    }
+
     /// 列表（供前端）。
     pub async fn list(&self) -> Vec<PluginInfo> {
         let records = self.store.lock().await;
@@ -244,16 +281,24 @@ impl PluginManager {
         let record = records
             .get_mut(id)
             .ok_or_else(|| format!("插件 '{id}' 不存在"))?;
-        let mut cleaned: HashMap<String, serde_json::Value> = HashMap::new();
+        // 以旧值为底：secret 字段不回传前端、表单里也就没有，替换式保存会把它们抹掉。
+        let mut next = record.state.config.clone();
         for field in &record.manifest.config {
             let Some(value) = config.get(&field.key) else {
                 continue;
             };
             if let Some(v) = store::coerce_config_value(&field.kind, value) {
-                cleaned.insert(field.key.clone(), v);
+                next.insert(field.key.clone(), v);
             }
         }
-        record.state.config = cleaned;
+        let declared: HashSet<&str> = record
+            .manifest
+            .config
+            .iter()
+            .map(|field| field.key.as_str())
+            .collect();
+        next.retain(|key, _| declared.contains(key.as_str()));
+        record.state.config = next;
         self.store.persist_state(id, &record.state);
         Ok(())
     }

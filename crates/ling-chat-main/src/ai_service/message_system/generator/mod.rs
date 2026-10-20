@@ -306,6 +306,11 @@ impl MessageGenerator {
         } else {
             context
         };
+        // 台词额度按整回合算：工具闭环每轮都会问一句「还能说几句」
+        let reply_mode = {
+            let gs = self.deps.game_status.lock().await;
+            gs.reply_length_mode()
+        };
         let tool_loop_result = stream_with_tool_loop(
             &self.deps.llm,
             &self.deps.tool_registry,
@@ -314,6 +319,7 @@ impl MessageGenerator {
             role_name,
             &self.deps.app,
             tool_hint.map(|hint| hint.names.as_slice()).unwrap_or(&[]),
+            reply_mode,
         )
         .await?;
         // 惰性工具闭环：工具消息在流消费过程中才逐渐收集完整。

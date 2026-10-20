@@ -19,6 +19,7 @@ import net.minecraft.world.entity.ai.memory.MemoryModuleType;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * 挖方块指令的执行者：走到挑好的落脚点、朝着方块一下一下地挖，挖穿了就捡起掉落物。
@@ -46,12 +47,19 @@ public final class MaidMineController {
         /** 玩家准星指着的那一片；为 null 时按她自己的位置找。 */
         final BlockPos anchor;
         int mined;
+        /** 已经为够到目标挖穿了几块挡路的方块。 */
+        int dug;
         BlockPos target;
         BlockPos stand;
+        /** 挡在目标前面的那一块：挖穿它再看下一块。它不是战果，挖掉也不计块数。 */
+        BlockPos path;
+        /** 上一块挖掉的位置。下一块按离它最近来找，砍树才会顺着树干往上接。 */
+        BlockPos lastMined;
         float progress;
         int ticks;
         int swingTicks;
         int crack = -1;
+        BlockPos cracking;
 
         Run(EntityMaid maid, BlockPos target, String blockId, int wanted, BlockPos anchor) {
             this.maidId = maid.getStringUUID();
@@ -65,6 +73,10 @@ public final class MaidMineController {
     }
 
     private static Run current;
+    /** 最近一次由我们挖掉方块的时间与那只女仆：背包差分据此避开自挖的收获。 */
+    private static final int RECENT_MINE_TICKS = 120;
+    private static String lastMineId = "";
+    private static long lastMineTick;
 
     private MaidMineController() {
     }
@@ -95,6 +107,21 @@ public final class MaidMineController {
     public static boolean isRunning(EntityMaid maid) {
         Run run = current;
         return run != null && maid != null && run.maidId.equals(maid.getStringUUID());
+    }
+
+    /**
+     * 她刚挖下的东西进了背包（或者刚挖完还没被采样到）。
+     *
+     * <p>车万女仆的 {@code destroyBlock} 把掉落直接塞进她的库存，不走拾取事件；背包差分
+     * 于是把每一块木头当成「背包里多了」，主人站在旁边还会说成「主人放进来的」——
+     * 真机里砍一棵树，旁白连着报了七八次「用户酱往DeepSeek的背包里放了橡木原木」。
+     * 这段窗口里的增量都是挖出来的，挖掘收尾那条会自己交代结果。
+     */
+    public static boolean minedRecently(EntityMaid maid) {
+        if (maid == null || lastMineId.isEmpty() || !lastMineId.equals(maid.getStringUUID())) {
+            return false;
+        }
+        return maid.level().getGameTime() - lastMineTick <= RECENT_MINE_TICKS;
     }
 
     /** 每个服务端 tick 推进一次（主线程）。 */
@@ -129,40 +156,100 @@ public final class MaidMineController {
             // 别人先挖掉了，或者方块被换成了别的：这块不算数，再找一块
             clearCracks(run, maid);
             run.target = null;
+            run.path = null;
             run.progress = 0.0F;
             run.ticks = 0;
             return;
         }
-        if (!MineTargets.canMine(maid, run.target)) {
-            walkToTarget(run, maid);
+        // 手头有块挡路的就先挖穿它：挖掉之后目标自己会露出来，不必再找落脚点
+        if (run.path != null && !digPath(run, maid)) {
             return;
         }
+        if (MineTargets.canMine(maid, run.target) && atStand(run, maid)) {
+            MaidActuator.stopWalking(maid);
+            MaidActuator.lookAtPos(maid, run.target);
+            MineTargets.equipBestTool(maid, state);
+            mine(run, maid, run.target, state, true);
+            return;
+        }
+        // 够得着但隔着东西：把那块挡路的挖掉，走着走着就通了
+        BlockPos blocker = MineTargets.blocking(maid, run.target);
+        if (blocker != null && canDigPath(run, maid, blocker)) {
+            if (run.dug >= MineRules.PATH_LIMIT) {
+                abandon(run, maid, "path_limit", "挡在前面的方块太多，挖不过去");
+                return;
+            }
+            run.path = blocker;
+            run.progress = 0.0F;
+            run.crack = -1;
+            digPath(run, maid);
+            return;
+        }
+        walkToTarget(run, maid);
+    }
+
+    /**
+     * 挖穿一块挡路的方块。返回真表示这一 tick 已经把活干完了（没有可以接着挖的）。
+     *
+     * <p>挡路的方块可能是石头、也可能是另一棵树；只要她挖得动、够得着、不是受保护的，
+     * 都先挖掉。它不是这次要的方块，挖掉不计入块数。
+     */
+    private static boolean digPath(Run run, EntityMaid maid) {
+        BlockPos path = run.path;
+        BlockState state = run.level.getBlockState(path);
+        if (state.isAir() || !MineTargets.canMine(maid, path)) {
+            // 已经通了（或者她挪开了、看不见了）：这一块不用再管
+            run.path = null;
+            clearCracks(run, maid);
+            run.progress = 0.0F;
+            return true;
+        }
         MaidActuator.stopWalking(maid);
-        MaidActuator.lookAtPos(maid, run.target);
+        MaidActuator.lookAtPos(maid, path);
         MineTargets.equipBestTool(maid, state);
-        mine(run, maid, state);
+        mine(run, maid, path, state, false);
+        return false;
+    }
+
+    /** 这一块挖得动吗：够得着、不是受保护方块、硬度正常（挖穿只是为了往里去，掉落无所谓）。 */
+    private static boolean canDigPath(Run run, EntityMaid maid, BlockPos blocker) {
+        if (!MineTargets.canMine(maid, blocker) || !maid.canDestroyBlock(blocker)) {
+            return false;
+        }
+        BlockState state = run.level.getBlockState(blocker);
+        return MineRules.mineable(state.getDestroySpeed(run.level, blocker));
     }
 
     private static void walkToTarget(Run run, EntityMaid maid) {
         if (run.stand == null) {
             run.stand = MineTargets.standFor(maid, run.target);
         }
-        if (run.stand == null) {
-            abandon(run, maid, "unreachable", "那块方块她走不到跟前");
-            return;
-        }
-        MaidActuator.walkToPos(maid, run.stand, 0);
+        // 没有落脚点就朝方块本身走：埋在墙里的矿、树干高处的木头，走到跟前才谈得上挖穿
+        BlockPos dest = run.stand != null ? run.stand : run.target;
+        MaidActuator.walkToPos(maid, dest, 0);
         if (run.ticks > STUCK_TICKS
                 && maid.getBrain().hasMemoryValue(MemoryModuleType.CANT_REACH_WALK_TARGET_SINCE)) {
             abandon(run, maid, "unreachable", "那块方块她走不到跟前");
         }
     }
 
-    private static void mine(Run run, EntityMaid maid, BlockState state) {
-        float hardness = state.getDestroySpeed(run.level, run.target);
+    /**
+     * 站到挑好的落脚点跟前了吗。
+     *
+     * <p>够得着不代表该动手：路上刚进交互距离就开挖的话，她会站在离树干好几格的地方挥镐。
+     * 差个一两格就开始，免得卡在台阶边上永远差半步。
+     */
+    private static boolean atStand(Run run, EntityMaid maid) {
+        return run.stand == null
+                || maid.position().distanceToSqr(Vec3.atBottomCenterOf(run.stand)) <= 4.0;
+    }
+
+    private static void mine(Run run, EntityMaid maid, BlockPos pos, BlockState state, boolean counted) {
+        float hardness = state.getDestroySpeed(run.level, pos);
         ItemStack tool = maid.getMainHandItem();
-        // 工具中途挖断了：这个方块再挖下去也掉不出东西，别白费力气
-        if (state.requiresCorrectToolForDrops() && !tool.isCorrectToolForDrops(state)) {
+        // 工具中途挖断了：这个方块再挖下去也掉不出东西，别白费力气。
+        // 挡路的方块不按这条算——挖穿只是为了往里去，掉不掉东西无所谓。
+        if (counted && state.requiresCorrectToolForDrops() && !tool.isCorrectToolForDrops(state)) {
             abandon(run, maid, "wrong_tool", "工具没了，再挖也拿不到东西");
             return;
         }
@@ -178,23 +265,24 @@ public final class MaidMineController {
             maid.swing(InteractionHand.MAIN_HAND);
             run.level.playSound(
                     (Entity) null,
-                    run.target,
+                    pos,
                     state.getSoundType().getHitSound(),
                     SoundSource.BLOCKS,
                     0.25F,
                     state.getSoundType().getPitch() * 0.5F);
         }
         int stage = MineRules.crackStage(run.progress);
-        if (stage != run.crack) {
-            run.level.destroyBlockProgress(maid.getId(), run.target, stage);
+        if (stage != run.crack || !pos.equals(run.cracking)) {
+            clearCracks(run, maid);
+            run.level.destroyBlockProgress(maid.getId(), pos, stage);
             run.crack = stage;
+            run.cracking = pos;
         }
         if (run.progress < 1.0F) {
             return;
         }
         clearCracks(run, maid);
-        BlockPos broken = run.target;
-        if (!maid.destroyBlock(broken, true)) {
+        if (!maid.destroyBlock(pos, true)) {
             abandon(run, maid, "protected", "这个方块不能让她挖");
             return;
         }
@@ -203,11 +291,21 @@ public final class MaidMineController {
         if (!used.isEmpty()) {
             used.hurtAndBreak(1, maid, EquipmentSlot.MAINHAND);
         }
-        run.mined++;
-        run.target = null;
-        run.stand = null;
         run.progress = 0.0F;
         run.ticks = 0;
+        // 挖穿的挡路方块也进她的背包：这一段里的增量同样是挖出来的，背包差分别报成「玩家给的」
+        lastMineId = run.maidId;
+        lastMineTick = run.level.getGameTime();
+        if (!counted) {
+            // 挡路的方块：挖穿就算完成任务，下一 tick 重新看目标还挡不挡着
+            run.dug++;
+            run.path = null;
+            return;
+        }
+        run.mined++;
+        run.lastMined = pos;
+        run.target = null;
+        run.stand = null;
         if (run.mined >= run.wanted) {
             finish(run, maid, "done", "", "");
         }
@@ -215,10 +313,14 @@ public final class MaidMineController {
 
     /** 找下一块同类方块。有锚点时只在那一带找，找不到就收尾。 */
     private static boolean nextTarget(Run run, EntityMaid maid) {
-        BlockPos center = run.anchor != null ? run.anchor : maid.blockPosition();
+        // 第一块看她站的地方；之后看她刚挖掉的那块——同一棵树、同一片矿脉才连得起来
+        BlockPos center = run.anchor != null ? run.anchor
+                : run.lastMined != null ? run.lastMined
+                : maid.blockPosition();
         int radius = run.anchor != null ? MineRules.ANCHOR_RANGE : MineRules.FIND_RADIUS;
         List<BlockPos> candidates =
                 MineTargets.nearest(maid, center, run.blockId, radius, MineRules.FIND_LIMIT);
+        // 先找有落脚点的；都埋在墙里就挑最近的一块，走过去把挡路的挖穿
         for (BlockPos candidate : candidates) {
             // 受保护的方块跳过：第一块验过，后面每块也得验
             if (!maid.canDestroyBlock(candidate)) {
@@ -228,12 +330,12 @@ public final class MaidMineController {
             if (stand == null) {
                 continue;
             }
-            run.target = candidate;
-            run.stand = stand;
-            run.progress = 0.0F;
-            run.ticks = 0;
-            MaidActuator.beginWalk(maid);
-            return true;
+            return startOn(run, maid, candidate, stand);
+        }
+        for (BlockPos candidate : candidates) {
+            if (maid.canDestroyBlock(candidate)) {
+                return startOn(run, maid, candidate, null);
+            }
         }
         String where = run.anchor != null ? "你指的那片" : "附近";
         if (run.mined > 0) {
@@ -242,6 +344,16 @@ public final class MaidMineController {
             finish(run, maid, "failed", "no_target", where + "没有能挖到的这种方块");
         }
         return false;
+    }
+
+    private static boolean startOn(Run run, EntityMaid maid, BlockPos target, BlockPos stand) {
+        run.target = target;
+        run.stand = stand;
+        run.path = null;
+        run.progress = 0.0F;
+        run.ticks = 0;
+        MaidActuator.beginWalk(maid);
+        return true;
     }
 
     private static void abandon(Run run, EntityMaid maid, String reasonCode, String reason) {
@@ -261,10 +373,11 @@ public final class MaidMineController {
     }
 
     private static void clearCracks(Run run, EntityMaid maid) {
-        if (run.target != null && run.crack >= 0) {
-            run.level.destroyBlockProgress(maid.getId(), run.target, -1);
-            run.crack = -1;
+        if (run.cracking != null && run.crack >= 0) {
+            run.level.destroyBlockProgress(maid.getId(), run.cracking, -1);
         }
+        run.crack = -1;
+        run.cracking = null;
     }
 
     private static void broadcast(Run run, String status, String reasonCode, String reason) {

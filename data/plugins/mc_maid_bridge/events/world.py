@@ -1,8 +1,17 @@
-"""世界这一层的事件：接上世界的第一帧、换群系/维度、天气、昼夜、血量告急。"""
+"""世界这一层的事件：接上世界的第一帧、换群系/维度、天气、昼夜、血量告急、
+上下载具、进出结构、玩家远近。"""
 
 from events.spec import EventSpec
 from naming import names
-from wording import BIOME_NAMES, BLOCK_NAMES, DIMENSION_NAMES, name_of
+from wording import (
+    BIOME_NAMES,
+    BLOCK_NAMES,
+    DIMENSION_NAMES,
+    STRUCTURE_NAMES,
+    VEHICLE_NAMES,
+    as_int,
+    name_of,
+)
 
 
 def snapshot(data):
@@ -27,8 +36,11 @@ def snapshot(data):
 
 
 def biome(data):
-    maid, _ = names()
-    return f"{maid}周围的环境变了，眼前是一片{name_of(BIOME_NAMES, data.get('biome'))}。"
+    """换群系。说成「跟着玩家走到了哪」，不要说成「周围的环境变了」——
+    后者像是世界凭空变了个样，模型会以为发生了什么怪事，而不是两个人走了一路。
+    """
+    maid, player = names()
+    return f"{maid}跟着{player}走到了{name_of(BIOME_NAMES, data.get('biome'))}。"
 
 
 def dimension(data):
@@ -64,6 +76,33 @@ def shelter_change(data):
     return f"{maid}走出了遮挡，头顶又见天了。"
 
 
+# 远近档里算「走开了」的那一档：十几格外，或者不在这个世界上。几格、几十步的挪动
+# 都不算变化——跟随状态下她就贴着他走，逐档报能报出一串没人要的报告。
+FAR_BANDS = ("gone",)
+
+
+def player_proximity(data):
+    """玩家走远又回来，只在跨过「走开了」这条线时才说。
+
+    几格之内怎么挪都不算变化——每句话都念一遍「玩家就在身边」会把模型教成复读机，
+    而跟随状态下她就贴着他走，这类句子一天能攒上百条。
+    """
+    maid, player = names()
+    try:
+        distance = float(data.get("distance"))
+    except (TypeError, ValueError):
+        distance = -1.0
+    if distance < 0:
+        return f"{player}离开了{maid}所在的这个世界。"
+    before = (data.get("from_proximity") or "").strip()
+    now = (data.get("proximity") or "").strip()
+    if now in FAR_BANDS and before not in FAR_BANDS:
+        return f"{player}走远了，把{maid}落在后面。"
+    if before in FAR_BANDS and now not in FAR_BANDS:
+        return f"{player}回到了{maid}身边。"
+    return ""
+
+
 def ground_change(data):
     """脚下换了一种值得说的地。走在石头、泥土、木板上不报，所以这里可以直说。"""
     maid, _ = names()
@@ -83,6 +122,30 @@ def ground_change(data):
     return f"{maid}脚下换成了{block}。"
 
 
+def vehicle_change(data):
+    """她坐上或离开了载具。坐在船、矿车里的时候脚下没有「地」可说，这件事单独记。"""
+    maid, _ = names()
+    vehicle = (data.get("vehicle") or "").strip()
+    if vehicle:
+        return f"{maid}坐进了{name_of(VEHICLE_NAMES, vehicle, '载具')}里。"
+    from_vehicle = (data.get("from_vehicle") or "").strip()
+    if not from_vehicle:
+        return ""
+    return f"{maid}从{name_of(VEHICLE_NAMES, from_vehicle, '载具')}上下来了。"
+
+
+def structure_change(data):
+    """她走进或离开一处结构（村庄、矿井、要塞这类）。"""
+    maid, _ = names()
+    structure = (data.get("structure") or "").strip()
+    if structure:
+        return f"{maid}走进了一处{name_of(STRUCTURE_NAMES, structure, '结构')}。"
+    from_structure = (data.get("from_structure") or "").strip()
+    if not from_structure:
+        return ""
+    return f"{maid}离开了一处{name_of(STRUCTURE_NAMES, from_structure, '结构')}。"
+
+
 def _weather_phrase(data):
     if data.get("thundering"):
         return "外面在打雷"
@@ -98,7 +161,19 @@ SPECS = {
     "time_phase_change": EventSpec(time_phase, ttl=300),
     "weather_change": EventSpec(weather, ttl=300),
     "low_health": EventSpec(low_health, urgent=True, ttl=60, snapshot=True),
-    "shelter_change": EventSpec(shelter_change, ttl=90),
+    "shelter_change": EventSpec(
+        shelter_change,
+        ttl=90,
+        # 一会儿进树荫一会儿出来，两句排在一起读着像来回折腾：同键合并，留最后那次
+        merge_key="shelter",
+        severity=lambda data: as_int(data.get("tick"), 0),
+    ),
+    # 玩家远近只在跨过「走开了」这条线时说一句，几格之内的挪动不算变化。
+    # 走了又回来时只留最后一句——他已经回来了，前一句再念一遍只会让模型困惑。
+    "player_proximity_change": EventSpec(player_proximity, ttl=30, merge_key="proximity"),
+    # 上下载具与进出结构都很少见，记一笔就够，让角色自己决定要不要提
+    "vehicle_change": EventSpec(vehicle_change, ttl=120),
+    "structure_change": EventSpec(structure_change, ttl=300),
     # 岩浆和火踩上去就在掉血，值得当场提醒；水、雪、沙这类只记一笔
     "ground_change": EventSpec(
         ground_change,

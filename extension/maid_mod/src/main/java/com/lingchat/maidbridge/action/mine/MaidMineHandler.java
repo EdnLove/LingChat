@@ -116,11 +116,10 @@ public class MaidMineHandler implements MessageHandler {
             return rejected("protected", "这个方块不让她挖（受保护）", blockId, count);
         }
         if (!MineTargets.hasCorrectTool(maid, state)) {
-            return rejected("wrong_tool", "她手上和背包里都没有能挖它的工具，得先给她一把", blockId, count);
+            return rejected("wrong_tool", MineTargets.missingToolReason(maid, state), blockId, count);
         }
-        if (MineTargets.standFor(maid, target) == null) {
-            return rejected("unreachable", "那块方块她走不到跟前，先走近一点", blockId, count);
-        }
+        // 没有落脚点也受理：埋在墙里的矿、树干高处的木头，她会一路把挡路的方块挖穿过去。
+        // 真正走不通时由控制器在挖的过程中收尾，理由比「走不到跟前」具体。
 
         // 插件发起的动作与攻击每 tick 都在写寻路，会跟挖掘互相顶
         MaidAttackController.cancel();
@@ -144,10 +143,17 @@ public class MaidMineHandler implements MessageHandler {
         return Envelope.response(Protocol.MAID_MINE_RESULT, data);
     }
 
-    /** 以 center 为中心找一块这个 id 的、走得到跟前的方块。 */
+    /**
+     * 以 center 为中心找一块这个 id 的方块。
+     *
+     * <p>先挑有落脚点的；全都被埋着（矿脉、树干心）就退回最近的那一块——挖掘控制器会先
+     * 把挡路的方块挖穿再动手。原来只认有落脚点的，于是「看一眼周围」明明列着深层铁矿石，
+     * 挖的时候却回「没有能挖到的这种方块」，模型只能一遍遍重试。
+     */
     private static BlockPos findTargetNear(EntityMaid maid, String blockId, BlockPos center, int radius) {
         List<BlockPos> candidates =
                 MineTargets.nearest(maid, center, blockId, radius, MineRules.FIND_LIMIT);
+        BlockPos nearest = null;
         for (BlockPos candidate : candidates) {
             if (!maid.canDestroyBlock(candidate)) {
                 continue;
@@ -155,8 +161,11 @@ public class MaidMineHandler implements MessageHandler {
             if (MineTargets.standFor(maid, candidate) != null) {
                 return candidate;
             }
+            if (nearest == null) {
+                nearest = candidate;
+            }
         }
-        return null;
+        return nearest;
     }
 
     private static int parseCount(JsonObject data) {

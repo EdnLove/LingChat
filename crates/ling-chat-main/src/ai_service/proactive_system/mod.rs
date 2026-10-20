@@ -66,6 +66,10 @@ pub struct ProactiveSystem {
     plugin_request: Option<PendingPluginRequest>,
     /// 上一次插件主动对话的投放时刻，用于冷却。
     plugin_last_delivery: Option<Instant>,
+    /// 上一次插件主动对话已经投放、但还没听到「这一轮播完了」。
+    plugin_await_playback_end: bool,
+    /// 这一轮插件主动对话播完的时刻：从那之后还要再静一会儿才说下一轮。
+    plugin_playback_end: Option<Instant>,
 }
 
 /// 一条排着队的插件主动对话请求。
@@ -79,6 +83,12 @@ const PLUGIN_REQUEST_TTL: Duration = Duration::from_secs(120);
 
 /// 两次插件主动对话之间的最短间隔。战斗里事件密集时，这就是「别一直说」的闸门。
 const PLUGIN_COOLDOWN: Duration = Duration::from_secs(20);
+
+/// 上一轮台词播完之后还要再静这么久，才允许插件再请一轮。
+///
+/// 冷却算的是「投放时刻」，而一轮台词往往要播十几二十秒：不另算这一段的话，上一句刚
+/// 说完下一轮就顶上，听感上就是她一个人喋喋不休。
+const PLUGIN_QUIET_GAP: Duration = Duration::from_secs(10);
 
 impl ProactiveSystem {
     pub fn new(
@@ -117,6 +127,8 @@ impl ProactiveSystem {
             pending_intents: Vec::new(),
             plugin_request: None,
             plugin_last_delivery: None,
+            plugin_await_playback_end: false,
+            plugin_playback_end: None,
         }
     }
 
@@ -255,6 +267,11 @@ impl ProactiveSystem {
             val
         );
         self.can_deliver = val;
+        // 投放出去的那一轮播完了：记下结束时刻，之后要静一会儿才说下一轮
+        if val && self.plugin_await_playback_end {
+            self.plugin_await_playback_end = false;
+            self.plugin_playback_end = Some(Instant::now());
+        }
     }
 
     // ============================================================
@@ -662,12 +679,27 @@ async fn flush_plugin_request(system: Arc<Mutex<ProactiveSystem>>) -> bool {
         let cooling = this
             .plugin_last_delivery
             .is_some_and(|last| last.elapsed() < PLUGIN_COOLDOWN);
-        if !this.can_deliver || cooling || this.generation_lock.try_lock().is_err() {
+        // 上一轮刚播完还要再静一会儿：光等它播完，她上一句刚收尾下一句就顶上
+        let quiet_left = this
+            .plugin_playback_end
+            .filter(|end| end.elapsed() < PLUGIN_QUIET_GAP)
+            .map(|end| PLUGIN_QUIET_GAP.saturating_sub(end.elapsed()));
+        let busy = this.generation_lock.try_lock().is_err();
+        if !this.can_deliver || cooling || quiet_left.is_some() || busy {
             // 还没到投放时机：放回去，等下一次前端空闲通知或 30 秒轮询
             this.plugin_request = Some(request);
+            if let (Some(left), false) = (quiet_left, cooling) {
+                // 只差静默期就自己到点再来一次，不必干等到下一轮 cycle
+                let next = system.clone();
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(left).await;
+                    ProactiveSystem::notify_can_deliver(next);
+                });
+            }
             return false;
         }
         this.plugin_last_delivery = Some(Instant::now());
+        this.plugin_await_playback_end = true;
         request
     };
     tauri::async_runtime::spawn(async move {

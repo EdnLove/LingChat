@@ -27,6 +27,7 @@
 from plugin_host import (
     add_prompt_line,
     read_context,
+    read_data_file,
     send_user_message,
     set_auto_mode,
     set_reply_length_mode,
@@ -38,7 +39,7 @@ from bridge import config, player_name, truthy
 from events import event_key, event_severity, event_ttl, format_event, needs_snapshot
 from naming import names
 from tools.context import CARRY_TIMEOUT_MS, carry_text, creature_text, snapshot
-from wording import kaomoji_for
+from wording import DEAD_STATE_MARK, REVIVE_STATE_MARK, kaomoji_for
 
 
 def _entry_hint():
@@ -53,30 +54,43 @@ def _entry_hint():
         f"- {maid}在 LingChat 回的话会同步显示成游戏内女仆的聊天气泡，照常说话即可。\n"
         f"- {player}在游戏里打出的话会当成{player}自己的发言送过来，和在输入框里发的一句一样。\n"
         f"- {player}那句话后面若还跟着一句「（{maid}此刻：…）」，那是{maid}当时看到的情形"
-        f"（光线暗不暗、{player}在不在{maid}身边、身边有什么活物），"
-        f"不是{player}说的话。\n"
+        f"（光线暗不暗、身边有什么活物），不是{player}说的话。\n"
         "- 游戏里的变化会写成旁白，直接以第三人称叙事句出现（换地形、天黑、下雨、受伤、"
-        f"有生物死亡、{player}丢给{maid}或喂{maid}东西、{player}把{maid}抱起来或放下、"
-        f"{player}拿到成就这类），它不是谁说的话，当背景信息看；"
+        f"有生物死亡、{maid}自己死了、{maid}捡到东西、{player}喂{maid}东西、"
+        f"{player}把{maid}抱起来或放下、"
+        f"上下船或矿车、进出村庄这类结构、{player}走远又回来、{player}拿到成就这类），"
+        "它不是谁说的话，当背景信息看；"
         "几件事接连发生时可能记在同一行里，用换行隔开。\n"
-        f"- {player}往{maid}背包里放东西、丢东西给{maid}、拿食物潜行右键喂{maid}，"
-        "都会记成一条旁白；旁白里说收到或捡到的东西，就是已经在身边或背包里的。\n"
+        f"- {player}往{maid}身上放东西（背包、手里、盔甲栏、饰品栏）、拿食物潜行右键喂{maid}，"
+        "都会记成一条旁白；"
+        f"地上掉着的东西本身不算事，只有{maid}真的捡起来才会记，旁白里会说清是谁丢的、"
+        "哪只生物掉的还是挖哪种方块崩出来的。\n"
         f"- {player}让{maid}做动作（过来、坐下、站起来、去床上躺下）时用 maid_ 开头的工具"
         f"指挥女仆：{maid}不会瞬移，工具回执只说明指令已收到，不代表已经到位。\n"
         f"- {player}叫{maid}干活（种地、钓鱼、打怪）或者叫{maid}别干了，用 maid_set_task "
         f"换工作模式；{maid}按自己的作息干活，切换成功不等于此刻已经开工，工具结果里会写明。\n"
-        f"- {player}叫{maid}打谁（「打那只僵尸」「打我一下」）用 maid_attack 点名：活物的名字、"
-        f"hostile / animal，或者 owner（主人自己，也就是{player}）。追着打是默认，会把目标"
+        f"- {player}叫{maid}打谁（「打那只僵尸」「打我一下」「打他」）用 maid_attack 点名：活物的名字、"
+        f"另一个玩家的名字（照「看一眼周围」里看到的那个名字），hostile / animal / other_player，"
+        f"或者 owner（主人自己，也就是{player}）。追着打是默认，会把目标"
         f"往死里打；只是逗{maid}抬手（「打我一下」「轻轻碰我一下」）要加 style=light，"
         "只打一下就收手。攻击回执只代表开始打了，不代表目标已经倒下；在那之前只能说"
         "「正在打」。\n"
         f"- {player}叫{maid}挖方块（「把这块挖了」「挖十块石头」）用 maid_mine：target 填"
         f"方块名，不给就是{player}正看着的那块；count 填要挖几块。{maid}会自己走过去、"
-        "从背包里换合适的工具。挖掘回执只代表开始挖了，方块还没被挖掉。"
+        "从背包里换合适的工具；目标埋在其他方块后面时，她会先把挡路的方块挖穿。"
+        "挖掘回执只代表开始挖了，方块还没被挖掉。没有趁手的工具时，"
+        "回执会说明缺哪种镐子、地上那件能不能用；镐子丢在地上不算给过她，得放进背包。\n"
+        f"- {player}想让{maid}头上顶着什么（顶一块方块、戴个南瓜）用 maid_headwear：item 填"
+        f"她背包里的东西，留空或写 take_off 就把头上的摘下来。她背包最后一格是头饰栏，"
+        "那一格里的东西顶在头上显示，不算背包存货。"
     )
 
 # 幂等检查先扫这么多条尾巴；不够长才整段再扫一次（见 `_entry_hint_written`）。
 TAIL_SCAN = 50
+
+# 单句语音的上限。正常一句只有几百 KB，超过这个数多半是配置错了，别把整段
+# base64 塞进一次 WS 帧。
+MAX_TTS_BYTES = 8 * 1024 * 1024
 
 
 def on_start(ctx):
@@ -113,7 +127,7 @@ def on_ws(ctx):
 
 
 def on_line_shown(ctx):
-    """某句台词上屏时触发（逐句）：把这一句同步成游戏内气泡。
+    """某句台词上屏时触发（逐句）：同步游戏内气泡，按设置在游戏里播放这一句的语音。
 
     订阅的是「上屏」而不是「生成」：模型的回复是流式到达的，连着几句会几乎同时
     生成完。跟着上屏时机走，游戏里的女仆才会和主界面同一个节奏地冒话，而不是
@@ -121,31 +135,61 @@ def on_line_shown(ctx):
 
     模组只留两枚气泡：台词一枚、这一句情绪的颜文字一枚（候选在这边按情绪给，挑哪条
     由模组随机）。新的一句会替掉上一句的两枚，不会一句叠一句。
+
+    气泡与语音是两个开关：关掉气泡仍然可以只要声音。
     """
     payload = ctx.get("payload") or {}
-    # 剧本编辑器的预览流不该外发到游戏里。
-    if payload.get("previewGen") or not payload.get("roleId"):
+    # 剧本编辑器的预览流不该外发到游戏里。试玩代号可以是 0，必须按「键存在」判断。
+    if payload.get("previewGen") is not None or not payload.get("roleId"):
         return
+    # 每轮最后一句之后重念一次死亡状态：死亡是持久的，模型几轮之后就会忘了她已经倒下
+    if payload.get("isFinal"):
+        _remind_dead()
+    cfg = config(ctx)
     message = (payload.get("message") or "").strip()
-    if not message:
-        return
-    if not truthy(config(ctx).get("echo_to_game"), True):
+    audio_file = (payload.get("audioFile") or "").strip()
+    want_bubble = bool(message) and truthy(cfg.get("echo_to_game"), True)
+    want_voice = bool(audio_file) and truthy(cfg.get("play_tts_in_game"), False)
+    if not want_bubble and not want_voice:
         return
     maid, _ = bridge.ready(ctx)
     if not maid:
         return
     # 顺手重申一次监控目标：刚连上那一次可能没发出去（见 _bind_maid），而插件没有定时器、
     # 也存不下跨调用状态，「她说话」是唯一稳定的时机。模组那边幂等，重复发没有副作用。
-    bridge.bind(maid)
-    # emotion 是分类器的预测标签（未启用时就是模型写的【情绪】），认不出的按「正常」给。
-    emotion = (payload.get("emotion") or "").strip() or (payload.get("originalTag") or "").strip()
+    bridge.bind(maid, player_name(cfg))
+    if want_bubble:
+        # emotion 是分类器的预测标签（未启用时就是模型写的【情绪】），认不出的按「正常」给。
+        emotion = (payload.get("emotion") or "").strip() or (
+            payload.get("originalTag") or ""
+        ).strip()
+        bridge.send({
+            "type": "send_chat",
+            "data": {
+                "maid_id": maid,
+                "message": message,
+                "kaomoji": kaomoji_for(emotion),
+            },
+        })
+    if want_voice:
+        _send_tts(maid, audio_file)
+
+
+def _send_tts(maid, audio_file):
+    """把这一句的音频原样发给模组，由它在女仆的位置播放（宿主此时已把本机静音）。"""
+    if "/" in audio_file or "\\" in audio_file or audio_file in (".", ".."):
+        return
+    result = read_data_file(f"voice/{audio_file}")
+    if not result.get("ok"):
+        return
+    if (result.get("size") or 0) > MAX_TTS_BYTES:
+        return
+    audio = result.get("base64") or ""
+    if not audio:
+        return
     bridge.send({
-        "type": "send_chat",
-        "data": {
-            "maid_id": maid,
-            "message": message,
-            "kaomoji": kaomoji_for(emotion),
-        },
+        "type": "play_tts",
+        "data": {"maid_id": maid, "format": "wav", "audio": audio},
     })
 
 
@@ -177,7 +221,7 @@ def _bind_maid(ctx):
     if not maid:
         print(f"[mc_maid_bridge] 没能绑定女仆：{reason}")
         return
-    result = bridge.bind(maid)
+    result = bridge.bind(maid, player_name(bridge.config(ctx)))
     if not result.get("ok"):
         print(f"[mc_maid_bridge] 绑定帧没能发出去：{result.get('error')}")
 
@@ -222,10 +266,11 @@ def _handle_chat(ctx, chat):
 def _carry(chat):
     """随这次发言带一句她此刻的处境。
 
-    身边那一圈（附近有什么活物、玩家在不在、光线暗不暗）不再逐条写成旁白——一整晚
+    身边那一圈（附近有什么活物、光线暗不暗）不再逐条写成旁白——一整晚
     下来能把台词表塞满，而她要的只是「知道周围有什么」。改成开口这一刻现取一份快照
     带过去：一次发言带一次，说完就随那行留在历史里。脚下与头顶只报变化（见 events/
-    world.py 的 ground_change / shelter_change），不随每句话重复。
+    world.py 的 ground_change / shelter_change），玩家走远回来也只报变化（player_proximity_change），
+    不随每句话重复。
 
     女仆 id 直接用帧里的：模组只在「说话的人正是这只女仆的主人」时才转发，帧里必然带着
     她的 uuid，不必再问一次游戏。取不到就这一轮不带，玩家的话照常送。
@@ -289,6 +334,63 @@ def _creature_text(data):
         return ""
     data, _ = snapshot(maid, CARRY_TIMEOUT_MS)
     return creature_text(data) if data else ""
+
+
+# 死亡状态问模组时的超时：本机回环，正常是毫秒级。游戏暂停时模组不推进队列，
+# 超时了就退回台词表判断，不让一次查询拖住这一句。
+MAID_STATE_TIMEOUT_MS = 800
+
+# 台词表里往回扫多少条找死亡/复活旁白。
+LIFE_SCAN = 200
+
+
+def _remind_dead():
+    """她死了就每一轮再念一次死亡状态。
+
+    死亡是持久状态，模型几轮之后就会把她当成还站在旁边的小女仆。判断先问模组（它记着
+    这一局的死活），问不到才退回台词表里最后一条死亡/复活旁白——历史本身就是状态。
+    带上 key 让同一轮里几句台词只留一条。
+    """
+    if not _dead_now():
+        return
+    maid, _ = names()
+    result = add_prompt_line(
+        "narrator",
+        f"{maid}{DEAD_STATE_MARK}，在复活之前没法行动，也看不到听不到游戏里的事。",
+        ttl_seconds=604800,
+        key="maid_dead_state",
+        severity=1,
+    )
+    if not result.get("ok"):
+        print(f"[mc_maid_bridge] 死亡状态没能进队列：{result.get('error')}")
+
+
+def _dead_now():
+    """她现在是不是死的。模组这一局没记录时（刚重启）退回台词表判断。"""
+    response, error = bridge.ask({"type": "maid_state", "data": {}}, MAID_STATE_TIMEOUT_MS)
+    if not error and response.get("type") == "maid_state_result":
+        data = response.get("data") or {}
+        if data.get("known"):
+            return bool(data.get("dead"))
+    return _life_state() == "dead"
+
+
+def _life_state():
+    """台词表末尾最后一条死亡/复活旁白说的是什么：dead / alive / unknown。"""
+    head = read_context(start=1, end=1)
+    total = head.get("total") or 0
+    if not head.get("ok") or not total:
+        return "unknown"
+    since = max(1, total - LIFE_SCAN)
+    lines = read_context(start=since, end=total).get("lines") or []
+    state = "unknown"
+    for line in lines:
+        content = line.get("content") or ""
+        if DEAD_STATE_MARK in content:
+            state = "dead"
+        elif REVIVE_STATE_MARK in content:
+            state = "alive"
+    return state
 
 
 def _quiet_event_run(pending, count):

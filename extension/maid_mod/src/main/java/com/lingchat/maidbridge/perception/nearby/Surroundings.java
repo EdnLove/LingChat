@@ -18,8 +18,9 @@ import java.util.List;
  * 协议里的那份外形（{@link #response}）也留在这里，与判定分在同一个包的两侧。
  *
  * <p>字段一律是注册表 id 与机器可读的枚举串，中文措辞留给插件——专用服务端上
- * {@code getName()} 只有英文（甚至裸翻译键），中文只在客户端按玩家语言选得出来，
- * 所以协议里绝不出现显示名。
+ * {@code getName()} 只有英文（甚至裸翻译键），中文只在客户端按玩家语言选得出来。
+ * 唯一的显示名是玩家自己的名字（{@link Nearby#name()}）：那是玩家取的名字、不随语言变，
+ * 而另一个玩家在游戏里除此之外没有别的称呼。
  *
  * @param entityId 被监控的女仆 uuid
  * @param dimension 维度 id，如 {@code minecraft:overworld}
@@ -32,6 +33,8 @@ import java.util.List;
  * @param owner 主人；没有主人或不在同一维度时见 {@link Owner}
  * @param nearby 附近的活物，按距离升序、已截断，且不含主人与她自己
  * @param nearbyTruncated 附近还有没列进来的活物
+ * @param vehicle 她正坐在里面的载具（船、矿车这类）的实体 id；没坐载具时为空串
+ * @param structure 她所在结构（村庄、矿井这类）的 id；不在结构里时为空串
  */
 public record Surroundings(
         String entityId,
@@ -44,7 +47,9 @@ public record Surroundings(
         int light,
         Owner owner,
         List<Nearby> nearby,
-        boolean nearbyTruncated) {
+        boolean nearbyTruncated,
+        String vehicle,
+        String structure) {
 
     /** 一次视线命中的结果：{@code kind} 取 {@code block} / {@code entity} / {@code none}。 */
     public record Gaze(String kind, String id, double distance) {
@@ -70,8 +75,12 @@ public record Surroundings(
      * {@code direction} 是相对她身体朝向的八向方位；{@code visible} 是她看不看得见它
      * （无遮挡，不要求朝着它）。看不见的只在 {@link Profile#heardRadius()} 内保留，
      * 插件据此说「听到…的声音」。
+     *
+     * <p>{@code name} 只有玩家才有（别的活物的显示名是翻译键，专用服务端上取不出中文）。
+     * 另一个玩家在游戏里只叫得出这个名字，攻击、称呼都得靠它。
      */
-    public record Nearby(String type, String category, double distance, String direction, boolean visible) {
+    public record Nearby(
+            String type, String category, double distance, String direction, boolean visible, String name) {
     }
 
     /** 一次最多列几只：看得见与听到合计不超过这个数，再多就是噪音。 */
@@ -186,10 +195,14 @@ public record Surroundings(
             item.addProperty("distance", EventFrames.round(one.distance()));
             item.addProperty("direction", one.direction());
             item.addProperty("visible", one.visible());
+            item.addProperty("name", one.name());
             nearby.add(item);
         }
         data.add("nearby", nearby);
         data.addProperty("truncated", s.nearbyTruncated());
+        // 坐在船/矿车里时脚下没有「地」可说，插件改说载具；结构同理
+        data.addProperty("vehicle", s.vehicle());
+        data.addProperty("structure", s.structure());
 
         // 附近能挖的方块：只给注册表 id，中文名与「拿它去挖」的判断留给插件和模型
         JsonArray blockList = new JsonArray();

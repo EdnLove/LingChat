@@ -55,12 +55,12 @@ def _mine_text(frame, maid, player):
     fallback = (frame.get("name") or "").strip() or "方块"
     name = name_of(BLOCK_NAMES, block, fallback)
     if frame.get("looked"):
-        parts = [f"{maid}正过去挖{player}看着的那块{name}。"]
+        parts = [f"{maid}扛起工具，往{player}看着的那块{name}去了。"]
     else:
-        parts = [f"{maid}正过去挖{frame.get('count') or 1}块{name}。"]
+        parts = [f"{maid}扛起工具，去挖{frame.get('count') or 1}块{name}。"]
     if not frame.get("has_tool", True):
-        parts.append(f"{maid}手上没有趁手的工具，只能徒手挖，会慢一些。")
-    parts.append(f"挖掘才刚开始，{name}还留在原地。")
+        parts.append(f"{maid}手上没有趁手的工具，只能徒手慢慢抠。")
+    parts.append(f"第一下才刚落下，{name}还留在原地。")
     return "".join(parts)
 
 

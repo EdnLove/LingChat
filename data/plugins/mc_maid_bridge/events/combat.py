@@ -1,8 +1,17 @@
-"""战斗与威胁：女仆受伤、附近生灵死亡、敌对生物靠近。"""
+"""战斗与威胁：女仆受伤、女仆自己死亡、附近生灵死亡、敌对生物靠近。"""
 
 from events.spec import EventSpec
 from naming import names
-from wording import DAMAGE_HINTS, MOB_NAMES, as_int, name_of, nearness_place, who_of
+from wording import (
+    DAMAGE_HINTS,
+    DEAD_STATE_MARK,
+    MOB_NAMES,
+    REVIVE_STATE_MARK,
+    as_int,
+    name_of,
+    nearness_place,
+    who_of,
+)
 
 # 挨了多重只说档位，不报具体掉了几点血——数字一进上下文，模型就会照着念
 # 「一共掉了 0.2 点血」。档位对着血量尺度定：一点以内是擦破皮，五点上下是实打实的一下。
@@ -10,11 +19,17 @@ from wording import DAMAGE_HINTS, MOB_NAMES, as_int, name_of, nearness_place, wh
 HURT_PHRASES = ((1.0, "受了点轻伤"), (5.0, "伤得有点疼"), (10.0, "伤得不轻"))
 HURT_WORST = "伤得很重"
 
+# 挨完这一波之后的身体状态，按剩余血量比例切档。只给状态不给数字：数字一进上下文，
+# 模型就会照着念「还剩 12 点血」。档位与模组的 lowHealthRatio（0.30）对得上。
+HURT_STATES = ((0.0, "被这一下打死了"), (0.35, "已经奄奄一息了"), (0.7, "身体有点扛不住了"))
+HURT_OK = "不过仍然感觉良好"
+
 
 def maid_hurt(data):
     """女仆受伤。模组会把一小段连续挨打合成一条，所以这里要照顾「几下」。
 
-    只说伤得多重，不报掉了几点血、现在剩多少——那些数字模型会照抄进台词里。
+    只说伤得多重、现在身体怎么样，不报掉了多少血、还剩多少——那些数字模型会照抄进
+    台词里。`health` 是这一波最后一下之后的血量，拿它与上限算比例来说状态。
     动手的是谁看两个标记：`attacker_owner` 是「她主人干的」（也就是玩家自己），
     `attacker_type` 是生物（说中文名），都没有才轮到伤害类型兜底。账号名一律不念。
     """
@@ -30,7 +45,11 @@ def maid_hurt(data):
         cause = DAMAGE_HINTS.get((data.get("damage_type") or "").strip(), "挨了打")
     count = as_int(data.get("count"), 1)
     times = "连着挨了几下，" if count > 1 else ""
-    return f"{maid}{cause}，{times}{_hurt_phrase(data.get('damage'))}。"
+    body = f"{maid}{cause}，{times}{_hurt_phrase(data.get('damage'))}"
+    state = _health_phrase(data)
+    if state:
+        body = f"{body}，{state}"
+    return f"{body}。"
 
 
 def creature_death(data):
@@ -42,6 +61,26 @@ def creature_death(data):
     _, player = names()
     who = player if data.get("victim_owner") else who_of(data.get("category"), data.get("type"))
     return f"{nearness_place(data.get('distance'))}的{who}{_death_cause(data)}。"
+
+
+def maid_death(data):
+    """她自己死了。只说她是怎么死的，不替游戏下「能不能复活」的结论。
+
+    她倒下之后模组查不到她，所有指令都只会回「找不到女仆」——这一条是插件唯一知道
+    发生了什么的地方，所以插件会当场请角色开口。旁白里带上死亡状态标记：之后每一轮
+    都靠它判断她还在不在死亡状态（见 hooks._remind_dead）。
+    """
+    maid, _ = names()
+    return (
+        f"{maid}{_death_cause(data)}。"
+        f"{maid}{DEAD_STATE_MARK}，在复活之前没法行动，也看不到听不到游戏里的事。"
+    )
+
+
+def maid_revive(data):
+    """她被胶片复活了。死亡是持久状态，这一条把它收回来。"""
+    maid, _ = names()
+    return f"{maid}{REVIVE_STATE_MARK}。"
 
 
 def threat_near(data):
@@ -92,6 +131,25 @@ def _hurt_phrase(damage):
     return HURT_WORST
 
 
+def _health_phrase(data):
+    """挨完这一波还剩多少 → 「不过仍然感觉良好」这类状态。比例算不出来时不给这一句。
+
+    老版本模组、或者实体没有血量上限时这两个字段缺一个，旁白就只保留伤势那句。
+    """
+    try:
+        health = float(data.get("health"))
+        max_health = float(data.get("max_health"))
+    except (TypeError, ValueError):
+        return ""
+    if max_health <= 0:
+        return ""
+    ratio = health / max_health
+    for threshold, phrase in HURT_STATES:
+        if ratio <= threshold:
+            return phrase
+    return HURT_OK
+
+
 def _hurt_severity(data):
     """同键合并时比大小的严重度。受伤按掉血的百分之一计，取整免得浮点比较。"""
     try:
@@ -115,5 +173,9 @@ SPECS = {
         snapshot=True,
         urgent_when=lambda data: bool(data.get("victim_owner")),
     ),
+    # 她自己的死没有可合并的同键，也不该被静默：当场开口
+    "maid_death": EventSpec(maid_death, urgent=True, ttl=120),
+    # 复活同样重要：她得知道自己又能动了，才不会继续按「已经死了」说话
+    "maid_revive": EventSpec(maid_revive, urgent=True, ttl=120),
     "threat_near": EventSpec(threat_near, urgent=True, ttl=60, snapshot=True),
 }

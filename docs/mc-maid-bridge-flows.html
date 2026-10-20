@@ -395,30 +395,30 @@
           </marker>
         </defs>
 
-        <text class="lane" x="25" y="60">① 丢在地上 · 只认主人丢的，只认她 12 格内的</text>
+        <text class="lane" x="25" y="60">① 地上的掉落物 · 不单独报：她没捡就与它无关</text>
         <g class="node">
           <rect x="25" y="78" width="190" height="58" rx="12"/>
-          <text class="t" x="120" y="107" text-anchor="middle" dominant-baseline="middle">玩家把手里的东西丢下</text>
+          <text class="t" x="120" y="107" text-anchor="middle" dominant-baseline="middle">玩家丢下 / 怪物掉落 / 挖方块崩出</text>
         </g>
         <g class="node">
           <rect x="245" y="78" width="220" height="58" rx="12"/>
-          <text class="t" x="355" y="99" text-anchor="middle" dominant-baseline="middle">ItemTossEvent</text>
-          <text class="ts" x="355" y="119" text-anchor="middle" dominant-baseline="middle">主人 + 她在 12 格内</text>
+          <text class="t" x="355" y="99" text-anchor="middle" dominant-baseline="middle">东西落在地上</text>
+          <text class="ts" x="355" y="119" text-anchor="middle" dominant-baseline="middle">不推事件、不写旁白</text>
         </g>
         <g class="node">
           <rect x="495" y="78" width="170" height="58" rx="12"/>
-          <text class="t" x="580" y="99" text-anchor="middle" dominant-baseline="middle">10 tick 去抖</text>
-          <text class="ts" x="580" y="119" text-anchor="middle" dominant-baseline="middle">合成一条</text>
+          <text class="t" x="580" y="99" text-anchor="middle" dominant-baseline="middle">等她真的捡起来</text>
+          <text class="ts" x="580" y="119" text-anchor="middle" dominant-baseline="middle">才算一件事</text>
         </g>
         <g class="node">
           <rect x="695" y="78" width="200" height="58" rx="12"/>
-          <text class="t" x="795" y="99" text-anchor="middle" dominant-baseline="middle">帧 item_gift</text>
-          <text class="ts" x="795" y="119" text-anchor="middle" dominant-baseline="middle">items[] + distance</text>
+          <text class="t" x="795" y="99" text-anchor="middle" dominant-baseline="middle">进入下一条道 ②</text>
+          <text class="ts" x="795" y="119" text-anchor="middle" dominant-baseline="middle">来源在那里认</text>
         </g>
         <g class="node">
           <rect x="925" y="78" width="230" height="58" rx="12"/>
-          <text class="t" x="1040" y="99" text-anchor="middle" dominant-baseline="middle">旁白：玩家往你脚边丢下了…</text>
-          <text class="ts" x="1040" y="119" text-anchor="middle" dominant-baseline="middle">只记，不打断</text>
+          <text class="t" x="1040" y="99" text-anchor="middle" dominant-baseline="middle">没捡就什么都不说</text>
+          <text class="ts" x="1040" y="119" text-anchor="middle" dominant-baseline="middle">不替任何人认领</text>
         </g>
         <path class="edge" d="M215 107 H245" marker-end="url(#m4)"/>
         <path class="edge" d="M465 107 H495" marker-end="url(#m4)"/>
@@ -439,12 +439,12 @@
         <g class="node">
           <rect x="585" y="228" width="230" height="58" rx="12"/>
           <text class="t" x="700" y="249" text-anchor="middle" dominant-baseline="middle">Post：帧 item_pickup</text>
-          <text class="ts" x="700" y="269" text-anchor="middle" dominant-baseline="middle">带 from_owner</text>
+          <text class="ts" x="700" y="269" text-anchor="middle" dominant-baseline="middle">source = owner / player / mob / block</text>
         </g>
         <g class="node">
           <rect x="845" y="228" width="310" height="58" rx="12"/>
-          <text class="t" x="1000" y="249" text-anchor="middle" dominant-baseline="middle">是：当场开口 · 否：只记旁白</text>
-          <text class="ts" x="1000" y="269" text-anchor="middle" dominant-baseline="middle">「你把玩家丢给你的…收进了背包」</text>
+          <text class="t" x="1000" y="249" text-anchor="middle" dominant-baseline="middle">主人给的：当场开口 · 其余：只记旁白</text>
+          <text class="ts" x="1000" y="269" text-anchor="middle" dominant-baseline="middle">「她捡起了僵尸掉的腐肉」</text>
         </g>
         <path class="edge" d="M275 257 H305" marker-end="url(#m4)"/>
         <path class="edge" d="M555 257 H585" marker-end="url(#m4)"/>

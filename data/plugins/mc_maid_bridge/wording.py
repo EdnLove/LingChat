@@ -52,6 +52,79 @@ BIOME_NAMES = {
     "minecraft:small_end_islands": "末地小岛",
 }
 
+# 结构的中文名。她走进一片村庄、矿井、要塞时才会用到；表里没有的退回 id 后半段。
+STRUCTURE_NAMES = {
+    "minecraft:village_plains": "平原村庄",
+    "minecraft:village_desert": "沙漠村庄",
+    "minecraft:village_savanna": "热带草原村庄",
+    "minecraft:village_snowy": "雪原村庄",
+    "minecraft:village_taiga": "针叶林村庄",
+    "minecraft:mineshaft": "废弃矿井",
+    "minecraft:mineshaft_mesa": "恶地废弃矿井",
+    "minecraft:stronghold": "要塞",
+    "minecraft:monument": "海底神殿",
+    "minecraft:mansion": "林地府邸",
+    "minecraft:desert_pyramid": "沙漠神殿",
+    "minecraft:jungle_temple": "丛林神庙",
+    "minecraft:swamp_hut": "女巫小屋",
+    "minecraft:igloo": "雪屋",
+    "minecraft:ocean_ruin_cold": "海底废墟",
+    "minecraft:ocean_ruin_warm": "海底废墟",
+    "minecraft:shipwreck": "沉船",
+    "minecraft:shipwreck_beached": "搁浅的沉船",
+    "minecraft:buried_treasure": "埋藏的宝藏",
+    "minecraft:pillager_outpost": "掠夺者前哨站",
+    "minecraft:ancient_city": "远古城市",
+    "minecraft:trail_ruins": "古迹废墟",
+    "minecraft:trial_chambers": "试炼密室",
+    "minecraft:ruined_portal": "废弃传送门",
+    "minecraft:ruined_portal_nether": "废弃传送门",
+    "minecraft:ruined_portal_desert": "废弃传送门",
+    "minecraft:ruined_portal_jungle": "废弃传送门",
+    "minecraft:ruined_portal_swamp": "废弃传送门",
+    "minecraft:ruined_portal_mountain": "废弃传送门",
+    "minecraft:ruined_portal_ocean": "废弃传送门",
+    "minecraft:nether_fortress": "下界要塞",
+    "minecraft:bastion_remnant": "堡垒遗迹",
+    "minecraft:end_city": "末地城",
+}
+
+# 载具的中文名。她坐进船、矿车这类东西时用；坐在生物身上（马、骆驼）也算。
+VEHICLE_NAMES = {
+    # 不分木种的裸 id：有些整合包的船实体就叫 boat，说「船」比念 id 强
+    "minecraft:boat": "船",
+    "minecraft:chest_boat": "运输船",
+    "minecraft:oak_boat": "橡木船",
+    "minecraft:spruce_boat": "云杉木船",
+    "minecraft:birch_boat": "白桦木船",
+    "minecraft:jungle_boat": "丛林木船",
+    "minecraft:acacia_boat": "金合欢木船",
+    "minecraft:dark_oak_boat": "深色橡木船",
+    "minecraft:mangrove_boat": "红树木船",
+    "minecraft:cherry_boat": "樱花木船",
+    "minecraft:oak_chest_boat": "橡木运输船",
+    "minecraft:spruce_chest_boat": "云杉木运输船",
+    "minecraft:birch_chest_boat": "白桦木运输船",
+    "minecraft:jungle_chest_boat": "丛林木运输船",
+    "minecraft:acacia_chest_boat": "金合欢木运输船",
+    "minecraft:dark_oak_chest_boat": "深色橡木运输船",
+    "minecraft:mangrove_chest_boat": "红树木运输船",
+    "minecraft:cherry_chest_boat": "樱花木运输船",
+    "minecraft:bamboo_raft": "竹筏",
+    "minecraft:bamboo_chest_raft": "竹制运输筏",
+    "minecraft:minecart": "矿车",
+    "minecraft:chest_minecart": "运输矿车",
+    "minecraft:furnace_minecart": "动力矿车",
+    "minecraft:hopper_minecart": "漏斗矿车",
+    "minecraft:tnt_minecart": "TNT 矿车",
+    "minecraft:horse": "马",
+    "minecraft:donkey": "驴",
+    "minecraft:mule": "骡",
+    "minecraft:camel": "骆驼",
+    "minecraft:pig": "猪",
+    "minecraft:strider": "炽足兽",
+}
+
 # 常见生物的中文名。
 MOB_NAMES = {
     "minecraft:zombie": "僵尸",
@@ -619,9 +692,15 @@ _TASK_BY_NAME = {name: ident for ident, name in TASK_NAMES.items()}
 ATTACK_ALIASES = {
     "owner": "owner",
     "master": "owner",
-    "player": "owner",
     "主人": "owner",
-    "玩家": "owner",
+    "other_player": "other_player",
+    "player": "other_player",
+    "玩家": "other_player",
+    "另一个玩家": "other_player",
+    "另一个人": "other_player",
+    "其他玩家": "other_player",
+    "别的玩家": "other_player",
+    "别人": "other_player",
     "hostile": "hostile",
     "monster": "hostile",
     "敌对": "hostile",
@@ -696,6 +775,11 @@ ATTACK_STYLES = {
     "追着打": "fight",
     "打倒": "fight",
 }
+
+# 死亡状态的标记。写在死亡/复活旁白里，插件靠台词表里最后一条这样的旁白判断她还在不在
+# 死亡状态（插件没有跨调用状态，历史本身就是状态）。
+DEAD_STATE_MARK = "现在在MC里处于死亡状态"
+REVIVE_STATE_MARK = "已经在MC里复活了"
 
 # 「近」与「中」的分界（格）。再远一律说「远」。
 NEAR_CLOSE = 5.0
@@ -809,9 +893,12 @@ def attack_style(raw):
 
 
 def attack_target(raw):
-    """攻击目标：活物的中文名、英文短名、完整 id，或 owner / hostile / animal。
+    """攻击目标：活物的中文名、英文短名、完整 id、另一个玩家的名字，
+    或 owner / other_player / hostile / animal。
 
-    owner 是她主人（她可以真的打玩家）；hostile / animal 让模组按生物类别挑最近的一只。
+    owner 是她主人（她可以真的打玩家）；other_player 是另一个玩家，hostile / animal
+    让模组按生物类别挑最近的一只。另一个玩家在感知里只有名字，所以这里不把认不出的
+    英文写法硬补成 minecraft: ——模组会先按实体 id 认，再按玩家名认。
     认不出的给空串，由工具报错——瞎猜一个目标打出去比报错更糟。
     """
     text = (raw or "").strip()
@@ -821,14 +908,20 @@ def attack_target(raw):
     alias = ATTACK_ALIASES.get(lowered) or ATTACK_ALIASES.get(text)
     if alias:
         return alias
+    # 模型可能把感知里的整段称呼抄回来：「另一个玩家 Layeray」只取名字
+    for prefix in ("另一个玩家", "别的玩家", "其他玩家", "玩家"):
+        if text.startswith(prefix) and text[len(prefix):].strip():
+            text = text[len(prefix):].strip()
+            lowered = text.lower()
+            break
     known = _MOB_BY_NAME.get(text)
     if known:
         return known
     if ":" in lowered and " " not in lowered:
         return lowered
     if lowered.isascii() and lowered.replace("_", "").isalnum():
-        # 英文短名按原版实体认；模组实体请写全命名空间
-        return "minecraft:" + lowered
+        # 英文短名与玩家名都原样交给模组：它先试 minecraft:<名字>，再试玩家名
+        return lowered
     return ""
 
 
@@ -928,8 +1021,21 @@ def sighting(one):
     复述出来（「左前方 10.5 格有只蜘蛛」），而玩家并不需要知道这些。
     被挡住的实体不走这句：看不见就只剩声音，统一由调用方汇总成「听到…的声音」。
     """
-    who = who_of(one.get("category"), one.get("type"))
+    who = nearby_name(one)
     return f"{nearness_place(one.get('distance'))}的{who}"
+
+
+def nearby_name(one):
+    """身边那只活物叫什么：玩家用他在 MC 里的名字（她只叫得出这个），其余用生物名。
+
+    别的活物的显示名在专用服务端上是翻译键，所以协议里只有玩家带 name 字段。玩家的名字
+    前面缀一句「另一个玩家」，模型才分得清这是人而不是某种生物。
+    """
+    if (one.get("category") or "") == "player":
+        name = (one.get("name") or "").strip()
+        if name:
+            return f"另一个玩家 {name}"
+    return who_of(one.get("category"), one.get("type"))
 
 
 def heard_sounds(ones):
@@ -940,7 +1046,7 @@ def heard_sounds(ones):
     """
     names = []
     for one in ones:
-        name = who_of(one.get("category"), one.get("type"))
+        name = nearby_name(one)
         if name not in names:
             names.append(name)
     return f"{'和'.join(names)}的声音" if names else ""

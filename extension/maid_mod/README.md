@@ -61,9 +61,10 @@ Gradle 发行包走的是腾讯云镜像（见 `gradle/wrapper/gradle-wrapper.pr
 
 | 目录 | 管什么 |
 | --- | --- |
-| `action/` | 会改变世界或女仆状态的行为。`core` 是通用动作框架（走到/坐下/躺下），`attack`、`mine`、`task`、`give`、`feed` 各自独立；`LongTaskGuard` 判断「她手上有没有活」。 |
+| `action/` | 会改变世界或女仆状态的行为。`core` 是通用动作框架（走到/坐下/躺下），`attack`、`mine`、`task`、`give`、`headwear`、`feed` 各自独立；`LongTaskGuard` 判断「她手上有没有活」。 |
 | `bridge/` | 本机 WebSocket、信封、路由、协议常量。 |
 | `chat/` | 游戏内聊天双向：玩家打字推给 LingChat，角色回复变成气泡。 |
+| `voice/` | 游戏内语音：把 LingChat 的 TTS（WAV）分片广播给附近玩家，在女仆身上播放。 |
 | `perception/` | 一切「观察世界」。`world` 全局采样、`nearby` 身边采样、`query` 按需查询、`event` 受伤/死亡/成就、`item` 物品与背包、`carry` 抱放；`EventFrames`、`PerceptionProfiles`、`PerceptionSampler` 是这几层共用的帧外形、半径与采样门控。 |
 | `maid/` | 女仆身份、查询、监控目标、状态与背包只读清单。 |
 | `integration/` | 可选模组适配；目前只有 `carry`（Carry On）。 |
@@ -107,6 +108,7 @@ JSON 文本帧，信封固定是 `{"type": ..., "request_id": ..., "data": {...}
 | --- | --- | --- |
 | 插件 → 模组 | `ping` | 心跳，直接在网络线程回 `pong`，不受游戏暂停影响 |
 | 插件 → 模组 | `get_maid_status` | 返回当前已加载的女仆状态列表 |
+| 插件 → 模组 | `maid_state` | 问她现在是死的还是活的（死后实体已不在世上，查不到） |
 | 插件 → 模组 | `set_monitored_maid` | 告诉模组盯哪只女仆。**不发这条，玩家说话不会被推送** |
 | 插件 → 模组 | `send_chat` | 让女仆说一句话 |
 | 插件 → 模组 | `maid_action` | 让女仆做一个动作（见下） |
@@ -114,12 +116,16 @@ JSON 文本帧，信封固定是 `{"type": ..., "request_id": ..., "data": {...}
 | 插件 → 模组 | `maid_attack` | 让她去打指定的那个活物（见下） |
 | 插件 → 模组 | `maid_mine` | 让她去挖方块（见下） |
 | 插件 → 模组 | `maid_give_item` | 把她背包里的东西交给玩家（见下） |
+| 插件 → 模组 | `maid_headwear` | 把背包里的东西戴到她头上，或摘下来（见下） |
+| 插件 → 模组 | `play_tts` | 在女仆的位置播放一句 TTS 语音（WAV base64，见下） |
 | 插件 → 模组 | `maid_look_around` | 取一份她身边的详细快照（只读，见下） |
+| 模组 → 插件 | `maid_state_result` | 死活状态的回执：`maid_id` `dead` `known` |
 | 模组 → 插件 | `maid_action_result` | 动作的受理回执 |
 | 模组 → 插件 | `maid_set_task_result` | 换工作模式的回执 |
 | 模组 → 插件 | `maid_attack_result` | 攻击指令的回执 |
 | 模组 → 插件 | `maid_mine_result` | 挖掘指令的回执 |
 | 模组 → 插件 | `maid_give_item_result` | 交物品的回执 |
+| 模组 → 插件 | `maid_headwear_result` | 戴/摘头饰的回执 |
 | 模组 → 插件 | `maid_look_around_result` | 身边快照的回帧 |
 | 模组 → 插件 | `chat_message` | 玩家在游戏里说的话 |
 | 模组 → 插件 | `event` | 世界的事件（见下） |
@@ -136,6 +142,20 @@ JSON 文本帧，信封固定是 `{"type": ..., "request_id": ..., "data": {...}
 叠一句；`kaomoji` 缺省或为空时只显示台词气泡，老插件不带这个字段也能正常用。
 两枚的排布是**台词在左、颜文字在右**：气泡集合按到期时刻排序、渲染时第 0 枚画在右边，
 所以颜文字的寿命比台词少 10 tick。
+
+### `play_tts`：在游戏里播放一句语音
+
+```json
+{"type":"play_tts","data":{"maid_id":"...","format":"wav","audio":"<base64>"}}
+```
+
+- 只支持 **16-bit PCM WAV**（单/双声道）；mp3、24-bit、浮点 WAV 会被拒绝并记一行日志。
+- 播放走 MC 的声音引擎，绑定在女仆身上：按她的位置做约 64 格线性衰减，受游戏里
+  「语音」音量滑条控制；新的一句会打断上一句。
+- 与 `send_chat` 一样是单向推送，不回执；单句上限 8 MB。
+- 服务端把语音按 512 KB 分片，广播给女仆 64 格内、装了本模组的玩家，各客户端自己拼装
+  播放；单人游戏里房主也走同一条路。通道是可选注册，没装模组的玩家不会被拒绝加入，
+  也不会收到这些包。
 
 ### `maid_action`：动作
 
@@ -215,9 +235,10 @@ JSON 文本帧，信封固定是 `{"type": ..., "request_id": ..., "data": {...}
 {"type":"maid_attack","data":{"maid_id":"...","target":"minecraft:zombie","style":"fight"}}
 ```
 
-`target` 四种写法：`owner`（她主人）、`hostile`（最近的敌对生物）、`animal`（最近的动物）、
-或一个实体注册表 id（打最近的那一只）。插件负责把「僵尸」「zombie」翻成 id，写全命名空间
-的模组实体也认。
+`target` 五种写法：`owner`（她主人）、`other_player`（另一个玩家）、`hostile`（最近的敌对生物）、
+`animal`（最近的动物）、一个实体注册表 id（打最近的那一只），或者另一个玩家的名字
+（大小写不敏感，照感知里看到的那个名字说）。插件负责把「僵尸」「zombie」翻成 id，也把
+认不出的英文写法原样交过来——模组先按 `minecraft:<名字>` 认生物，再按玩家名认。
 
 `style` 两种力度：`fight`（默认，不给也是它）追上去一直打到对方倒下；`light` 只轻轻打
 一下就收手——那一下的伤害固定 1 点（半点血，穿甲更少），也不会替她换武器，用来逗她抬手。
@@ -230,7 +251,8 @@ JSON 文本帧，信封固定是 `{"type": ..., "request_id": ..., "data": {...}
   出手间隔按她的攻击速度算。玩家半夜喊一句也能打。
 - **顺手换武器**：背包里有带攻击力的东西就换到手上（和车万女仆自己的攻击模式同一口径），
   没有就空手打，回执里 `weapon=false`，插件会说明伤害很低。
-- **目标范围**：找目标看 32 格（用来区分「没有」与「太远」）。居家模式下目标要在她的活动
+- **目标范围**：找目标看 32 格（用来区分「没有」与「太远」）。同名玩家在同一个世界里、
+  只是超出 32 格时，回 `target_too_far` 并点名说明。居家模式下目标要在她的活动
   范围里，否则当场拒绝（`target_too_far`）；跟随模式不再限制「主人到目标」的距离——追打期间
   跟随行为的传送被 `LongTaskGuard` 拦住了（见「已知边界」），打完收工后跟随恢复。
 - **收工**：目标死了、被打断（新动作、换工作模式）或追满 30 秒，循环就停。她打死目标时
@@ -260,12 +282,19 @@ JSON 文本帧，信封固定是 `{"type": ..., "request_id": ..., "data": {...}
 - **自己驱动，不占任务槽**：和攻击一样不走车万女仆的任务/AI，`MaidMineController` 每 tick
   推进——找一块站得下、够得着、看得见、寻路走得到的落脚点，走过去，然后朝方块挖。
   她此刻在种地、钓鱼还是闲着都不影响。
+- **埋着的也能挖**：目标前面挡着方块时（矿脉在石头里、树干心在树皮里），她先朝目标
+  打一条射线，把先撞上的那块挖穿，再看下一块，直到目标露出来。挡路的方块不计入块数，
+  一次最多挖穿 24 块（`path_limit`）就收手。原来只认「有落脚点、看得见」的方块，
+  于是「看一眼周围」明明列着深层铁矿石、挖的时候却回「附近没有能挖到的这种方块」。
 - **按原版速度挖**：进度按方块硬度与手上工具算，正确工具是 `速度 / 硬度 / 30`、用错工具或
   徒手是 `/100`，只有硬度为负的方块（基岩）挖不动。裂纹按 `destroyBlockProgress` 发给
   客户端，玩家看得见进度，不会瞬破。
 - **自己换工具**：从背包里挑挖这一块最快、且能挖出掉落的工具换到手上（木镐不会顶掉钻石镐，
-  剑也不会被拿去挖石头）。方块要求正确工具而她没有时当场拒绝（`wrong_tool`）；不要求工具
-  的方块徒手也挖，只是慢。每挖穿一块扣一点耐久，挖断了就换背包里下一把。
+  剑也不会被拿去挖石头）。方块要求正确工具而她没有时当场拒绝（`wrong_tool`），`reason`
+  会写清缺哪种镐子（按原版工具阶梯判）、她手上现在拿的是什么、脚边地上有没有现成的工具
+  ——地上那把不算给过她，得先放进背包。不要求工具的方块徒手也挖，只是慢。
+  每挖穿一块扣一点耐久，挖断了就换背包里下一把。她的头饰栏不是存货，那一格里的东西
+  不会被当成工具换到手上。
 - **掉落进她的背包**：走车万女仆自己的 `destroyBlock`（带 `canEntityDestroy` 与
   NeoForge 的实体破坏事件），受保护的方块不挖；掉落物直接进背包，装不下才掉在地上。
 - **不受作息与工作模式限制**：玩家半夜喊一句也能挖。
@@ -281,7 +310,8 @@ JSON 文本帧，信封固定是 `{"type": ..., "request_id": ..., "data": {...}
 ```
 
 - `accepted=false` 是受理时就能判死的失败：没有这种方块、指着的那片和她附近都没有能挖到的、
-  方块挖不动、受保护、她走不到跟前、没有能挖它的工具、玩家不在这里。`reason` 是中文原因。
+  方块挖不动、受保护、没有能挖它的工具、玩家不在这里。`reason` 是中文原因。走不到跟前不再
+  当场拒绝——她会一路挖穿挡路的方块过去。
 - `async=true`：受理只代表开始挖了。挖穿 / 挖够 / 走不到由 `maid_mine_done` 事件交代，
   字段是 `status`（`done` / `partial` / `failed`）、`mined`、`wanted`、`block`、
   `reason_code`、`reason`。**插件在那之前不能说她挖到了。**
@@ -303,6 +333,25 @@ JSON 文本帧，信封固定是 `{"type": ..., "request_id": ..., "data": {...}
 - 回执（`maid_give_item_result`）：`accepted`、`item`、`name`、`count`（实际给了几件）、
   `requested`（要了几件）、`reason_code`、`reason`。给不足时不补事件，插件按两个数字
   自己说「她身上只有这么多」。
+
+### `maid_headwear`：头上顶东西
+
+```json
+{"type":"maid_headwear","data":{"maid_id":"...","action":"put","item":"minecraft:oak_planks"}}
+{"type":"maid_headwear","data":{"maid_id":"...","action":"take_off"}}
+```
+
+- 她背包的**最后一格是头饰栏**（`MaidBackpackHandler.BACKPACK_ITEM_SLOT`，索引 5）：
+  那一格里的东西顶在头上显示——放一块方块就是顶着一块方块。车万女仆自己会把这一格同步成
+  她的 `BACKPACK_ITEM_SHOW`。
+- `action=put` 时从背包里拿一件（`item` 是注册表 id）戴上去；`action=take_off`（或
+  `item` 为空）把头上的摘下来放回背包。换下来的旧头饰优先放回刚腾出来的那格，没有空位就
+  整件事撤掉并回 `no_space`，不会把东西弄丢。
+- 头饰栏不算背包存货：`maid_give_item` 的 `available` 清单、挖矿换工具都跳过这一格；
+  `maid_look_around` 的 `backpack` 也把它排除，另用 `headwear` 单独给出。
+- 物品被车万女仆的黑名单禁止放进背包时回 `not_allowed`（和女仆界面同一个口径）。
+- 回执（`maid_headwear_result`）：`accepted`、`action`、`item`、`name`、`headwear`
+  （操作之后头上是什么，空串表示没戴）、`reason_code`、`reason`。
 
 ### 喂她吃饭：潜行 + 右键食物
 
@@ -335,29 +384,39 @@ JSON 文本帧，信封固定是 `{"type": ..., "request_id": ..., "data": {...}
 | `time_phase_change` | 昼夜翻转（只推翻转那一次） | `phase` = `day` / `night` |
 | `weather_change` | 开始 / 停止下雨、打雷 | `raining` `thundering` |
 | `low_health` | 玩家或女仆血量跌破阈值（边沿触发） | `who` `name` `health` `max_health` |
-| `maid_hurt` | 女仆挨打（一小段连续挨打合成一条，两次上报至少隔 5 秒） | `damage` `count` `attacker` `damage_type` `health` `max_health` |
+| `maid_hurt` | 女仆挨打（一小段连续挨打合成一条，两次上报至少隔 5 秒） | `damage` `count` `attacker` `damage_type` `health` `max_health`（后两项是这一波最后一下之后的血量） |
 | `creature_death` | 附近（`noticeRadius` 内）有生物死亡（10 秒内只报第一条） | `type` `category` `distance` `attacker` `attacker_type` `damage_type` `victim_owner` `attacker_owner` `attacker_maid` |
+| `maid_death` | **她自己死了**：不吃死亡静默期，也不受距离限制 | `attacker` `attacker_type` `damage_type` `attacker_owner` `attacker_maid` |
+| `maid_revive` | **她通过胶片复活了**：监控目标改到新 uuid 的那只 | — |
 | `player_advancement` | 主人拿到了成就（原版「进度」；配方解锁这类没有展示信息的跳过） | `advancement` `title` `frame` = `task` / `goal` / `challenge` |
 | `maid_carried` | 她被 Carry On 抱了起来（没装那个模组就不会出现） | — |
 | `maid_dropped` | 她被放了下来 | — |
 | `action_done` | 动作收尾：成功、失败或被新动作顶掉 | `action` `target` `status` `reason_code` `reason` `elapsed_ticks` `distance` |
-| `player_proximity_change` | 与主人的远近跨档（回滞，30 秒内只报一次） | `from_proximity` `proximity` = `close` / `near` / `far` / `gone`，`distance` |
+| `player_proximity_change` | 与主人的远近跨档（回滞，5 秒内只报一次；插件只在跨到 `gone` 或从 `gone` 回来时写旁白） | `from_proximity` `proximity` = `close` / `near` / `far` / `gone`，`distance` |
 | `player_sight_change` | 主人进出视线（要连续两次采样一致才认） | `visible` |
 | `threat_near` | 附近**从无到有**敌对生物，或最近那只由远转近 | `type` `distance` `direction` `visible` |
 | `living_near` | 身边来了别的活物（主人以外的生物、别的玩家、别的女仆） | `type` `category` `distance` `direction` |
-| `shelter_change` | 从露天走进遮蔽处，或反过来 | `sheltered` |
-| `ground_change` | 脚下换了种值得说的地（水、岩浆、火、雪、沙、耕地、冰） | `block` `kind` |
-| `item_gift` | 主人把手里的物品丢在她身边（一小段连续投掷合成一条） | `items[{item,count}]` `distance` |
-| `item_pickup` | 她捡起地上的物品 | `item` `count` `from_owner` |
-| `item_received` | 她的背包里多出物品（多半是玩家在女仆界面里放的） | `items[{item,count}]` `from_owner` |
+| `shelter_change` | 从露天走进遮蔽处，或反过来 | `sheltered`，以及用于同键合并取最后一帧的 `tick` |
+| `ground_change` | 脚下换了种值得说的地（水、岩浆、火、雪、沙、耕地、冰）；坐在载具里不报 | `block` `kind` |
+| `vehicle_change` | 坐进船 / 矿车这类载具，或从上面下来 | `vehicle` `from_vehicle` |
+| `structure_change` | 走进或离开村庄、矿井、要塞这类结构（冷静期 30 秒） | `structure` `from_structure` |
+| `item_pickup` | 她真的把地上的物品收进了背包 | `item` `count` `from_owner` `source` `source_id` `source_name` |
+| `item_received` | 她身上多出物品（多半是玩家在女仆界面里放的）：背包、双手、盔甲栏、饰品栏都算 | `items[{item,count,slot}]`（`slot`：`hand` / `armor` / `bauble` / `backpack`） `from_owner` |
 | `item_fed` | 玩家喂她吃了东西（连喂几口合成一条） | `items[{item,count}]` |
 | `maid_ate` | 她自己从背包里找东西吃了（受伤后进食；停口 6 秒才算一顿，合并成一条） | `items[{item,count}]` |
 
 身边这一层 `threat_near` 与踩进岩浆 / 火里的 `ground_change` 算紧急，插件会当场请角色开口；
 其余（含 `shelter_change`、普通地面变化）走「攒够几条」那套。
-`creature_death` 里死的是她主人时也当场开口。
+`creature_death` 里死的是她主人时也当场开口；`maid_death` 与 `maid_revive` 一律当场开口——
+她倒下之后所有指令都只会回「找不到女仆」，这两条是插件唯一的信息来源。
+`maid_death` 会先清掉挨打那条还没推出去的累计：致命那一下也是 `LivingDamageEvent`，
+不丢就会「先报死、十 tick 后再报伤」，模型会以为自己还活着。
 物品那几条另有一套：收到玩家给的东西、被喂饭当场开口，玩家丢下的东西被她捡起来也当场
-开口；她自己捡到杂物、玩家只是丢在她脚边、她自己吃了东西，都只记旁白。
+开口；她自己捡到杂物、背包里多了东西、她自己吃了东西，都只记旁白。
+**地上的掉落物本身不报**：玩家随手丢下、怪物掉的、挖方块崩出来的，她没捡就与她无关。
+`item_pickup` 的 `source` 是 `owner` / `player` / `mob` / `block` / `unknown`（`player`
+时 `source_name` 是那个玩家在 MC 里的名字，`mob` / `block` 时 `source_id` 是生物或方块的
+注册表 id）；来源按「这件东西的主人是谁」与最近 30 秒内她附近的死亡 / 方块破坏认。
 
 每一帧都带 `maid_id`。没有天空的维度（下界 / 末地）不报天气与昼夜——那里这两样没有意义。
 
@@ -411,9 +470,12 @@ uuid 查不到她。本模组每 tick 反过来问「谁手里的那份 NBT 是�
   "standing_on":{"id":"minecraft:farmland","footing":"farmland"},
   "sheltered":false, "has_sky":true, "light":12,
   "owner":{"name":"NoiQing_Ling","distance":3.4,"visible":true,"same_dimension":true},
-  "nearby":[{"type":"minecraft:zombie","category":"hostile","distance":6.8,"direction":"left","visible":false}],
+  "nearby":[{"type":"minecraft:zombie","category":"hostile","distance":6.8,"direction":"left","visible":false,"name":""},
+            {"type":"minecraft:player","category":"player","distance":7.2,"direction":"right","visible":true,"name":"Layeray"}],
   "blocks":["minecraft:spruce_log","minecraft:dirt","minecraft:stone"],
   "backpack":[{"item":"minecraft:rose_bush","count":2},{"item":"minecraft:iron_pickaxe","count":1}],
+  "headwear":{"item":"minecraft:oak_planks","count":1},
+  "vehicle":"", "structure":"minecraft:village_plains",
   "truncated":false
 }}
 ```
@@ -423,6 +485,8 @@ uuid 查不到她。本模组每 tick 反过来问「谁手里的那份 NBT 是�
 - `looking_at.kind` 取 `block` / `entity` / `none`；方块用 OUTLINE 射线，草丛、火把、
   告示牌这些「看得见但没碰撞」的也算挡着（与视线判定的口径刻意不同：玻璃挡得住这条
   射线，挡不住视线）。
+- `blocks` 只列露在外面的方块，竖直范围从她脚下这一层往上：埋在地下、四面被石头包住的
+  矿石不算她看得见，不会出现在清单里。
 - `direction` 是相对她**身体**朝向的八向：`front` `front_right` `right` `back_right`
   `back` `back_left` `left` `front_left`。她不一定是面朝哪就看哪，而「她周围有什么」
   说的是她站着的方位；只有 `looking_at` 那条射线用头部朝向。
@@ -432,8 +496,15 @@ uuid 查不到她。本模组每 tick 反过来问「谁手里的那份 NBT 是�
   （默认 6 格）内保留——地表上走着、脚底下洞里十几格外的僵尸不该算她注意到的东西。
   看得见与否只用遮挡判定，不要求她面朝它。
 - `backpack` 是她背包里能交出去的东西（同类合并、最多 12 种，`{item,count}`），给
-  「把那个给我」这类指令一个能用的 id 清单；只列背包，不列她手上正在用的工具。老模组
-  不返回这个字段，插件不要据此说「背包是空的」。
+  「把那个给我」这类指令一个能用的 id 清单；只列背包，不列她手上正在用的工具，也不列
+  头饰栏。老模组不返回这个字段，插件不要据此说「背包是空的」。
+- `headwear` 是头饰栏（背包最后一格，顶在头上）里的东西，没有就不给这个字段；它与
+  `backpack` 互不重复。
+- `vehicle` 是她正坐着的载具实体 id（船、矿车、马这类），空串表示没坐；坐着的时候
+  `standing_on` 的那一格不是「地」，`ground_change` 也不会报。
+- `structure` 是她所在结构的注册表 id（村庄、矿井、要塞这类），空串表示不在结构里。
+- `nearby[].name` 只有玩家才有（其余活物的显示名在专用服务端上是翻译键），另一个玩家
+  在游戏里只叫得出这个名字，`maid_attack` 也照这个名字点名。
 - `blocks` 是附近**能挖的方块种类**，按最近一块的距离升序、去重、最多 12 种；不列空气、
   液体、没有碰撞体积的东西（草、花、火把）和挖不动的方块。玩家准星指着某处时以落点为中心，
   否则以她为中心；范围与 `maid_mine` 找方块时同口径（水平 24 格、竖直 8 格），所以模型可以
@@ -453,8 +524,13 @@ uuid 查不到她。本模组每 tick 反过来问「谁手里的那份 NBT 是�
 - **物品这一层依赖她自己的背包与拾物设置**：没有背包就装不下东西（界面里也放不进去），
   拾物模式没开就不会捡地上的物品。玩家在界面里交接没有事件可挂，只能前后比一次；
   主人就在 8 格内时 `item_received` 带 `from_owner=true`（界面必须贴身才打得开），
-  否则只报「背包里变多了」，不替别人认领。背包差分把双手一起算进来——她自己吃饭时
-  车万女仆会把整摞食物挪到手上，只看背包会把放回来的那摞当成「刚收到」。
+  否则只报「身上多了」，不替别人认领。看的是她的背包、双手、盔甲栏与饰品栏四处，
+  总数没变就说明只是在她身上挪了个位置（自己吃饭、换工具），不算收到东西；总数涨了才按
+  涨的那一处标 `slot`，插件据此说成「塞进手里」「穿在身上」「挂到饰品栏」「放进背包」。
+  她自己在挖方块时（以及挖完后的几秒）不报：
+  那些增量是挖下来的掉落，主人碰巧站在旁边时会被认成「主人放进去的」。
+  背包差分把双手一起算进来——她自己吃饭时车万女仆会把整摞食物挪到手上，
+  只看背包会把放回来的那摞当成「刚收到」。
 - 单人游戏按 Esc 暂停时游戏 tick 停止，请求会超时。插件那边会提示「游戏可能处于暂停或
   未响应状态」，不是卡死。反过来，动作的计时走的是游戏 tick，暂停期间**不算超时**。
 - **居家模式（禁足）会直接拒掉走不到的目标**：车万女仆每个 tick 都会清掉落在活动范围之外的
@@ -463,13 +539,19 @@ uuid 查不到她。本模组每 tick 反过来问「谁手里的那份 NBT 是�
   只覆盖这个模组自己切的那一次。
 - **攻击是模组自己驱动的**：每 tick 追、贴身、按攻击速度出手，不经过车万女仆的攻击 AI，
   所以她的工作模式与作息都不影响打不打得动；但她也追不出 16 格、追不进别的维度。
-- **挖掘同样是自己驱动的**：只挖够得着、看得见、走得到跟前的方块，不会为了挖一块矿向下
-  开隧道（那是「挖矿工作模式」的事，不在这一期）。找不到落脚点、被墙挡住、目标在岩浆里
-  都会如实失败。掉落物走她的背包，没有背包时掉在地上（她自己的拾物设置决定捡不捡）。
+- **挖掘同样是自己驱动的**：够得着就挖；够不着时先走过去，挡着就把挡路的挖穿（最多 24 块）。
+  目标在岩浆里、被保护、挖不动都会如实失败。掉落物走她的背包（车万女仆直接把掉落塞进库存），没有背包时掉在地上
+  （她自己的拾物设置决定捡不捡）。挖着和刚挖完的几秒里，背包增量不再触发
+  `item_received`——那些都是她自己挖下来的，结果由 `maid_mine_done` 交代。
+  连挖时第一块看她的位置，之后按「离刚挖掉的那块最近」找（树干上方那几块就是窗口跟着
+  上移）；水平找 32 格。落脚点按离目标最近挑、竖直往下多看 6 格，并且**走到落脚点才动手**——
+  原来一进五格交互距离就开挖，看起来像是在离树很远的地方挥镐。
 - **有活的时候不会被拽回来**：车万女仆的 `MaidFollowOwnerTask` 在主人离她超过「活动半径 + 2」时
   会把正在干活的女仆直接传送回主人身边，顺手清掉寻路目标。桥接用一个很小的服务端 mixin：
   她手上有活（攻击、挖方块、走过去/躺床，或非空闲工作模式）**且主人已经超出原版回头线**
   时，取消这个行为的启动；主人靠近时照常跟随，活干完或切回空闲立刻恢复。
+  攻击类的「有活」看**此刻有没有目标**：追打的时候可以离得很远，目标一没就恢复默认跟随距离
+  （不然她追出去很远之后会留在原地不回来）。
   **不动她的活动半径**，所以拾物、找床、找餐桌、跟随的距离全部与车万女仆原版一致。
 - **被抱起来的判定有两条路**：主路径是 Carry On 自己的 `EntityPickupEvent` 与
   `EntityJoinLevelEvent`；事件挂不上（版本对不上）时退回每 tick 翻玩家 carry NBT 的 UUID。

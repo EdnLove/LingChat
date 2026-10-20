@@ -23,7 +23,8 @@ def _attack(ctx):
         return {
             "ok": False,
             "error": f"没听懂要打谁：{raw or '（空）'}。可以说活物的名字（僵尸、羊），"
-            "或者 hostile（最近的敌对生物）、animal（最近的动物）、"
+            "另一个玩家的名字（照「看一眼周围」里的名字说），"
+            "或者 hostile（最近的敌对生物）、animal（最近的动物）、other_player（另一个玩家）、"
             f"owner（主人自己，也就是{player}）。",
         }
     style = attack_style((ctx.get("args") or {}).get("style"))
@@ -56,14 +57,11 @@ def _attack_text(frame, maid, player):
         fallback = (target.get("name") or "").strip() or "那个活物"
         who = name_of(MOB_NAMES, target.get("type"), fallback)
     if frame.get("style") == "light":
-        return f"{maid}会过去轻轻打{who}一下，打完就收手，不会追着打。"
-    parts = [f"{maid}已经开始攻击{who}。"]
+        return f"{maid}抬手轻轻拍了{who}一下，随即收手，没有追。"
+    parts = [f"{maid}提着家伙朝{who}冲了过去，第一下已经挥出。"]
     if not frame.get("weapon", True):
-        parts.append(f"{maid}手上没有武器，只能空手打，伤害很低。")
-    parts.append(
-        f"这个工具只下达攻击指令，{who}还没有倒下；"
-        f"{maid}会一直打到目标倒下或追不上为止。"
-    )
+        parts.append(f"{maid}手上没拿武器，只能空手打，落下去的力道很轻。")
+    parts.append(f"{who}还站着，这一架要打上一会儿——{maid}会追着它打，直到它倒下或者再也追不上。")
     return "".join(parts)
 
 

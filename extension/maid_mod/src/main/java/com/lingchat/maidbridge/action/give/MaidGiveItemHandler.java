@@ -69,6 +69,10 @@ public class MaidGiveItemHandler implements MessageHandler {
         int remaining = wanted;
         int given = 0;
         for (int slot = 0; slot < backpack.getSlots() && remaining > 0; slot++) {
+            // 头饰栏里的东西顶在头上，不算背包存货，交不出去
+            if (slot == MaidInventory.HEADWEAR_SLOT) {
+                continue;
+            }
             ItemStack stack = backpack.getStackInSlot(slot);
             if (stack.isEmpty() || !stack.is(item)) {
                 continue;

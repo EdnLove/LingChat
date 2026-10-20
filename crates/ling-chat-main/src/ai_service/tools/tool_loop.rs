@@ -14,6 +14,7 @@ use crate::ai_service::message_system::generator::GeneratorSource;
 use crate::ai_service::message_system::producer::{PresentationChunk, PresentationStream};
 use crate::ai_service::message_system::responses::event_names;
 use crate::ai_service::types::{LlmMessage, ToolDefinition};
+use crate::utils::prompt::{ReplyLengthMode, scan_reply_shape};
 
 use super::executor::{ToolContext, ToolExecutor};
 use super::registry::ToolRegistry;
@@ -23,14 +24,31 @@ use super::tool_rag::{apply_dynamic_search_description, effective_allowed};
 const MAX_PERSISTED_TOOL_RESULT_CHARS: usize = 32_000;
 const MAX_PERSISTED_SINGLE_TOOL_RESULT_CHARS: usize = 12_000;
 const TOOL_RESULT_TRUNCATION_MARKER: &str = "\n...[工具结果过长，长期记忆已截断]";
-const FINAL_SYNTHESIS_PROMPT: &str = "工具调用已达到本轮上限。请停止调用工具，基于已有工具结果直接给出最终答复；如仍有未完成事项，请明确说明。";
-/// 工具结果返回后的续写引导。部分模型会把上一轮台词当作已结束回合而重新开场，
-/// 导致同一句话在多轮工具调用间被反复复读；显式要求接着上文继续、禁止重复。
-const CONTINUATION_PROMPT: &str = "工具结果已返回。请接着你上一条回复的内容继续，绝对不要重复之前已经发送过的台词、动作描写或翻译行；直接基于工具结果汇报结果或进行下一步。";
+// 工具结果返回后的续写引导改由 ReplyLengthMode::tool_continuation_text 逐轮生成，
+// 它要报出这一回合还剩几句台词。原来那条写死的「接着上一条回复继续」等于鼓励继续
+// 说话，一个回合攒下十几句，钦灵：这是重构之后的福报~，这边注释先保留，之后有问题我再修
 /// 收尾轮只返回工具调用、没有任何正文时的补救提示：明确调用未执行、已无工具可用，
 /// 要求直接输出总结正文，避免整条回复落空触发前端报错。
 const FINAL_SYNTHESIS_RETRY_PROMPT: &str = "你刚才尝试调用的工具未被执行：当前已没有可用工具。请不要再尝试调用工具，直接基于已完成的工具结果，用正文给出最终答复；如仍有未完成事项，请明确说明。";
-const TOOL_USE_POLICY_PROMPT: &str = "你可以调用本请求随附的工具。用户要求执行文件读写/删除、命令运行、角色或场景切换等实际操作时，必须先真正调用相应工具，并在收到工具结果后再说明结果。绝不能只在思考中计划调用，或在没有成功工具结果时声称已经执行、删除、写入、切换或完成。需要用户确认的危险操作会由应用弹窗处理，请直接发起工具调用，不要用文字假装已经操作；如果工具失败、被拒绝或没有调用，必须明确说明操作尚未完成。";
+const TOOL_USE_POLICY_PROMPT: &str = "你可以调用本请求随附的工具。用户要求执行文件读写/删除、命令运行、角色或场景切换等实际操作时，必须先真正调用相应工具，并在收到工具结果后再说明结果。绝不能只在思考中计划调用，或在没有成功工具结果时声称已经执行、删除、写入、切换或完成。需要用户确认的危险操作会由应用弹窗处理，请直接发起工具调用，不要用文字假装已经操作；如果工具失败、被拒绝或没有调用，必须明确说明操作尚未完成。调用工具之前最多用一句话交代要做什么；多个互不依赖的操作在同一轮里一起发起，不要拆成多轮；两次工具调用之间可以完全不说话，工具结果不必复述。";
+
+/// 工具轮数用满、收掉工具定义后的收尾提示：还要报一次本回合的台词额度。
+fn final_synthesis_text(mode: ReplyLengthMode, spoken: usize) -> String {
+    let mut text = String::from(
+        "工具调用已达到本轮上限。请停止调用工具，基于已有工具结果直接给出最终答复；如仍有未完成事项，请明确说明。",
+    );
+    if let Some(budget) = mode.tool_turn_budget() {
+        let left = budget.saturating_sub(spoken);
+        if left == 0 {
+            text.push_str("本回合的台词额度已经用完，不必再输出台词。");
+        } else {
+            text.push_str(&format!(
+                "本回合已经说了 {spoken} 句台词，这一条最多再补 {left} 句。"
+            ));
+        }
+    }
+    text
+}
 
 /// Tool RAG 开启时的检索引导。
 ///
@@ -94,6 +112,7 @@ pub async fn stream_with_tool_loop(
     role_name: Option<String>,
     app: &AppHandle,
     recommended: &[String],
+    reply_mode: ReplyLengthMode,
 ) -> Result<ToolLoopResult> {
     // 每次回复开始时读取一次设置，避免同一轮执行期间修改配置导致边界跳变。
     let (settings, tool_rag) = {
@@ -156,6 +175,9 @@ pub async fn stream_with_tool_loop(
             messages.insert(1, LlmMessage::system(TOOL_SEARCH_PROMPT));
         }
         let mut persisted_tool_result_chars = 0usize;
+        // 这一回合已经说出去的台词句数：台词额度按整回合算，不按单轮算。
+        // 每轮各自守「1~2 句」的话，连着几个工具下来就是十几句，而且大半在复述旧事。
+        let mut spoken_lines = 0usize;
 
         // 收尾轮（无工具定义）可能仍返回工具调用且不给正文，多留一轮补救重试。
         let mut synthesis_retried = false;
@@ -165,7 +187,7 @@ pub async fn stream_with_tool_loop(
             if round == max_tool_rounds {
                 // 达到用户配置的工具轮数后保留一次不带工具定义的收尾生成，避免直接报错并
                 // 丢掉已经完成的工具结果。
-                messages.push(LlmMessage::system(FINAL_SYNTHESIS_PROMPT));
+                messages.push(LlmMessage::system(final_synthesis_text(reply_mode, spoken_lines)));
             }
             // 角色可以在上一轮工具执行中发生变化。每轮按当前角色重新计算权限，
             // 防止切换后沿用旧角色的工具授权。Tool RAG 下还要重算激活集：第 N 轮的
@@ -245,6 +267,8 @@ pub async fn stream_with_tool_loop(
 
             // 正常路径立即结束进度；流错误或消费方提前取消时由 Drop 自动兜底。
             drop(progress_end_guard);
+            // 这一轮说了几句：与纠偏同一套分句规则，够用来记整回合的账
+            spoken_lines += scan_reply_shape(&round_text).len();
 
             if tool_calls.is_empty() {
                 // 本轮没有工具调用，工具闭环结束
@@ -391,6 +415,10 @@ pub async fn stream_with_tool_loop(
                     &round_messages,
                 );
                 messages.extend(pending_images);
+                // 新角色的记忆里没有这一回合说过什么，台词额度得重新报一次
+                messages.push(LlmMessage::system(
+                    reply_mode.tool_continuation_text(spoken_lines),
+                ));
                 active_role_name = refreshed_name;
                 // rebase 用新角色的记忆整体替换了 messages，上面两条临时 system 提示
                 // 会一并丢失。新角色的激活缓存是空的，不补回提示模型就不知道
@@ -403,7 +431,9 @@ pub async fn stream_with_tool_loop(
             } else {
                 messages.extend(round_messages.clone());
                 messages.extend(pending_images);
-                messages.push(LlmMessage::system(CONTINUATION_PROMPT));
+                messages.push(LlmMessage::system(
+                    reply_mode.tool_continuation_text(spoken_lines),
+                ));
             }
 
             let persisted_messages = bounded_tool_history(

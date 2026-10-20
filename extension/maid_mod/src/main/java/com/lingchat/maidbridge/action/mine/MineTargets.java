@@ -1,6 +1,7 @@
 package com.lingchat.maidbridge.action.mine;
 
 import com.github.tartaricacid.touhoulittlemaid.entity.passive.EntityMaid;
+import com.lingchat.maidbridge.maid.MaidInventory;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -13,7 +14,10 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
@@ -36,7 +40,7 @@ public final class MineTargets {
     /** 她站着时眼睛到方块中心能到多远：比原版玩家略宽一点，免得站在方块正下方却够不着。 */
     private static final double EYE_REACH = MineRules.REACH + 0.5F;
     /** 找落脚点时最多验几个候选的寻路：每个候选都要算一次路径，不能把一圈全试完。 */
-    private static final int PATH_CHECKS = 6;
+    private static final int PATH_CHECKS = 8;
 
     private MineTargets() {
     }
@@ -83,7 +87,11 @@ public final class MineTargets {
     }
 
     /**
-     * 以 {@code center} 为中心找这一种方块，按离她远近排好。
+     * 以 {@code center} 为中心找这一种方块，按离中心的远近排好。
+     *
+     * <p>排序看的是扫描中心，不是她的身体：锚点时那里是玩家指着的那片，连挖时是刚挖掉的
+     * 那一块，只有第一块才是她自己站的地方。这样砍树会顺着树干往上接，而不是跳到旁边
+     * 离脚下更近的另一棵树。
      *
      * <p>只做粗筛（是不是这一族方块、能不能挖、在不在活动范围内），落脚点留给真正轮到的
      * 那几块再验：一圈几千个方块里逐个算路径是算不起的。
@@ -95,6 +103,8 @@ public final class MineTargets {
         if (targets.isEmpty() || !(maid.level() instanceof ServerLevel level)) {
             return found;
         }
+        // 竖直上下各 8 格：连挖时扫描中心是她刚挖掉的那块，窗口跟着树干一起往上走，
+        // 所以不用把范围撑大——真正卡人的是落脚点，见 standFor。
         int vertical = Math.min(radius, 8);
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
         for (int dx = -radius; dx <= radius; dx++) {
@@ -122,12 +132,16 @@ public final class MineTargets {
                 }
             }
         }
-        found.sort(Comparator.comparingDouble(block -> maid.distanceToSqr(Vec3.atCenterOf(block))));
+        found.sort(Comparator.comparingDouble(block -> center.distSqr(block)));
         return found.size() > limit ? new ArrayList<>(found.subList(0, limit)) : found;
     }
 
     /**
      * 站哪能挖到这一块：站得下、够得着、看得见，而且寻路能走到。找不到给 null。
+     *
+     * <p>准入点选**离目标最近**的那一处：她先贴到方块跟前再动手，不站在半路上隔空挥镐。
+     * 竖直往下多看几格（-6）：树干上方的方块只能站在树底下往上挖，只在目标周围 ±2 找的话，
+     * 高处那块就会「没有落脚点」，整棵树砍到一半就没了下文。
      *
      * <p>看得见按准星射线算：视线先碰到的必须是目标方块本身，隔着一堵墙挖是不行的。
      * 草、花这类没有碰撞体积的方块用轮廓射线，否则它们永远「看不见」。
@@ -139,8 +153,8 @@ public final class MineTargets {
         List<BlockPos> candidates = new ArrayList<>();
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
         for (int dx = -2; dx <= 2; dx++) {
-            for (int dy = -2; dy <= 2; dy++) {
-                for (int dz = -2; dz <= 2; dz++) {
+            for (int dz = -2; dz <= 2; dz++) {
+                for (int dy = -6; dy <= 2; dy++) {
                     if (dx == 0 && dy == 0 && dz == 0) {
                         continue;
                     }
@@ -152,23 +166,54 @@ public final class MineTargets {
                     if (maid.hasRestriction() && !maid.isWithinRestriction(stand)) {
                         continue;
                     }
-                    if (!reachableFrom(level, stand, target, maid)) {
-                        continue;
-                    }
                     candidates.add(stand);
                 }
             }
         }
-        candidates.sort(Comparator.comparingDouble(stand -> maid.distanceToSqr(Vec3.atBottomCenterOf(stand))));
+        candidates.sort(Comparator.comparingDouble(stand -> stand.distSqr(target)));
         int checks = Math.min(candidates.size(), PATH_CHECKS);
         for (int i = 0; i < checks; i++) {
             BlockPos stand = candidates.get(i);
+            if (!reachableFrom(level, stand, target, maid)) {
+                continue;
+            }
             // 已经站在跟前就不用再问寻路了
             if (stand.closerToCenterThan(maid.position(), 2.0) || maid.canPathReach(stand)) {
                 return stand;
             }
         }
         return null;
+    }
+
+    /**
+     * 挡在她和目标之间的那一块：从她眼睛打一条射线过去，先撞上的如果不是目标，就是它。
+     *
+     * <p>矿脉、树心那种埋在里面的方块，从任何落脚点都看不见；要么放弃，要么把挡路的挖穿。
+     * 这里只把「挡路的是哪一块」找出来，挖不挖、够不够得着由 {@link MaidMineController}
+     * 每 tick 判。看得见目标时给 null。
+     */
+    public static BlockPos blocking(EntityMaid maid, BlockPos target) {
+        if (!(maid.level() instanceof ServerLevel level)) {
+            return null;
+        }
+        BlockState state = level.getBlockState(target);
+        ClipContext.Block mode = state.getCollisionShape(level, target).isEmpty()
+                ? ClipContext.Block.OUTLINE
+                : ClipContext.Block.COLLIDER;
+        BlockHitResult hit = level.clip(new ClipContext(
+                maid.getEyePosition(), Vec3.atCenterOf(target), mode, ClipContext.Fluid.NONE, maid));
+        if (hit.getType() != HitResult.Type.BLOCK) {
+            return null;
+        }
+        BlockPos hitPos = hit.getBlockPos();
+        if (hitPos.equals(target)) {
+            return null;
+        }
+        BlockState blocker = level.getBlockState(hitPos);
+        if (blocker.isAir() || blocker.getBlock() instanceof LiquidBlock) {
+            return null;
+        }
+        return hitPos;
     }
 
     /** 她此刻能不能直接挖到这一块：够得着、看得见。 */
@@ -191,8 +236,15 @@ public final class MineTargets {
         if (maid.getMainHandItem().isCorrectToolForDrops(state)) {
             return true;
         }
+        // 副手拿着的工具也算「她身上有」：车万女仆的界面里两只手都能放东西
+        if (maid.getOffhandItem().isCorrectToolForDrops(state)) {
+            return true;
+        }
         CombinedInvWrapper backpack = maid.getAvailableBackpackInv();
         for (int slot = 0; slot < backpack.getSlots(); slot++) {
+            if (slot == MaidInventory.HEADWEAR_SLOT) {
+                continue;
+            }
             if (backpack.getStackInSlot(slot).isCorrectToolForDrops(state)) {
                 return true;
             }
@@ -201,17 +253,88 @@ public final class MineTargets {
     }
 
     /**
+     * 没有合适工具时的说明：她要什么、现在拿的是什么、地上有没有现成的。
+     *
+     * <p>只说「没有工具」会让模型反复重试——它明明看见主人给过一把镐子。所以这里把
+     * 「木镐挖不动铜矿石」与「石镐就在脚边地上，得放进她的背包」分开说清楚。
+     */
+    public static String missingToolReason(EntityMaid maid, BlockState state) {
+        String block = state.getBlock().getName().getString();
+        String need = neededTool(state);
+        String held = maid.getMainHandItem().isEmpty()
+                ? ""
+                : maid.getMainHandItem().getHoverName().getString();
+        StringBuilder reason = new StringBuilder();
+        if (held.isEmpty()) {
+            reason.append("她手上和背包里都没有能挖").append(block).append("的工具");
+        } else {
+            reason.append("她手上只有").append(held).append("，挖").append(block).append("不掉东西");
+        }
+        if (!need.isEmpty()) {
+            reason.append("，需要").append(need).append("或更好的");
+        }
+        String ground = groundToolName(maid, state);
+        if (!ground.isEmpty()) {
+            reason.append("；脚边地上有一把").append(ground).append("，得先放进她的背包");
+        }
+        return reason.toString();
+    }
+
+    /** 能挖这一块的最弱一件原版工具（石镐、铁镐这类）；判不出来给空串。 */
+    private static String neededTool(BlockState state) {
+        for (Item item : new Item[] {
+                Items.WOODEN_PICKAXE, Items.STONE_PICKAXE, Items.IRON_PICKAXE,
+                Items.DIAMOND_PICKAXE, Items.NETHERITE_PICKAXE}) {
+            ItemStack stack = new ItemStack(item);
+            if (stack.isCorrectToolForDrops(state)) {
+                return stack.getHoverName().getString();
+            }
+        }
+        ItemStack shears = new ItemStack(Items.SHEARS);
+        return shears.isCorrectToolForDrops(state) ? shears.getHoverName().getString() : "";
+    }
+
+    /** 她脚边地上有没有能挖这一块的工具（玩家丢在地上的那些）。 */
+    private static String groundToolName(EntityMaid maid, BlockState state) {
+        if (!(maid.level() instanceof ServerLevel level)) {
+            return "";
+        }
+        double reach = 8.0;
+        for (ItemEntity entity : level.getEntitiesOfClass(
+                ItemEntity.class, maid.getBoundingBox().inflate(reach), e -> e.isAlive())) {
+            ItemStack stack = entity.getItem();
+            if (!stack.isEmpty() && stack.isCorrectToolForDrops(state)) {
+                return stack.getHoverName().getString();
+            }
+        }
+        return "";
+    }
+
+    /**
      * 把背包里挖这一块最快的工具换到手上；手上本来就是最好的就不动。
      *
      * <p>只比较「正确工具」之间的速度：剑挖树叶再快也不该拿去挖石头，它掉不了东西。
+     * 头饰栏不是存货，那一格里的东西拿不下来。
      */
     public static void equipBestTool(EntityMaid maid, BlockState state) {
         ItemStack hand = maid.getMainHandItem();
         boolean handCorrect = hand.isCorrectToolForDrops(state);
         float bestSpeed = handCorrect ? hand.getDestroySpeed(state) : -1.0F;
+        // 副手拿着更快的正确工具就先与主手对调，之后再从背包里找更好的
+        ItemStack offhand = maid.getOffhandItem();
+        if (!offhand.isEmpty() && offhand.isCorrectToolForDrops(state)
+                && offhand.getDestroySpeed(state) > bestSpeed) {
+            bestSpeed = offhand.getDestroySpeed(state);
+            maid.setItemInHand(InteractionHand.OFF_HAND, hand);
+            maid.setItemInHand(InteractionHand.MAIN_HAND, offhand);
+            hand = maid.getMainHandItem();
+        }
         CombinedInvWrapper backpack = maid.getAvailableBackpackInv();
         int bestSlot = -1;
         for (int slot = 0; slot < backpack.getSlots(); slot++) {
+            if (slot == MaidInventory.HEADWEAR_SLOT) {
+                continue;
+            }
             ItemStack stack = backpack.getStackInSlot(slot);
             if (stack.isEmpty() || !stack.isCorrectToolForDrops(state)) {
                 continue;

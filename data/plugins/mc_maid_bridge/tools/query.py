@@ -10,6 +10,8 @@ from wording import (
     BLOCK_NAMES,
     DIMENSION_NAMES,
     MOB_NAMES,
+    STRUCTURE_NAMES,
+    VEHICLE_NAMES,
     as_int,
     item_name,
     light_phrase,
@@ -74,17 +76,27 @@ def _look_around_text(data):
 
     距离只给近 / 中 / 远，格数与血量不写：数字一进上下文，模型就会照本宣科地念出来。
     光照也只给档位（明亮 / 昏暗 / 漆黑），不给 0-15 的原始数值。
+    坐在船、矿车里时说载具，不说脚下踩着什么——那时候脚底下本来就没有「地」。
     """
     maid, player = names()
     dimension = name_of(DIMENSION_NAMES, data.get("dimension"), "某个世界")
     foot = name_of(BLOCK_NAMES, (data.get("standing_on") or {}).get("id"), "说不清的东西")
+    vehicle = (data.get("vehicle") or "").strip()
     # 下界与末地没有天空，不谈头顶
     roof = "" if data.get("has_sky") is False else (
         "头顶有遮挡，看不到天" if data.get("sheltered") else "头顶是露天的"
     )
     light = light_phrase(data.get("light"))
-    place = "，".join(one for one in (f"脚下是{foot}", roof, light) if one)
-    lines = [f"{maid}正站在{dimension}，{place}。"]
+    if vehicle:
+        rest = "，".join(one for one in (roof, light) if one)
+        seat = f"{maid}正坐在{dimension}的{name_of(VEHICLE_NAMES, vehicle, '载具')}里"
+        lines = [f"{seat}，{rest}。" if rest else f"{seat}。"]
+    else:
+        place = "，".join(one for one in (f"脚下踩着{foot}", roof, light) if one)
+        lines = [f"{maid}正站在{dimension}，{place}。"]
+    structure = (data.get("structure") or "").strip()
+    if structure:
+        lines.append(f"这里是一处{name_of(STRUCTURE_NAMES, structure, '结构')}。")
 
     look = data.get("looking_at") or {}
     look_kind = (look.get("kind") or "").strip()
@@ -95,7 +107,7 @@ def _look_around_text(data):
         entity = name_of(MOB_NAMES, look.get("id"), "一个活物")
         lines.append(f"正前方{nearness_place(look.get('distance'))}是{entity}。")
     else:
-        lines.append("正前方没有挡着的东西，视线是通的。")
+        lines.append("正前方空着，什么也没挡着。")
 
     # 老模组不返回 blocks：这时不能替它说「没有」，跳过这一句
     blocks = data.get("blocks")
@@ -108,14 +120,14 @@ def _look_around_text(data):
     # 老模组同样没有 backpack：不替它说「背包是空的」
     backpack = data.get("backpack")
     if backpack is not None:
-        lines.append(_backpack_text(backpack, maid))
+        lines.append(_backpack_text(backpack, maid, data.get("headwear")))
 
     lines.append(owner_phrase(data.get("owner") or {}, maid, player) + "。")
 
     creatures = creature_text(data)
     lines.append(creatures if creatures else "附近没有别的活物。")
     if data.get("truncated"):
-        lines.append("更远的没列出来。")
+        lines.append("更远的没再细看。")
     return "".join(lines)
 
 
@@ -125,11 +137,14 @@ def _blocks_text(blocks):
     for raw in blocks:
         name = BLOCK_NAMES.get(raw)
         listed.append(f"{name}（{raw}）" if name else raw)
-    return "附近能挖的方块有" + "、".join(listed) + "。"
+    return "眼前这一片能挖的有" + "、".join(listed) + "。"
 
 
-def _backpack_text(items, maid):
-    """她背包里有什么 → 一句带 id 的清单，模型可以直接拿 id 去调 maid_give_item。"""
+def _backpack_text(items, maid, headwear=None):
+    """她背包里有什么 → 一句带 id 的清单，模型可以直接拿 id 去调 maid_give_item。
+
+    最后一格是头饰栏，那一格里的东西顶在头上，不算背包存货，所以单独说。
+    """
     listed = []
     for one in items or []:
         if not isinstance(one, dict):
@@ -140,7 +155,11 @@ def _backpack_text(items, maid):
         count = as_int(one.get("count"), 1)
         piece = f"{item_name(raw)}（{raw}）"
         listed.append(f"{piece}×{count}" if count > 1 else piece)
-    return f"{maid}的背包里有" + "、".join(listed) + "。" if listed else f"{maid}的背包里没有别的东西。"
+    text = f"{maid}的背包里有" + "、".join(listed) + "。" if listed else f"{maid}的背包里没有别的东西。"
+    head = (headwear or {}).get("item") if isinstance(headwear, dict) else ""
+    if (head or "").strip():
+        text += f"头饰栏（背包最后一格，顶在头上）里是{item_name(head)}（{head.strip()}）。"
+    return text
 
 
 TOOLS = {

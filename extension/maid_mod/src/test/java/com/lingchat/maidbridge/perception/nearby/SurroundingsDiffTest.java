@@ -240,6 +240,62 @@ class SurroundingsDiffTest {
     }
 
     @Test
+    void enteringAndLeavingAVehicleIsReported() {
+        SurroundingsDiff.State state = new SurroundingsDiff.State();
+        SurroundingsDiff.events(null, plain(), state, 100L);
+
+        Surroundings boat = withVehicle(withFeet(plain(), ""), "minecraft:oak_boat");
+        List<JsonObject> frames = diff(plain(), boat, state, 200L);
+        assertEquals(List.of("vehicle_change"), types(frames), "坐进船里要说一句");
+        assertEquals("minecraft:oak_boat", frames.get(0).get("vehicle").getAsString());
+
+        Surroundings ashore = withFeet(plain(), "minecraft:sand");
+        assertEquals(
+                List.of("vehicle_change"),
+                types(diff(boat, ashore, state, 300L)),
+                "下船时只说下来了，不把脚下方块当成变化再报一次");
+    }
+
+    @Test
+    void ridingSilencesGroundChanges() {
+        SurroundingsDiff.State state = new SurroundingsDiff.State();
+        Surroundings water = withVehicle(withFeet(plain(), ""), "minecraft:oak_boat");
+        SurroundingsDiff.events(null, water, state, 100L);
+
+        Surroundings riverbed = withVehicle(withFeet(water, "minecraft:water"), "minecraft:oak_boat");
+        assertTrue(diff(water, riverbed, state, 200L).isEmpty(), "坐在船里没有「脚下踩着什么」可说");
+    }
+
+    @Test
+    void enteringAStructureIsReported() {
+        SurroundingsDiff.State state = new SurroundingsDiff.State();
+        SurroundingsDiff.events(null, plain(), state, 100L);
+
+        Surroundings village = withStructure(plain(), "minecraft:village_plains");
+        List<JsonObject> frames = diff(plain(), village, state, 200L);
+        assertEquals(List.of("structure_change"), types(frames));
+        assertEquals("minecraft:village_plains", frames.get(0).get("structure").getAsString());
+
+        Surroundings left = withStructure(village, "");
+        long later = 200L + SurroundingsDiff.STRUCTURE_COOLDOWN_TICKS;
+        List<JsonObject> gone = diff(village, left, state, later);
+        assertEquals(List.of("structure_change"), types(gone), "离开也要说");
+        assertEquals("minecraft:village_plains", gone.get(0).get("from_structure").getAsString());
+    }
+
+    @Test
+    void structureFlickerAtTheEdgeIsThrottled() {
+        SurroundingsDiff.State state = new SurroundingsDiff.State();
+        SurroundingsDiff.events(null, plain(), state, 100L);
+        Surroundings village = withStructure(plain(), "minecraft:village_plains");
+        diff(plain(), village, state, 200L);
+
+        assertTrue(
+                diff(village, plain(), state, 300L).isEmpty(),
+                "刚进村又出来：冷静期内不再说一句");
+    }
+
+    @Test
     void directionCoversEightWays() {
         assertEquals("front", Surroundings.direction(0.0, 0.0, 1.0), "面朝 +Z 时正前方就是 +Z");
         assertEquals("back", Surroundings.direction(0.0, 0.0, -1.0), "背后");
@@ -266,10 +322,10 @@ class SurroundingsDiffTest {
     void invisibleOnlyCountsWhenClose() {
         Surroundings.Profile profile = Surroundings.Profile.of(12.0, 6.0);
         List<Surroundings.Nearby> raw = new ArrayList<>();
-        raw.add(new Surroundings.Nearby("far-visible", "living", 11.0, "front", true));
-        raw.add(new Surroundings.Nearby("far-hidden", "living", 11.0, "front", false));
-        raw.add(new Surroundings.Nearby("close-hidden", "living", 5.0, "front", false));
-        raw.add(new Surroundings.Nearby("edge-visible", "living", 12.0, "front", true));
+        raw.add(new Surroundings.Nearby("far-visible", "living", 11.0, "front", true, ""));
+        raw.add(new Surroundings.Nearby("far-hidden", "living", 11.0, "front", false, ""));
+        raw.add(new Surroundings.Nearby("close-hidden", "living", 5.0, "front", false, ""));
+        raw.add(new Surroundings.Nearby("edge-visible", "living", 12.0, "front", true, ""));
 
         List<Surroundings.Nearby> kept = Surroundings.eligible(raw, profile);
         assertEquals(3, kept.size(), "看得见 12 格、看不见 6 格");
@@ -320,7 +376,9 @@ class SurroundingsDiffTest {
                 15,
                 owner,
                 nearby,
-                false);
+                false,
+                "",
+                "");
     }
 
     private static Surroundings.Owner owner(double distance, boolean visible, boolean sameDimension) {
@@ -328,36 +386,48 @@ class SurroundingsDiffTest {
     }
 
     private static Surroundings.Nearby mob(String type, String category, double distance) {
-        return new Surroundings.Nearby(type, category, distance, "front", true);
+        return new Surroundings.Nearby(type, category, distance, "front", true, "");
     }
 
     private static Surroundings withId(Surroundings s, String entityId) {
         return new Surroundings(
                 entityId, s.dimension(), s.gaze(), s.feetBlock(), s.footing(), s.skyAbove(), s.hasSky(),
-                s.light(), s.owner(), s.nearby(), s.nearbyTruncated());
+                s.light(), s.owner(), s.nearby(), s.nearbyTruncated(), s.vehicle(), s.structure());
     }
 
     private static Surroundings withNearby(Surroundings s, Surroundings.Nearby... nearby) {
         return new Surroundings(
                 s.entityId(), s.dimension(), s.gaze(), s.feetBlock(), s.footing(), s.skyAbove(), s.hasSky(),
-                s.light(), s.owner(), List.of(nearby), s.nearbyTruncated());
+                s.light(), s.owner(), List.of(nearby), s.nearbyTruncated(), s.vehicle(), s.structure());
     }
 
     private static Surroundings withFeet(Surroundings s, String block) {
         return new Surroundings(
                 s.entityId(), s.dimension(), s.gaze(), block, s.footing(), s.skyAbove(), s.hasSky(),
-                s.light(), s.owner(), s.nearby(), s.nearbyTruncated());
+                s.light(), s.owner(), s.nearby(), s.nearbyTruncated(), s.vehicle(), s.structure());
     }
 
     private static Surroundings withSky(Surroundings s, boolean skyAbove) {
         return new Surroundings(
                 s.entityId(), s.dimension(), s.gaze(), s.feetBlock(), s.footing(), skyAbove, s.hasSky(),
-                s.light(), s.owner(), s.nearby(), s.nearbyTruncated());
+                s.light(), s.owner(), s.nearby(), s.nearbyTruncated(), s.vehicle(), s.structure());
     }
 
     private static Surroundings withHasSky(Surroundings s, boolean hasSky) {
         return new Surroundings(
                 s.entityId(), s.dimension(), s.gaze(), s.feetBlock(), s.footing(), s.skyAbove(), hasSky,
-                s.light(), s.owner(), s.nearby(), s.nearbyTruncated());
+                s.light(), s.owner(), s.nearby(), s.nearbyTruncated(), s.vehicle(), s.structure());
+    }
+
+    private static Surroundings withVehicle(Surroundings s, String vehicle) {
+        return new Surroundings(
+                s.entityId(), s.dimension(), s.gaze(), s.feetBlock(), s.footing(), s.skyAbove(), s.hasSky(),
+                s.light(), s.owner(), s.nearby(), s.nearbyTruncated(), vehicle, s.structure());
+    }
+
+    private static Surroundings withStructure(Surroundings s, String structure) {
+        return new Surroundings(
+                s.entityId(), s.dimension(), s.gaze(), s.feetBlock(), s.footing(), s.skyAbove(), s.hasSky(),
+                s.light(), s.owner(), s.nearby(), s.nearbyTruncated(), s.vehicle(), structure);
     }
 }

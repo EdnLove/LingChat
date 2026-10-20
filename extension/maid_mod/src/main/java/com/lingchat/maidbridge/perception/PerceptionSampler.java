@@ -79,7 +79,9 @@ public final class PerceptionSampler {
             return;
         }
         EntityMaid maid = monitoredMaid(server);
-        if (maid == null) {
+        // 死了就当她不在：死亡动画那二十来 tick 里实体还查得到，血量 0 会再推一条
+        // 「伤得很重」，正好接在死亡旁白后面，模型于是以为自己还活着。
+        if (maid == null || !maid.isAlive()) {
             // 区块卸载后她查不到，这段空档要当成没看见：留着上一帧会让下一帧跨着空档做比较，
             // 凭一段过期基线推出「有僵尸出现在你附近」。她回来时全局那层重推一次现状，正好。
             last = null;

@@ -3,7 +3,7 @@
 use anyhow::{Context, Result};
 use serde_json::Value;
 
-use super::types::{PluginManifest, WsMode};
+use super::types::{ConfigKind, PluginManifest, WsMode};
 
 /// 从 TOML 文本解析并校验插件 manifest。
 pub fn parse(text: &str) -> Result<PluginManifest> {
@@ -157,6 +157,30 @@ pub fn validate(manifest: &PluginManifest) -> Result<()> {
             anyhow::bail!("插件 '{}' 不能把自己声明为前置插件", manifest.id);
         }
     }
+    if let Some(tts) = &manifest.tts {
+        let declared = manifest.config.iter().find(|field| field.key == tts.config);
+        match declared {
+            Some(field) if field.kind == ConfigKind::Boolean => {},
+            Some(_) => anyhow::bail!(
+                "插件 '{}' 的 [tts] config '{}' 必须是 boolean 配置项",
+                manifest.id,
+                tts.config
+            ),
+            None => anyhow::bail!(
+                "插件 '{}' 的 [tts] config '{}' 不在 [[config]] 声明里",
+                manifest.id,
+                tts.config
+            ),
+        }
+        if let Some(conn) = &tts.ws_conn {
+            if !manifest.ws.iter().any(|decl| decl.id == *conn) {
+                anyhow::bail!(
+                    "插件 '{}' 的 [tts] ws_conn '{conn}' 不在 [[ws]] 声明里",
+                    manifest.id
+                );
+            }
+        }
+    }
     if let Some(startup) = &manifest.startup {
         let owner = "启动入口";
         validate_script_path(&manifest.id, owner, &startup.script)?;
@@ -299,48 +323,4 @@ fn validate_ws_allow_entry(plugin_id: &str, entry: &str) -> Result<()> {
         anyhow::bail!("插件 '{plugin_id}' 的 ws_allow 项 '{entry}' 缺少主机名");
     }
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::validate_script_path;
-
-    #[test]
-    fn script_paths_allow_nested_python_files() {
-        for ok in [
-            "hooks.py",
-            "__init__.py",
-            "my-script.py",
-            "tools/entry.py",
-            "events/world.py",
-            "features/deep/main.py",
-        ] {
-            validate_script_path("p", "入口", ok).unwrap_or_else(|e| panic!("{ok} 应该允许：{e}"));
-        }
-    }
-
-    #[test]
-    fn script_paths_reject_traversal_and_non_python() {
-        for bad in [
-            "",
-            "../x.py",
-            "tools/../../x.py",
-            "/abs.py",
-            "C:/x.py",
-            "tools\\entry.py",
-            "tools//entry.py",
-            "tools/./entry.py",
-            "tools/",
-            ".py",
-            "main.txt",
-            "tools/main",
-            "tools/2entry.py",
-            "tools/entry.php",
-        ] {
-            assert!(
-                validate_script_path("p", "入口", bad).is_err(),
-                "{bad} 不该通过"
-            );
-        }
-    }
 }

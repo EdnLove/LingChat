@@ -411,12 +411,29 @@ const keepResource = async (id: string, res: PluginResourceEntry) => {
   }
 };
 
+/** 用已保存的值与 manifest 默认值初始化表单；secret 不回填，保存时由后端保留旧值。 */
+const initFormState = (plugin: PluginInfo) => {
+  const values: Record<string, unknown> = {};
+  for (const field of plugin.config_schema) {
+    if (field.kind === "secret") continue;
+    const saved = plugin.config?.[field.key];
+    if (saved !== undefined && saved !== null) {
+      values[field.key] = saved;
+    } else if (field.default !== undefined) {
+      values[field.key] = field.default;
+    } else if (field.kind === "boolean") {
+      values[field.key] = false;
+    }
+  }
+  return values;
+};
+
 const load = async () => {
   try {
     plugins.value = await listPlugins();
     for (const plugin of plugins.value) {
       if (!formState[plugin.id]) {
-        formState[plugin.id] = {};
+        formState[plugin.id] = initFormState(plugin);
       }
       // 声明了资源且面板已展开的，刷新条目
       if (plugin.resources.length && expandedResources[plugin.id]) {

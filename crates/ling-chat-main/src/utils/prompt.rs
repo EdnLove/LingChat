@@ -459,6 +459,39 @@ impl ReplyLengthMode {
         }
     }
 
+    /// 一个带工具调用的回合里，台词总数的上限；自由档不设限。
+    ///
+    /// 工具闭环会把玩家的一次发言拆成多轮生成，每轮各自守「1~2 句」，一个回合累起来
+    /// 能说十几句。这里给整个回合一个总额度，由工具闭环逐轮报给模型。
+    pub fn tool_turn_budget(self) -> Option<usize> {
+        match self {
+            Self::Short => Some(3),
+            Self::Normal => Some(5),
+            Self::Free => None,
+        }
+    }
+
+    /// 工具结果返回后的续写提示：这一回合还剩几句台词的额度。
+    ///
+    /// `spoken` 是本回合到目前为止已经说出去的句数。除了报额度，还要把「不用复述」
+    /// 与「不需要说话就别说话」写清楚——模型手里没有新事实时，默认动作就是复述上一轮。
+    pub fn tool_continuation_text(self, spoken: usize) -> String {
+        let mut text = String::from(
+            "工具结果已返回。互不依赖的多个操作可以在这一轮一起调用；工具结果不用复述，也不要重复之前已经说过的内容。",
+        );
+        match self.tool_turn_budget() {
+            None => text.push_str("不需要说话就不要输出台词，直接调用工具或收尾。"),
+            Some(budget) if spoken >= budget => text.push_str(&format!(
+                "本回合的台词额度已经用完（{spoken}/{budget} 句）：接下来只允许调用工具，非必要不要再输出任何台词；工具都做完后直接结束这一回合。"
+            )),
+            Some(budget) => text.push_str(&format!(
+                "本回合已经说了 {spoken} 句台词，上限 {budget} 句，还能说 {} 句。要继续操作就直接调用工具；不需要说话就不要输出台词。",
+                budget - spoken
+            )),
+        }
+        text
+    }
+
     /// 回复条数越界时的纠偏提示；在容忍区间内或自由档返回 None。
     pub fn correction_text(self, actual: usize) -> Option<String> {
         let (min, max) = self.accepted_range()?;
@@ -655,4 +688,39 @@ fn format_error_text(round: &[LineShape], expect_translation: bool) -> Option<St
         "你上一条回复的格式有误：{}。{rule}",
         missing.join("、")
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tool_budget_follows_reply_mode() {
+        assert_eq!(ReplyLengthMode::Short.tool_turn_budget(), Some(3));
+        assert_eq!(ReplyLengthMode::Normal.tool_turn_budget(), Some(5));
+        assert_eq!(ReplyLengthMode::Free.tool_turn_budget(), None);
+    }
+
+    #[test]
+    fn continuation_reports_remaining_lines() {
+        let text = ReplyLengthMode::Short.tool_continuation_text(1);
+        assert!(text.contains("已经说了 1 句"));
+        assert!(text.contains("上限 3 句"));
+        assert!(text.contains("还能说 2 句"));
+        assert!(!text.contains("额度已经用完"));
+    }
+
+    #[test]
+    fn continuation_forbids_speech_when_budget_spent() {
+        let text = ReplyLengthMode::Short.tool_continuation_text(3);
+        assert!(text.contains("已经用完"));
+        assert!(text.contains("只允许调用工具"));
+    }
+
+    #[test]
+    fn continuation_without_budget_still_allows_silence() {
+        let text = ReplyLengthMode::Free.tool_continuation_text(12);
+        assert!(text.contains("不需要说话就不要输出台词"));
+        assert!(!text.contains("额度"));
+    }
 }

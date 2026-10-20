@@ -34,6 +34,8 @@ public final class SurroundingsDiff {
     public static final long SIGHT_COOLDOWN_TICKS = 200L;
     public static final long SHELTER_COOLDOWN_TICKS = 400L;
     public static final long GROUND_COOLDOWN_TICKS = 600L;
+    /** 进出结构的最短重报间隔：在村子边上走来走去不该反复说。 */
+    public static final long STRUCTURE_COOLDOWN_TICKS = 600L;
 
     /**
      * 敌对生物的最短重报间隔：两分钟。
@@ -111,6 +113,8 @@ public final class SurroundingsDiff {
         private long lastSurfaceTick = Long.MIN_VALUE;
         /** 活物种类 → 上次为它写过旁白的 tick。 */
         private final KeyedCooldown living = new KeyedCooldown();
+        /** 上次报结构变化的时间：在村子边上反复进出不该刷屏。 */
+        private long lastStructureTick = Long.MIN_VALUE;
 
         /** 换了监控对象、重新接上、或女仆离开已加载区块时清掉，免得拿旧世界的状态去比。 */
         public void reset() {
@@ -121,6 +125,7 @@ public final class SurroundingsDiff {
             lastThreatTick = Long.MIN_VALUE;
             lastSurfaceTick = Long.MIN_VALUE;
             living.reset();
+            lastStructureTick = Long.MIN_VALUE;
         }
     }
 
@@ -143,6 +148,8 @@ public final class SurroundingsDiff {
         addThreat(frames, next, state, nowTick);
         addLiving(frames, prev, next, state, nowTick);
         addShelter(frames, prev, next, state, nowTick);
+        addVehicle(frames, prev, next);
+        addStructure(frames, prev, next, state, nowTick);
         addGround(frames, prev, next, state, nowTick);
         return frames;
     }
@@ -255,12 +262,46 @@ public final class SurroundingsDiff {
         state.lastSurfaceTick = nowTick;
         JsonObject frame = EventFrames.base("shelter_change", next.entityId());
         frame.addProperty("sheltered", !next.skyAbove());
+        // 同一段时间里先进树荫又走出来时，两句并排记下来读着像来回折腾。插件按这个
+        // tick 把同键的合成一条，只留最后那次（数值大的胜出）。
+        frame.addProperty("tick", nowTick);
+        frames.add(frame);
+    }
+
+    /** 上去或下来了：船、矿车这类载具。坐在里面的时候脚下没有「地」可说。 */
+    private static void addVehicle(List<JsonObject> frames, Surroundings prev, Surroundings next) {
+        if (prev.vehicle().equals(next.vehicle())) {
+            return;
+        }
+        JsonObject frame = EventFrames.base("vehicle_change", next.entityId());
+        frame.addProperty("vehicle", next.vehicle());
+        frame.addProperty("from_vehicle", prev.vehicle());
+        frames.add(frame);
+    }
+
+    /** 走进或离开一处结构（村庄、矿井这类）。只在真的换了结构时报，且有冷静期。 */
+    private static void addStructure(
+            List<JsonObject> frames, Surroundings prev, Surroundings next, State state, long nowTick) {
+        if (prev.structure().equals(next.structure())) {
+            return;
+        }
+        if (nowTick < state.lastStructureTick + STRUCTURE_COOLDOWN_TICKS) {
+            return;
+        }
+        state.lastStructureTick = nowTick;
+        JsonObject frame = EventFrames.base("structure_change", next.entityId());
+        frame.addProperty("structure", next.structure());
+        frame.addProperty("from_structure", prev.structure());
         frames.add(frame);
     }
 
     /** 脚下换了种地。只在「值得说」的几种之间变时报，走在石头路上不报。 */
     private static void addGround(
             List<JsonObject> frames, Surroundings prev, Surroundings next, State state, long nowTick) {
+        // 坐在载具里脚下没有地：上下车那一下不当作「踩进了水里/沙地上」
+        if (!next.vehicle().isEmpty() || !prev.vehicle().isEmpty()) {
+            return;
+        }
         String kind = GroundKind.of(next.feetBlock());
         if (kind.isEmpty() || kind.equals(GroundKind.of(prev.feetBlock()))) {
             return;

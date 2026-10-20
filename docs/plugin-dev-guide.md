@@ -101,7 +101,7 @@ script = "tavily.py"
 parameters = '{ "type":"object", "properties":{ "query":{"type":"string"}, "max_results":{"type":"integer","default":5} }, "required":["query"] }'
 ```
 
-除工具与资源，插件还可以订阅宿主信号（`[[subscribe]]`）、声明 WebSocket 连接（`[[ws]]` 与 `ws_allow`）、声明启动入口（`[startup]`）、前置插件（`depends_on`）、可读素材范围（`read`）、把外部消息送进对话的能力（`send_user_message`）、送消息时顺带抓一张屏幕的能力（`capture_screen`）以及请求角色主动开口的能力（`trigger_proactive`），见后文对应章节。
+除工具与资源，插件还可以订阅宿主信号（`[[subscribe]]`）、声明 WebSocket 连接（`[[ws]]` 与 `ws_allow`）、声明启动入口（`[startup]`）、前置插件（`depends_on`）、可读素材范围（`read`）、把外部消息送进对话的能力（`send_user_message`）、送消息时顺带抓一张屏幕的能力（`capture_screen`）、请求角色主动开口的能力（`trigger_proactive`）以及接管实时台词语音（`[tts]`），见后文对应章节。
 
 **工具的下发与权限**：插件启用时，宿主会把它声明的工具一并授权给默认角色组（与工具设置页里打开开关同义），工具才会随主聊天下发给 LLM、也才能进 Tool RAG 的候选池；同时也会写进「主动对话」映射到的场景组，让游戏事件触发的那一轮也搜得到、调得动（场景组是一份早先写死的工具快照，不补进去的话插件工具只在玩家开口的那一轮可用）。禁用插件时两处授权一起收回。
 
@@ -554,6 +554,25 @@ depends_on = ["base_lib", "net_core"]   # 插件 id，不是显示名
 - **前置被禁用或卸载时，依赖它的插件会被自动禁用**（前置没了之后它调用上游工具会直接失败）。含传递依赖。
 - **不自动恢复**：前置重新启用后，下游插件需要手动重新启用（卡片上会显示被禁用的原因）。
 - 只有**启用与启动**时会查前置；导入插件时不校验，前置可以稍后再装。
+
+## 接管语音播放：`[tts]`
+
+插件可以接管宿主的**实时台词语音**：开关打开且声明的 WS 连接在线时，LingChat 本机静音，
+音频由插件自己转发给外部程序播放。历史记录里手动点播的语音不受影响。
+
+```toml
+[tts]
+config = "play_in_game"   # 必须是 [[config]] 里声明过的 boolean
+ws_conn = "bridge"        # 可选：该连接不在 Connected 状态时不接管，回落到本机
+```
+
+- `config` 指向的开关由玩家在插件设置页控制，保存后下一句立即生效。
+- 声明 `ws_conn` 后，宿主每句播放前查一次连接状态：断线就回到本机播放，重连后自动再接管。
+- 多个插件同时声明时先到先得。
+- 宿主只负责静音与让你知道「这一句由你播」；音频怎么送到外部由插件自己决定。实时语音
+  的载荷与 `line_shown` 相同，`audioFile` 是 `data/voice/` 下的裸文件名，可用
+  `read_data_file("voice/<audioFile>")` 取字节（记得在 manifest 的 `read` 里声明 `voice`）。
+- 宿主会以 0 音量照常「播放」本机音频来维持自动推进与 ASR 门控，插件不需要回报播放进度。
 
 ## 启动入口：`[startup]`
 

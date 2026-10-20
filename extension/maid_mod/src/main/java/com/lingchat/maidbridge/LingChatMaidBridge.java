@@ -14,7 +14,9 @@ import com.lingchat.maidbridge.perception.item.BackpackWatcher;
 import com.lingchat.maidbridge.perception.item.ItemReporter;
 import com.lingchat.maidbridge.action.feed.MaidFeeder;
 import com.lingchat.maidbridge.action.give.MaidGiveItemHandler;
+import com.lingchat.maidbridge.action.headwear.MaidHeadwearHandler;
 import com.lingchat.maidbridge.maid.MaidStatusHandler;
+import com.lingchat.maidbridge.maid.MaidStateHandler;
 import com.lingchat.maidbridge.action.task.MaidTaskHandler;
 import com.lingchat.maidbridge.maid.MonitoredMaidHandler;
 import com.lingchat.maidbridge.action.mine.MaidMineController;
@@ -24,6 +26,8 @@ import com.lingchat.maidbridge.perception.event.DeathReporter;
 import com.lingchat.maidbridge.perception.event.HurtReporter;
 import com.lingchat.maidbridge.perception.PerceptionSampler;
 import com.lingchat.maidbridge.perception.query.LookAroundHandler;
+import com.lingchat.maidbridge.voice.PlayTtsHandler;
+import com.lingchat.maidbridge.voice.TtsPayload;
 import net.minecraft.server.MinecraftServer;
 import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.IEventBus;
@@ -34,6 +38,7 @@ import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
+import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -60,6 +65,7 @@ public class LingChatMaidBridge {
 
     public LingChatMaidBridge(IEventBus modEventBus, ModContainer modContainer) {
         modContainer.registerConfig(ModConfig.Type.COMMON, MaidBridgeConfig.SPEC);
+        modEventBus.addListener(LingChatMaidBridge::onRegisterPayloads);
 
         // Carry On 是可选依赖：没装时连它的类都不该碰。事件挂在它自己的类里，这里用
         // Class.forName 隔一层——直接引用 CarryOnEvents 的话，它方法签名里的 Carry On
@@ -81,10 +87,13 @@ public class LingChatMaidBridge {
         NeoForge.EVENT_BUS.addListener(HurtReporter::onDamage);
         // 附近有东西死了：全世界每次死亡都会发，认位置与静默期在 DeathReporter 里
         NeoForge.EVENT_BUS.addListener(DeathReporter::onDeath);
+        // 胶片/神龛把女仆复活：复活出来的是一只新 uuid 的实体，监控目标要跟着换
+        NeoForge.EVENT_BUS.addListener(DeathReporter::onMaidFromItem);
         // 主人拿到成就（原版进度）；只认有展示信息的那一类
         NeoForge.EVENT_BUS.addListener(AchievementReporter::onAdvancement);
-        // 物品的来去：主人丢给她的、她捡起来的、喂给她吃的、她自己吃的、交给主人的
-        NeoForge.EVENT_BUS.addListener(ItemReporter::onToss);
+        // 物品的来去：她捡起来的（连同来源）、喂给她吃的、她自己吃的
+        NeoForge.EVENT_BUS.addListener(ItemReporter::onDeath);
+        NeoForge.EVENT_BUS.addListener(ItemReporter::onBlockBreak);
         NeoForge.EVENT_BUS.addListener(ItemReporter::onPickupPre);
         NeoForge.EVENT_BUS.addListener(ItemReporter::onPickupPost);
         NeoForge.EVENT_BUS.addListener(ItemReporter::onItemUseFinish);
@@ -99,6 +108,10 @@ public class LingChatMaidBridge {
         return bridge;
     }
 
+    private static void onRegisterPayloads(RegisterPayloadHandlersEvent event) {
+        TtsPayload.register(event.registrar("1"));
+    }
+
     private static void onServerStarting(ServerStartingEvent event) {
         if (!MaidBridgeConfig.ENABLED.get()) {
             LOGGER.info("桥接总开关是关的，不监听端口");
@@ -108,6 +121,7 @@ public class LingChatMaidBridge {
 
         MessageRouter newRouter = new MessageRouter();
         newRouter.register(Protocol.GET_MAID_STATUS, new MaidStatusHandler(server));
+        newRouter.register(Protocol.MAID_STATE, new MaidStateHandler());
         newRouter.register(Protocol.SET_MONITORED_MAID, new MonitoredMaidHandler(server));
         newRouter.register(Protocol.SEND_CHAT, new SendChatHandler(server));
         newRouter.register(Protocol.MAID_ACTION, new MaidActionHandler(server));
@@ -116,6 +130,8 @@ public class LingChatMaidBridge {
         newRouter.register(Protocol.MAID_ATTACK, new MaidAttackHandler(server));
         newRouter.register(Protocol.MAID_MINE, new MaidMineHandler(server));
         newRouter.register(Protocol.MAID_GIVE_ITEM, new MaidGiveItemHandler(server));
+        newRouter.register(Protocol.MAID_HEADWEAR, new MaidHeadwearHandler(server));
+        newRouter.register(Protocol.PLAY_TTS, new PlayTtsHandler(server));
         router = newRouter;
 
         try {

@@ -17,20 +17,23 @@ import java.util.function.Predicate;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.decoration.ArmorStand;
 import net.minecraft.world.entity.monster.Enemy;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.AABB;
 
 /**
  * {@code maid_attack}：让她去打指定的那个活物。
  *
- * <p>目标由插件翻成 {@code owner} / {@code hostile} / {@code animal} 或一个实体注册表 id，
- * 这里找离她最近的那一个。<b>不走车万女仆的 {@code canAttack} 白名单</b>：主人自己也算目标，
- * 村民、动物、别的玩家都能点名——这是这个工具存在的意义，该不该打由玩家决定。
+ * <p>目标由插件翻成 {@code owner} / {@code other_player} / {@code hostile} / {@code animal}、
+ * 一个实体注册表 id，或者另一个玩家的名字，这里找离她最近的那一个。<b>不走车万女仆的
+ * {@code canAttack} 白名单</b>：主人自己也算目标，村民、动物、别的玩家都能点名——这是这个
+ * 工具存在的意义，该不该打由玩家决定。
  *
  * <p>受理之后就交给 {@link MaidAttackController} 每 tick 推进：追过去、贴身、按攻击速度
  * 一下一下地打。不依赖她的日程表、工作模式与车万女仆自己的攻击 AI，玩家半夜喊一句也能打。
@@ -70,6 +73,10 @@ public class MaidAttackHandler implements MessageHandler {
         boolean singleHit = "light".equalsIgnoreCase(rawStyle == null ? "" : rawStyle.trim());
         LivingEntity target = findTarget(maid, token);
         if (target == null) {
+            ServerPlayer far = namedPlayerOutOfRange(maid, token);
+            if (far != null) {
+                return rejected("target_too_far", far.getName().getString() + "离她太远，先走近一点再让她打", token);
+            }
             return rejected("no_target", "她附近没有这样的活物", token);
         }
         double distance = Math.sqrt(maid.distanceToSqr(target));
@@ -136,7 +143,8 @@ public class MaidAttackHandler implements MessageHandler {
         if ("owner".equals(token)) {
             return maid.getOwner() instanceof LivingEntity owner ? owner : null;
         }
-        Predicate<LivingEntity> matches = matcher(token);
+        ServerPlayer owner = MaidQueries.owner(maid);
+        Predicate<LivingEntity> matches = matcher(token, owner);
         AABB area = maid.getBoundingBox().inflate(FIND_RADIUS, 8.0, FIND_RADIUS);
         return maid.level()
                 .getEntitiesOfClass(LivingEntity.class, area,
@@ -147,7 +155,14 @@ public class MaidAttackHandler implements MessageHandler {
                 .orElse(null);
     }
 
-    private static Predicate<LivingEntity> matcher(String token) {
+    /**
+     * 点名的是谁。
+     *
+     * <p>{@code other_player} 是「主人以外最近的那个玩家」；此外的写法先按实体注册表 id 认
+     * （插件把中文名翻成 id、英文短名补成 {@code minecraft:短名}），再按玩家名认——另一个
+     * 玩家在感知里只有名字，模型能照着名字叫出「打 Layeray」。
+     */
+    private static Predicate<LivingEntity> matcher(String token, ServerPlayer owner) {
         if ("hostile".equals(token)) {
             // 与身边那一圈用同一个口径：史莱姆、恶魂这些也敌视玩家，而车万女仆自己不是
             return entity -> entity instanceof Enemy;
@@ -155,12 +170,26 @@ public class MaidAttackHandler implements MessageHandler {
         if ("animal".equals(token)) {
             return entity -> entity.getType().getCategory() == MobCategory.CREATURE;
         }
-        // 只在写全了命名空间时按 id 认：短名归插件翻（它知道中文名与英文短名）
-        ResourceLocation id = token.contains(":") ? ResourceLocation.tryParse(token) : null;
-        if (id == null) {
-            return entity -> false;
+        if ("other_player".equals(token) || "player".equals(token)) {
+            return entity -> entity instanceof ServerPlayer && entity != owner;
         }
-        return entity -> id.equals(BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()));
+        ResourceLocation id = ResourceLocation.tryParse(token.contains(":") ? token : "minecraft:" + token);
+        return entity -> (id != null && id.equals(BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType())))
+                || (entity instanceof ServerPlayer player
+                        && player != owner
+                        && player.getName().getString().equalsIgnoreCase(token));
+    }
+
+    /** 同名玩家就在这个世界里、只是离她太远时，说清是距离问题而不是没有这个人。 */
+    private static ServerPlayer namedPlayerOutOfRange(EntityMaid maid, String token) {
+        for (Player player : maid.level().players()) {
+            if (player instanceof ServerPlayer other
+                    && other != maid.getOwner()
+                    && other.getName().getString().equalsIgnoreCase(token)) {
+                return other;
+            }
+        }
+        return null;
     }
 
     private static JsonObject base() {
