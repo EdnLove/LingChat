@@ -45,8 +45,9 @@ const TOOL_SEARCH_PROMPT: &str = "本请求只随附了少量常用工具，其�
 /// 超时后**放行工具**（fail-open）——顺序不完美也好过让工具链路被富化卡死。
 const FENCE_ACK_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// 工具消息收集槽：流消费过程中由闭环填充，消费完毕后调用方取走。
-pub type ToolMessageSink = Arc<Mutex<Vec<LlmMessage>>>;
+/// 工具消息收集槽：流消费过程中由闭环填充，按「一轮工具调用」分组。
+/// 消费完毕后调用方逐轮取走，把每轮的 assistant(tool_calls) 与 tool 结果回填到对应前导行之后。
+pub type ToolMessageSink = Arc<Mutex<Vec<Vec<LlmMessage>>>>;
 
 pub struct ToolLoopResult {
     pub stream: PresentationStream,
@@ -409,7 +410,7 @@ pub async fn stream_with_tool_loop(
                 &round_messages,
                 &mut persisted_tool_result_chars,
             );
-            sink.lock().await.extend(persisted_messages);
+            sink.lock().await.push(persisted_messages);
         }
     };
 

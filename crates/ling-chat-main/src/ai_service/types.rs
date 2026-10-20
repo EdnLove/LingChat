@@ -174,6 +174,9 @@ pub struct LineBase {
     /// 该轮生成的思考链（仅挂在每轮最后一条 assistant 行上）。
     pub thinking: Option<String>,
     pub tool_call: Option<String>,
+    /// 工具轮标识：同一轮的前导台词、空内容载体与工具结果共享。
+    #[serde(default)]
+    pub round_id: Option<String>,
     pub attribute: LineAttributeExt,
     pub sender_role_id: Option<i32>,
     pub display_name: Option<String>,

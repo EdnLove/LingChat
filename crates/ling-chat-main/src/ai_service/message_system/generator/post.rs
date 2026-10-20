@@ -226,8 +226,23 @@ fn same_length_streak(lines: &[GameLine]) -> Option<(usize, usize)> {
     let mut rounds: Vec<(i32, usize)> = Vec::new();
     let mut current: Option<(i32, usize)> = None;
     for line in lines {
-        // assistant 行才是台词；工具调用回填的前缀行 sender 为空，与玩家发言、旁白、
-        // 提示、工具行一样结束一轮
+        // 工具结果与空内容载体行是同一回合的中段，不让它们结束当前轮；
+        // 否则一次工具回合会被拆成「工具前」「工具后」两个同长段。
+        if matches!(line.attribute(), LineAttribute::Tool) {
+            continue;
+        }
+        if matches!(line.attribute(), LineAttribute::Assistant)
+            && line.sender_role_id().is_none()
+            && line
+                .base
+                .tool_call
+                .as_deref()
+                .is_some_and(|v| !v.trim().is_empty())
+        {
+            continue;
+        }
+
+        // assistant 行才是台词；其他无角色行结束一轮
         let role_id = match line.attribute() {
             LineAttribute::Assistant => line.sender_role_id(),
             _ => None,

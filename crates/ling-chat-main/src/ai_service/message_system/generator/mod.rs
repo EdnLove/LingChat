@@ -7,6 +7,7 @@
 //! 4. 按顺序把 `ReplyResponse` 通过 Tauri `Emitter` 发给前端（event: `ai:reply`）。
 //! 5. 每个段落作为 assistant LINE 入 GameStatus（带 TTS/动作/情绪）。
 
+mod backfill;
 mod post;
 mod pre;
 
@@ -29,7 +30,7 @@ use crate::ai_service::message_system::responses::{ReplyResponse, event_names};
 use crate::ai_service::tools::registry::ToolRegistry;
 use crate::ai_service::tools::tool_loop::stream_with_tool_loop;
 use crate::ai_service::translator::Translator;
-use crate::ai_service::types::{GameLine, LineAttributeExt, LineBase, LlmMessage};
+use crate::ai_service::types::{LineAttributeExt, LineBase, LlmMessage};
 use crate::db::entities::line::LineAttribute;
 use crate::utils::prompt::{RoundReply, scan_reply_shape};
 
@@ -316,8 +317,6 @@ impl MessageGenerator {
         )
         .await?;
         // 惰性工具闭环：工具消息在流消费过程中才逐渐收集完整。
-        // 先记下回填位置（当前台词末尾，即本轮助手回复写入之前），
-        // 待流消费完毕后统一插入，保持「用户 → 工具消息 → 助手回复」的顺序。
         let tool_insert_pos = {
             let gs = self.deps.game_status.lock().await;
             gs.line_list.len()
@@ -335,8 +334,7 @@ impl MessageGenerator {
         // 由最终句（is_final）的 consumer 快照并挂载到台词行与前端响应。
         let thinking_buf = Arc::new(Mutex::new(String::new()));
 
-        // 句子序号 → 台词表行下标。工具闭环回填时用它抹掉「前导台词」先落的行：
-        // 同一段原文已经在带 tool_call 的助手行里，留着就是同一句话说两遍。
+        // 句子序号 → 台词表行下标。回填时按它定位每轮前导行：
         let sentence_lines: Arc<Mutex<Vec<(usize, usize)>>> = Arc::new(Mutex::new(Vec::new()));
 
         // publisher：按索引顺序 emit 到前端（并在推进到栅栏索引时回 ack）
@@ -439,65 +437,41 @@ impl MessageGenerator {
         // publisher 的返回值 = 是否成功发出过收尾句（`is_final`）。
         let published_final = publisher.await.unwrap_or(false);
 
-        // 流已消费完毕，工具消息收集完整：回填到助手回复之前的位置
-        let tool_msgs = std::mem::take(&mut *tool_messages.lock().await);
-        let completed_turn = published_final || (!output.sent_final && !tool_msgs.is_empty());
-        if !tool_msgs.is_empty() {
+        // 流已消费完毕：每轮工具消息与前导组都完整了，按组回填。
+        let tool_rounds = std::mem::take(&mut *tool_messages.lock().await);
+        let completed_turn = published_final || (!output.sent_final && !tool_rounds.is_empty());
+        // 栅栏中止时工具轮可能为空，但前导行还在，仍需要按句子序号重排
+        if !tool_rounds.is_empty() || !output.preamble_groups.is_empty() {
             let mut gs = self.deps.game_status.lock().await;
             // 试玩代号守卫：试玩中止后丢弃迟到回填，与 add_assistant_line 行为一致
             if gs.preview_generation == self.deps.generation {
                 gs.role_manager.invalidate_memory_history();
-                let insert_pos = tool_insert_pos.min(gs.line_list.len());
                 let perceived: Vec<i32> = gs.present_role_ids.iter().copied().collect();
+                let ledger = sentence_lines.lock().await.clone();
+                let plan = backfill::plan_tool_backfill(
+                    &gs.line_list,
+                    tool_insert_pos,
+                    &ledger,
+                    &output.preamble_groups,
+                    &tool_rounds,
+                    &perceived,
+                );
 
-                if !output.preamble_indices.is_empty() {
-                    let doomed: Vec<usize> = {
-                        let ledger = sentence_lines.lock().await;
-                        ledger
-                            .iter()
-                            .filter(|(sentence, _)| output.preamble_indices.contains(sentence))
-                            .map(|(_, line)| *line)
-                            .collect()
-                    };
-                    // 从后往前删，前面的下标才不会被自己挤动
-                    for index in doomed.into_iter().rev() {
-                        if index < gs.line_list.len() {
-                            gs.line_list.remove(index);
-                        }
+                // 先重排前导行（只换同一批槽位，不改变长度），再打轮次标识，
+                // 最后倒序插入各轮工具块（块位置仍是原始坐标）。
+                for (slot, line) in plan.reorders {
+                    if let Some(target) = gs.line_list.get_mut(slot) {
+                        *target = line;
                     }
                 }
-
-                for msg in tool_msgs.iter().rev() {
-                    let (attribute, content, tool_call) = match msg.role.as_str() {
-                        "assistant" => {
-                            let tool_call = msg
-                                .tool_calls
-                                .as_ref()
-                                .map(|calls| serde_json::to_string(calls).unwrap_or_default());
-                            (LineAttribute::Assistant, msg.content.clone(), tool_call)
-                        },
-                        "tool" => (
-                            LineAttribute::Tool,
-                            serde_json::to_string(&serde_json::json!({
-                                "tool_call_id": msg.tool_call_id,
-                                "result": serde_json::from_str::<serde_json::Value>(&msg.content)
-                                    .unwrap_or(serde_json::Value::String(msg.content.clone())),
-                            }))
-                            .unwrap_or_default(),
-                            None,
-                        ),
-                        _ => continue,
-                    };
-                    let line = LineBase {
-                        content,
-                        tool_call,
-                        attribute: LineAttributeExt(attribute),
-                        sender_role_id: None,
-                        display_name: None,
-                        ..Default::default()
-                    };
-                    gs.line_list
-                        .insert(insert_pos, GameLine::from_base(line, perceived.clone()));
+                for (slot, round_id) in plan.round_ids {
+                    if let Some(target) = gs.line_list.get_mut(slot) {
+                        target.base.round_id = Some(round_id);
+                    }
+                }
+                for (pos, block) in plan.blocks.into_iter().rev() {
+                    let pos = pos.min(gs.line_list.len());
+                    gs.line_list.splice(pos..pos, block);
                 }
                 gs.refresh_memories(&self.deps.db).await?;
             }
