@@ -8,7 +8,7 @@
 
 from bridge import ask
 from naming import names, narrate
-from wording import heard_sounds, light_band, light_phrase, sighting
+from wording import heard_sounds, sighting
 
 # 玩家说话时顺手取快照的超时：给得很短，玩家那句话不能被一次查询拖住（游戏暂停时
 # 模组答不上来，这一轮就不带，照常把话送进对话）。
@@ -24,9 +24,12 @@ CARRY_CREATURE_LIMIT = 3
 LOOK_AROUND_TOOL = "maid_look_around"
 
 
-def snapshot(maid_id, timeout_ms, profile="auto"):
-    """现取一份她身边的快照。返回 (数据, 错误说明)；出错时数据是 None。"""
-    data = {"maid_id": maid_id, "profile": profile}
+def snapshot(maid_id, timeout_ms, profile="auto", detail="brief"):
+    """现取一份她身边的快照。返回 (数据, 错误说明)；出错时数据是 None。
+
+    detail = map 时模组会多画一张近细远粗的小图；默认 brief，只有玩家问路才要。
+    """
+    data = {"maid_id": maid_id, "profile": profile, "detail": detail}
     response, error = ask({"type": LOOK_AROUND_TOOL, "data": data}, timeout_ms)
     if error:
         return None, error
@@ -40,10 +43,10 @@ def snapshot(maid_id, timeout_ms, profile="auto"):
 def carry_text(data):
     """一份快照 → 一句「角色此刻的处境」，附在玩家的发言后面。
 
-    只挑此刻会变、又会影响她反应的说：光线暗不暗、附近有什么活物。玩家在不在身边
-    不在这里念——跟随状态下每句都写「玩家就在身边」，模型会把它当成要复述的信息；
-    他走远或回来由模组推的 player_proximity_change 记一条旁白。脚下与头顶同理，
-    只在变化时由 ground_change / shelter_change 写成旁白。正前方那一眼留给工具那句，
+    只挑此刻会变、又会影响她反应的说：附近有什么活物。玩家在不在身边不在这里念——
+    跟随状态下每句都写「玩家就在身边」，模型会把它当成要复述的信息；他走远或回来由模组
+    推的 player_proximity_change 记一条旁白。脚下、头顶与光线同理，只在变化时由
+    ground_change / shelter_change / light_change 写成旁白。正前方那一眼留给工具那句，
     玩家问起来才需要那么细。
     帧里没有 owner 字段说明这压根不是快照（多半是别的东西回了信），那就什么都不带。
     """
@@ -51,8 +54,6 @@ def carry_text(data):
         return ""
     maid, _ = names()
     parts = []
-    if light_band(data.get("light")) in ("dark", "dim"):
-        parts.append(light_phrase(data.get("light")))
     creatures = creature_phrase(data)
     if creatures:
         parts.append(creatures)

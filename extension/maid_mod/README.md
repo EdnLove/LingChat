@@ -65,7 +65,7 @@ Gradle 发行包走的是腾讯云镜像（见 `gradle/wrapper/gradle-wrapper.pr
 | `bridge/` | 本机 WebSocket、信封、路由、协议常量。 |
 | `chat/` | 游戏内聊天双向：玩家打字推给 LingChat，角色回复变成气泡。 |
 | `voice/` | 游戏内语音：把 LingChat 的 TTS（WAV）分片广播给附近玩家，在女仆身上播放。 |
-| `perception/` | 一切「观察世界」。`world` 全局采样、`nearby` 身边采样、`query` 按需查询、`event` 受伤/死亡/成就、`item` 物品与背包、`carry` 抱放、`spatial` 按需读取的局部地形快照；`EventFrames`、`PerceptionProfiles`、`PerceptionSampler` 是这几层共用的帧外形、半径与采样门控。 |
+| `perception/` | 一切「观察世界」。`world` 全局采样、`nearby` 身边采样、`query` 按需查询与投影（关系、相连团、按需小图）、`event` 受伤/死亡/成就、`item` 物品与背包、`carry` 抱放；`spatial` 是在它们底下共用的一层：`LocalTerrain` 按需读一片方块、`SightLine` 判看不看得见、`TerrainMemory` 记半分钟内看见过的方块、`BlockSight` 是清单里的一条。`EventFrames`、`PerceptionProfiles`、`PerceptionSampler` 是这几层共用的帧外形、半径与采样门控。 |
 | `maid/` | 女仆身份、查询、监控目标、状态与背包只读清单。 |
 | `integration/` | 可选模组适配；目前只有 `carry`（Carry On）。 |
 | `mixin/` | NeoForge mixin，包名被 `lingchat_maid_bridge.mixins.json` 固定，不要随意移动。 |
@@ -257,7 +257,10 @@ JSON 文本帧，信封固定是 `{"type": ..., "request_id": ..., "data": {...}
   跟随行为的传送被 `LongTaskGuard` 拦住了（见「已知边界」），打完收工后跟随恢复。
 - **收工**：目标死了、被打断（新动作、换工作模式）或追满 30 秒，循环就停。她打死目标时
   由死亡旁白交代「被你杀了」，这里不重复。
-- 回执（`maid_attack_result`）：`accepted`、`weapon`、`style`，以及
+- **重复调用同一个目标**：追打已经在进行时只回执、不重启，`already_fighting=true`。模型
+  容易把「还在打」读成「要再叫一次」，重复启动会把这一仗从头再来；回执与插件文案都要
+  说清「她自己会打到对方倒下，不用再叫」。
+- 回执（`maid_attack_result`）：`accepted`、`weapon`、`style`、`already_fighting`，以及
   `target{id,type,name,distance,owner}`。
 
 ### `maid_mine`：挖掉方块
@@ -316,6 +319,10 @@ JSON 文本帧，信封固定是 `{"type": ..., "request_id": ..., "data": {...}
   字段是 `status`（`done` / `partial` / `failed`）、`mined`、`wanted`、`block`、
   `reason_code`、`reason`。**插件在那之前不能说她挖到了。**
 - `has_tool=false` 表示她手上和背包里都没有趁手的工具，只能徒手挖（会慢一些）。
+- `scene` 只在已经定到目标的失败里带：`dx`/`dy`/`dz` 相对她脚下那一格，`facing` 同八向方位，
+  `blocked_above` 是正上方有没有实心方块，`stand_room` 是周围五格内有没有能站人的空格
+  （只看空间，不问寻路）。没有目标的失败（如 `no_target`）不带，插件不要据此编方位；
+  受理成功也不带，别把失败现场当成每轮都有的字段。
 - 与攻击、动作、换工作模式互斥：新的挖掘令会顶掉它们，它们也会顶掉挖掘。
 
 ### `maid_give_item`：把东西交给玩家
@@ -397,6 +404,7 @@ JSON 文本帧，信封固定是 `{"type": ..., "request_id": ..., "data": {...}
 | `threat_near` | 附近**从无到有**敌对生物，或最近那只由远转近 | `type` `distance` `direction` `visible` |
 | `living_near` | 身边来了别的活物（主人以外的生物、别的玩家、别的女仆） | `type` `category` `distance` `direction` |
 | `shelter_change` | 从露天走进遮蔽处，或反过来 | `sheltered`，以及用于同键合并取最后一帧的 `tick` |
+| `light_change` | 光线跨档：很黑（0-3）/ 昏暗（4-7）/ 明亮（8-15） | `band`（`dark` / `dim` / `bright`） |
 | `ground_change` | 脚下换了种值得说的地（水、岩浆、火、雪、沙、耕地、冰）；坐在载具里不报 | `block` `kind` |
 | `vehicle_change` | 坐进船 / 矿车这类载具，或从上面下来 | `vehicle` `from_vehicle` |
 | `structure_change` | 走进或离开村庄、矿井、要塞这类结构（冷静期 30 秒） | `structure` `from_structure` |
@@ -453,12 +461,14 @@ uuid 查不到她。本模组每 tick 反过来问「谁手里的那份 NBT 是�
 ### `maid_look_around`：看一眼她周围
 
 ```json
-{"type":"maid_look_around","data":{"maid_id":"...","profile":"query"}}
+{"type":"maid_look_around","data":{"maid_id":"...","profile":"query","detail":"brief"}}
 ```
 
 - `profile` 缺省或 `query`：玩家明确问「你周围有什么」，看得见的目标放宽到 32 格，并附
   `blocks` / `backpack`。`profile=auto`：玩家开口时顺手带的那份近处快照，看得见按工作范围、
   看不见只听 `heardRadius` 以内，不扫方块与背包（省掉每次开口的方块读取）。
+- `detail` 缺省或 `brief`：只给关系与清单。`detail=map`：另附一张近细远粗的小图，
+  只在玩家问「怎么过去」「带我去」时用；`auto` 档忽略它。
 
 回帧（`maid_look_around_result`）：
 
@@ -473,6 +483,16 @@ uuid 查不到她。本模组每 tick 反过来问「谁手里的那份 NBT 是�
   "nearby":[{"type":"minecraft:zombie","category":"hostile","distance":6.8,"direction":"left","visible":false,"name":""},
             {"type":"minecraft:player","category":"player","distance":7.2,"direction":"right","visible":true,"name":"Layeray"}],
   "blocks":["minecraft:spruce_log","minecraft:dirt","minecraft:stone"],
+  "block_sight":[{"id":"minecraft:spruce_log","seen":"now"},
+                 {"id":"minecraft:dirt","seen":"now"},
+                 {"id":"minecraft:stone","seen":"before"}],
+  "relations":[{"id":"minecraft:spruce_log","seen":"now","dx":0,"dy":0,"dz":3,
+                "facing":"front","same_layer":true,"distance":3.0,
+                "blockers":0,"blocker":"","walk_steps":3}],
+  "clusters":[{"id":"minecraft:spruce_log","cells":6,"truncated":false,
+               "dx":-2,"dy":0,"dz":4,"facing":"front_left","distance":4.5,
+               "blockers":0,"blocker":""}],
+  "map":{"radius":8,"text":"近处（一格一单元）：\n. . .\n"},
   "backpack":[{"item":"minecraft:rose_bush","count":2},{"item":"minecraft:iron_pickaxe","count":1}],
   "headwear":{"item":"minecraft:oak_planks","count":1},
   "vehicle":"", "structure":"minecraft:village_plains",
@@ -485,8 +505,8 @@ uuid 查不到她。本模组每 tick 反过来问「谁手里的那份 NBT 是�
 - `looking_at.kind` 取 `block` / `entity` / `none`；方块用 OUTLINE 射线，草丛、火把、
   告示牌这些「看得见但没碰撞」的也算挡着（与视线判定的口径刻意不同：玻璃挡得住这条
   射线，挡不住视线）。
-- `blocks` 只列露在外面的方块，竖直范围从她脚下这一层往上：埋在地下、四面被石头包住的
-  矿石不算她看得见，不会出现在清单里。
+- `blocks` 只列她**此刻看得见**、或者半分钟内看见过（还记得）的方块；竖直范围从她脚下
+  这一层往上。露出来只是候选：埋在地下、四面被石头包住的不算，看得见却隔着墙的也不算。
 - `direction` 是相对她**身体**朝向的八向：`front` `front_right` `right` `back_right`
   `back` `back_left` `left` `front_left`。她不一定是面朝哪就看哪，而「她周围有什么」
   说的是她站着的方位；只有 `looking_at` 那条射线用头部朝向。
@@ -508,7 +528,21 @@ uuid 查不到她。本模组每 tick 反过来问「谁手里的那份 NBT 是�
 - `blocks` 是附近**能挖的方块种类**，按最近一块的距离升序、去重、最多 12 种；不列空气、
   液体、没有碰撞体积的东西（草、花、火把）和挖不动的方块。玩家准星指着某处时以落点为中心，
   否则以她为中心；范围与 `maid_mine` 找方块时同口径（水平 24 格、竖直 8 格），所以模型可以
-  直接拿这里的 id 去下挖掘指令。老模组不返回这个字段，插件不要据此说「附近没有」。
+  直接拿这里的 id 去下挖掘指令。
+- `block_sight` 与 `blocks` 一一对应，`seen` 取 `now`（此刻看见）或 `before`（刚才看见、
+  现在不在视野里，来自半分钟的空间记忆）。老模组没有这个字段，插件把整份 `blocks` 当作
+  此刻看见；老模组也不返回 `blocks`，插件不要据此说「附近没有」。
+- `relations` 与 `blocks` 一一对应，给这一种方块最近那一块的关系：`dx`/`dy`/`dz` 相对她
+  脚下那一格，`facing` 同八向方位，`same_layer` 是 `dy=0`，`distance` 是水平距离（格）。
+  `blockers` 是视线中间隔着的实心方块数，`blocker` 是第一块是什么；`seen=now` 时必然是 0。
+  `walk_steps` 只在八格内做一次有界估算，算不出来是 -1。老模组没有这个字段，插件退回
+  只念 `blocks` 清单。
+- `clusters` 是同种方块按六面相连数出来的团，只收 `seen=now` 且至少两块的；位置取团里
+  最近那一块，字段与 `relations` 同口径。`cells` 数到 64 就停，`truncated` 表示实际更多。
+  老模组没有这个字段。
+- `map` 只在 `detail=map` 时给。`text` 是她脚下这一层的俯视图：近处一格一单元、远处两格
+  合并，`@` 是她、`.` 可走、`#` 挡住、`~` 水、`!` 岩浆与火、`?` 没加载。图不懂高差，
+  高差由 `relations.dy` 说；只在玩家问路时给，别当成每轮都要的上下文。
 - `owner.same_dimension` 为假时 `distance` 是 -1——插件据此说「玩家不在你这个世界里」，
   而不是编一个距离。
 - 女仆不在已加载的区块里、或服务端没就绪时，回统一 `error` 帧。

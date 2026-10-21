@@ -6,6 +6,7 @@ import com.lingchat.maidbridge.LingChatMaidBridge;
 import com.lingchat.maidbridge.action.core.MaidActuator;
 import com.lingchat.maidbridge.bridge.BridgeServer;
 import com.lingchat.maidbridge.maid.MaidQueries;
+import com.lingchat.maidbridge.perception.spatial.TerrainMemory;
 import java.util.List;
 import java.util.Set;
 import net.minecraft.core.BlockPos;
@@ -286,6 +287,8 @@ public final class MaidMineController {
             abandon(run, maid, "protected", "这个方块不能让她挖");
             return;
         }
+        // 挖开一格，贴着的那几格现在看得见了：记进她的认知，台词里才说得出「刚才那边」
+        TerrainMemory.reveal(maid, pos, run.level.getGameTime());
         // 与玩家挖方块一样扣一点耐久：挖断了就换背包里下一把
         ItemStack used = maid.getMainHandItem();
         if (!used.isEmpty()) {

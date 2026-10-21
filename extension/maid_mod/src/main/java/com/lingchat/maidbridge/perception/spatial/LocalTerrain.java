@@ -85,6 +85,19 @@ public final class LocalTerrain {
         }
     }
 
+    /** 快照里的某一格；超出范围或没加载时给 null。投影只从这一份读，不再碰世界。 */
+    public BlockState stateAt(int x, int y, int z) {
+        int localX = x - minX;
+        int localY = y - minY;
+        int localZ = z - minZ;
+        if (localX < 0 || localX >= sizeX
+                || localY < 0 || localY >= sizeY
+                || localZ < 0 || localZ >= sizeZ) {
+            return null;
+        }
+        return states[index(localX, localY, localZ, sizeY, sizeZ)];
+    }
+
     private static int index(int x, int y, int z, int sizeY, int sizeZ) {
         return (x * sizeZ + z) * sizeY + y;
     }

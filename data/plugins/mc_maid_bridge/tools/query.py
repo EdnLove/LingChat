@@ -9,12 +9,12 @@ from tools.context import LOOK_AROUND_TOOL, creature_text, owner_phrase, snapsho
 from wording import (
     BLOCK_NAMES,
     DIMENSION_NAMES,
+    DIRECTION_NAMES,
     MOB_NAMES,
     STRUCTURE_NAMES,
     VEHICLE_NAMES,
     as_int,
     item_name,
-    light_phrase,
     name_of,
     nearness_place,
 )
@@ -41,7 +41,12 @@ def _look_around(ctx):
     if not maid:
         return {"ok": False, "error": error}
 
-    data, error = snapshot(maid, LOOK_TIMEOUT_MS, "query")
+    args = ctx.get("args") or {}
+    raw_detail = args.get("detail")
+    detail = raw_detail.strip().lower() if isinstance(raw_detail, str) else "brief"
+    if detail not in ("brief", "map"):
+        detail = "brief"
+    data, error = snapshot(maid, LOOK_TIMEOUT_MS, "query", detail)
     if error:
         return {"ok": False, "error": error}
     return {"ok": True, "message": _look_around_text(data)}
@@ -72,11 +77,13 @@ def _see_screen(ctx):
 
 
 def _look_around_text(data):
-    """她身边这一圈，说成几句事实：站位与光线 → 正前方 → 能挖的方块 → 背包 → 玩家 → 活物。
+    """她身边这一圈，说成几句事实：站位与头顶 → 正前方 → 最近一块的关系
+    → 成团清单 → 方块清单 → 问路小图 → 背包 → 玩家 → 活物。
 
-    距离只给近 / 中 / 远，格数与血量不写：数字一进上下文，模型就会照本宣科地念出来。
-    光照也只给档位（明亮 / 昏暗 / 漆黑），不给 0-15 的原始数值。
-    坐在船、矿车里时说载具，不说脚下踩着什么——那时候脚底下本来就没有「地」。
+    活物与正前方仍只说近 / 中 / 远；方块的方位与步数是模组算好的关系，只在被问到
+    怎么走时才有用，模型不必自己数。光线不在这里说：它只在跨档时由 light_change
+    旁白交代一次，工具再念一遍，同一轮里就会重复两条一样的话。坐在船、矿车里时说载具，
+    不说脚下踩着什么——那时候脚底下本来就没有「地」。
     """
     maid, player = names()
     dimension = name_of(DIMENSION_NAMES, data.get("dimension"), "某个世界")
@@ -86,13 +93,11 @@ def _look_around_text(data):
     roof = "" if data.get("has_sky") is False else (
         "头顶有遮挡，看不到天" if data.get("sheltered") else "头顶是露天的"
     )
-    light = light_phrase(data.get("light"))
     if vehicle:
-        rest = "，".join(one for one in (roof, light) if one)
         seat = f"{maid}正坐在{dimension}的{name_of(VEHICLE_NAMES, vehicle, '载具')}里"
-        lines = [f"{seat}，{rest}。" if rest else f"{seat}。"]
+        lines = [f"{seat}，{roof}。" if roof else f"{seat}。"]
     else:
-        place = "，".join(one for one in (f"脚下踩着{foot}", roof, light) if one)
+        place = "，".join(one for one in (f"脚下踩着{foot}", roof) if one)
         lines = [f"{maid}正站在{dimension}，{place}。"]
     structure = (data.get("structure") or "").strip()
     if structure:
@@ -109,13 +114,55 @@ def _look_around_text(data):
     else:
         lines.append("正前方空着，什么也没挡着。")
 
-    # 老模组不返回 blocks：这时不能替它说「没有」，跳过这一句
+    # 新模组附带的关系与相连团：先给最近那一块的方位与步数，再补一句另一团的大小。
+    # 老模组没有这两项，下面照旧只念方块清单。
+    relations = data.get("relations")
+    clusters = data.get("clusters")
+    clusters = clusters if isinstance(clusters, list) else []
+    if isinstance(relations, list) and relations:
+        relation_text = _relation_text(relations, clusters)
+        if relation_text:
+            lines.append(relation_text)
+        cluster_text = _cluster_text(clusters, relations)
+        if cluster_text:
+            lines.append(cluster_text)
+
+    # 认得 block_sight 时把「此刻看见」与「刚才看见、现在不在视野里」分开说；
+    # 老模组只有 blocks，照旧全当成眼前这一片。
+    sights = data.get("block_sight")
     blocks = data.get("blocks")
-    listed = [one for one in (blocks or []) if isinstance(one, str) and one]
-    if listed:
-        lines.append(_blocks_text(listed))
-    elif blocks is not None:
-        lines.append("附近没看到能挖的方块。")
+    if isinstance(sights, list) and sights:
+        now = []
+        before = []
+        for one in sights:
+            if not isinstance(one, dict):
+                continue
+            raw = (one.get("id") or "").strip()
+            if not raw:
+                continue
+            (before if one.get("seen") == "before" else now).append(raw)
+        if now:
+            lines.append(_blocks_text(now))
+        if before:
+            lines.append(_blocks_text(before, "刚才在附近见过"))
+        if not now and not before:
+            lines.append("附近没看到能挖的方块。")
+    else:
+        # 老模组不返回 blocks：这时不能替它说「没有」，跳过这一句
+        listed = [one for one in (blocks or []) if isinstance(one, str) and one]
+        if listed:
+            lines.append(_blocks_text(listed))
+        elif blocks is not None:
+            lines.append("附近没看到能挖的方块。")
+
+    # 问路时才要的小图：模组按她脚下那一层画好，这里只起个头
+    map_info = data.get("map")
+    if isinstance(map_info, dict):
+        map_text = (map_info.get("text") or "").strip("\n")
+        if map_text:
+            lines.append(
+                f"{maid}脚下的这一片（@ 是她，. 可走，# 挡住，~ 水，! 岩浆，? 没加载）：\n{map_text}"
+            )
 
     # 老模组同样没有 backpack：不替它说「背包是空的」
     backpack = data.get("backpack")
@@ -131,13 +178,131 @@ def _look_around_text(data):
     return "".join(lines)
 
 
-def _blocks_text(blocks):
-    """附近能挖的方块 → 一句带 id 的清单，模型可以直接拿 id 去调 maid_mine。"""
+def _pick_relation(relations):
+    """最近那一块：优先此刻看见的，没有就退回刚才见过的第一条。"""
+    for one in relations:
+        if isinstance(one, dict) and one.get("seen") == "now" and (one.get("id") or "").strip():
+            return one
+    for one in relations:
+        if isinstance(one, dict) and (one.get("id") or "").strip():
+            return one
+    return None
+
+
+def _distance_steps(one):
+    try:
+        return max(0, int(round(float(one.get("distance") or 0))))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _where_text(one):
+    """关系里的「正前方三步」；没有方位就只说步数，站在同一格说「就在跟前」。"""
+    facing = DIRECTION_NAMES.get((one.get("facing") or "").strip(), "")
+    steps = _distance_steps(one)
+    if steps <= 0:
+        return "就在跟前"
+    return f"{facing}{steps}步" if facing else f"{steps}步外"
+
+
+def _layer_text(dy):
+    if dy == 0:
+        return "同一层"
+    return f"高{dy}层" if dy > 0 else f"低{-dy}层"
+
+
+def _blocker_phrase(one):
+    count = as_int(one.get("blockers"), 0)
+    if count <= 0:
+        return ""
+    blocker = name_of(BLOCK_NAMES, one.get("blocker"), "方块")
+    return f"隔着{count}块{blocker}"
+
+
+def _blocker_text(one):
+    phrase = _blocker_phrase(one)
+    return "中间没有挡着" if not phrase else "中间" + phrase
+
+
+def _cluster_of(clusters, block_id):
+    for one in clusters:
+        if isinstance(one, dict) and (one.get("id") or "").strip() == block_id:
+            return one
+    return None
+
+
+def _cluster_size(cluster):
+    cells = as_int(cluster.get("cells"), 0)
+    text = f"一共{cells}块"
+    if cluster.get("truncated"):
+        text += "以上"
+    return text
+
+
+def _relation_text(relations, clusters):
+    """最近那一块的关系句：方位、层高、挡路与步数；成团时把团的大小并进来。
+
+    只挑一块说，不把十二种方块都写成句子——清单仍然是清单，关系只给最近的那块。
+    """
+    picked = _pick_relation(relations)
+    if not picked:
+        return ""
+    raw = (picked.get("id") or "").strip()
+    name = name_of(BLOCK_NAMES, raw, "方块")
+    where = _where_text(picked)
+    if picked.get("seen") == "before":
+        text = f"刚才在{where}见过{name}（{raw}）"
+        blocker = _blocker_phrase(picked)
+        if blocker:
+            text += f"，现在{blocker}"
+        return text + "。"
+    text = f"{where}、{_layer_text(as_int(picked.get('dy'), 0))}是{name}（{raw}）"
+    cluster = _cluster_of(clusters, raw)
+    # 数到上限的团多半是石头、泥土这种大片地形，不是「找到一处矿」；不报大小
+    if cluster and 1 < as_int(cluster.get("cells"), 0) and not cluster.get("truncated"):
+        text += "，这一团" + _cluster_size(cluster)
+    text += "，" + _blocker_text(picked)
+    walk = as_int(picked.get("walk_steps"), -1)
+    if walk == 0:
+        text += "，就在跟前"
+    elif walk > 0:
+        text += f"，再走{walk}步就到"
+    return text + "。"
+
+
+def _cluster_text(clusters, relations):
+    """再补一团另一种方块的大小；与关系句重复的那一团不再说。"""
+    picked = _pick_relation(relations)
+    picked_id = (picked.get("id") or "").strip() if picked else ""
+    for one in clusters:
+        if not isinstance(one, dict):
+            continue
+        raw = (one.get("id") or "").strip()
+        if not raw or raw == picked_id or as_int(one.get("cells"), 0) <= 1:
+            continue
+        # 同上：数到上限的大片地形不单独成句
+        if one.get("truncated"):
+            continue
+        name = name_of(BLOCK_NAMES, raw, "方块")
+        text = f"{_where_text(one)}的{name}团{_cluster_size(one)}"
+        blocker = _blocker_phrase(one)
+        if blocker:
+            text += f"，最近的一块{blocker}"
+        return text + "。"
+    return ""
+
+
+def _blocks_text(blocks, lead="眼前这一片能挖的有"):
+    """能挖的方块 → 一句带 id 的清单，模型可以直接拿 id 去调 maid_mine。
+
+    「刚才在附近见过」那一路同样是带出处的：她确实看见过，只是现在不在视野里，
+    不是替模组做全知扫描。
+    """
     listed = []
     for raw in blocks:
         name = BLOCK_NAMES.get(raw)
         listed.append(f"{name}（{raw}）" if name else raw)
-    return "眼前这一片能挖的有" + "、".join(listed) + "。"
+    return lead + "、".join(listed) + "。"
 
 
 def _backpack_text(items, maid, headwear=None):

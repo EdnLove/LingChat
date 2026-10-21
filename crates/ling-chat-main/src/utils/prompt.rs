@@ -476,20 +476,19 @@ impl ReplyLengthMode {
     /// `spoken` 是本回合到目前为止已经说出去的句数。除了报额度，还要把「不用复述」
     /// 与「不需要说话就别说话」写清楚——模型手里没有新事实时，默认动作就是复述上一轮。
     pub fn tool_continuation_text(self, spoken: usize) -> String {
-        let mut text = String::from(
-            "工具结果已返回。互不依赖的多个操作可以在这一轮一起调用；工具结果不用复述，也不要重复之前已经说过的内容。",
-        );
         match self.tool_turn_budget() {
-            None => text.push_str("不需要说话就不要输出台词，直接调用工具或收尾。"),
-            Some(budget) if spoken >= budget => text.push_str(&format!(
-                "本回合的台词额度已经用完（{spoken}/{budget} 句）：接下来只允许调用工具，非必要不要再输出任何台词；工具都做完后直接结束这一回合。"
-            )),
-            Some(budget) => text.push_str(&format!(
-                "本回合已经说了 {spoken} 句台词，上限 {budget} 句，还能说 {} 句。要继续操作就直接调用工具；不需要说话就不要输出台词。",
+            None => String::from(
+                "工具结果已返回。互不依赖的多个操作可以在这一轮一起调用；工具结果不用复述，也不要重复之前已经说过的内容。不需要说话就不要输出台词，直接调用工具或收尾。",
+            ),
+            Some(budget) if spoken >= budget => format!(
+                "本回合台词额度已经用完（{spoken}/{budget} 句）：接下来只允许调用工具，非必要不要再输出任何台词；工具都做完后直接结束这一回合。工具结果不用复述，也不要重复之前已经说过的内容。"
+            ),
+            Some(budget) => format!(
+                "本回合已经说了 {spoken} 句台词，上限 {budget} 句，还能说 {} 句。这一轮最多再输出 {} 句台词；不需要说话就直接调用工具，工具结果不用复述，也不要重复之前已经说过的内容。",
+                budget - spoken,
                 budget - spoken
-            )),
+            ),
         }
-        text
     }
 
     /// 回复条数越界时的纠偏提示；在容忍区间内或自由档返回 None。

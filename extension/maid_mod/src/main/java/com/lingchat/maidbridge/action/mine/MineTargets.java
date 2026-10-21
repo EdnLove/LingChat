@@ -3,6 +3,7 @@ package com.lingchat.maidbridge.action.mine;
 import com.github.tartaricacid.touhoulittlemaid.entity.passive.EntityMaid;
 import com.lingchat.maidbridge.maid.MaidInventory;
 import com.lingchat.maidbridge.perception.spatial.LocalTerrain;
+import com.lingchat.maidbridge.perception.spatial.SightLine;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -179,6 +180,24 @@ public final class MineTargets {
             }
         }
         return null;
+    }
+
+    /** 目标周围有没有能站人的空格：只看空间，不问寻路。失败回执用它说「站不下」。 */
+    public static boolean standRoom(EntityMaid maid, BlockPos target) {
+        Level level = maid.level();
+        for (int dx = -2; dx <= 2; dx++) {
+            for (int dz = -2; dz <= 2; dz++) {
+                for (int dy = -2; dy <= 2; dy++) {
+                    if (dx == 0 && dy == 0 && dz == 0) {
+                        continue;
+                    }
+                    if (standable(level, target.offset(dx, dy, dz))) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     /**
@@ -383,11 +402,6 @@ public final class MineTargets {
      * 这是想要的结果，挖自己脚边的东西本来就该行。
      */
     private static boolean inSight(Level level, Vec3 eye, BlockPos target, EntityMaid maid) {
-        BlockState state = level.getBlockState(target);
-        ClipContext.Block mode = state.getCollisionShape(level, target).isEmpty()
-                ? ClipContext.Block.OUTLINE
-                : ClipContext.Block.COLLIDER;
-        BlockHitResult hit = level.clip(new ClipContext(eye, Vec3.atCenterOf(target), mode, ClipContext.Fluid.NONE, maid));
-        return hit.getType() == HitResult.Type.BLOCK && hit.getBlockPos().equals(target);
+        return SightLine.sees(level, eye, target, maid);
     }
 }

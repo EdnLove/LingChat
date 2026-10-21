@@ -7,6 +7,7 @@ from wording import (
     BIOME_NAMES,
     BLOCK_NAMES,
     DIMENSION_NAMES,
+    LIGHT_PLACES,
     STRUCTURE_NAMES,
     VEHICLE_NAMES,
     as_int,
@@ -74,6 +75,16 @@ def shelter_change(data):
     if data.get("sheltered"):
         return f"{maid}走进了有遮挡的地方，头顶看不到天了。"
     return f"{maid}走出了遮挡，头顶又见天了。"
+
+
+def light_change(data):
+    """光线跨档：很黑 / 昏暗 / 明亮。
+
+    旁白只说状态，不念 0-15 的数值；档位由模组判定，这里只挑中文说法。
+    """
+    maid, _ = names()
+    place = LIGHT_PLACES.get((data.get("band") or "").strip())
+    return f"{maid}现在在{place}。" if place else ""
 
 
 # 远近档里算「走开了」的那一档：十几格外，或者不在这个世界上。几格、几十步的挪动
@@ -168,6 +179,8 @@ SPECS = {
         merge_key="shelter",
         severity=lambda data: as_int(data.get("tick"), 0),
     ),
+    # 光线跨档：进洞、天黑、点火把都会遇到。模组要连续两次采样才认，洞口来回不刷屏
+    "light_change": EventSpec(light_change, ttl=300),
     # 玩家远近只在跨过「走开了」这条线时说一句，几格之内的挪动不算变化。
     # 走了又回来时只留最后一句——他已经回来了，前一句再念一遍只会让模型困惑。
     "player_proximity_change": EventSpec(player_proximity, ttl=30, merge_key="proximity"),

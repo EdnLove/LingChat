@@ -73,7 +73,7 @@ def maid_death(data):
     maid, _ = names()
     return (
         f"{maid}{_death_cause(data)}。"
-        f"{maid}{DEAD_STATE_MARK}，在复活之前没法行动，也看不到听不到游戏里的事。"
+        f"{maid}{DEAD_STATE_MARK}，在复活之前没法行动，进入灵魂状态。"
     )
 
 

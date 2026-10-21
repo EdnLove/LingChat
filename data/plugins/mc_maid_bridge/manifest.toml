@@ -137,7 +137,7 @@ timeout_ms = 15000
 
 [[tools]]
 name = "maid_attack"
-description = "让角色去攻击身边的一个活物。target 写要打谁：活物的中文名或英文短名（僵尸、zombie、羊、sheep）、另一个玩家的名字（照 maid_look_around 里看到的那个名字），或 hostile（最近的敌对生物）、animal（最近的动物）、other_player（另一个玩家）、owner（主人自己）。style 选力度：fight（默认，追着一直打到对方倒下）或 light（只轻轻打一下，打完就收手、伤害很小）。主人说「去打那只僵尸」「揍它」用默认；说「打我一下」「轻轻碰我一下」「拍我一下」时用 light，不然角色会追着主人一直打到倒下。这个工具只负责攻击，不保证目标已经倒下：结果只说明角色开始打了，目标还在。目标离角色太远会失败，先走近再让角色打。"
+description = "让角色去攻击身边的一个活物。target 写要打谁：活物的中文名或英文短名（僵尸、zombie、羊、sheep）、另一个玩家的名字（照 maid_look_around 里看到的那个名字），或 hostile（最近的敌对生物）、animal（最近的动物）、other_player（另一个玩家）、owner（主人自己）。style 选力度：fight（默认，追着一直打到对方倒下；一次调用就够了，战斗中不要重复调用，重复调用只会得到「已经在打」的回执）或 light（只轻轻打一下，打完就收手、伤害很小）。主人说「去打那只僵尸」「揍它」用默认；说「打我一下」「轻轻碰我一下」「拍我一下」时用 light，不然角色会追着主人一直打到倒下。这个工具只负责攻击，不保证目标已经倒下：结果只说明角色开始打了，目标还在。目标离角色太远会失败，先走近再让角色打。"
 parameters = '{ "type":"object", "properties":{ "target":{ "type":"string", "description":"要打谁：活物名字、英文短名、实体 id、另一个玩家的名字，或 hostile / animal / other_player / owner" }, "style":{ "type":"string", "description":"fight = 追着打倒（默认）；light = 只轻轻打一下" } }, "required":["target"] }'
 script = "tools/entry.py"
 timeout_ms = 15000
@@ -165,8 +165,8 @@ timeout_ms = 15000
 
 [[tools]]
 name = "maid_look_around"
-description = "看一眼角色身边现在有什么。返回角色正前方挡着的方块或生物、脚下踩着哪（坐在船或矿车里时改说载具）、头顶有没有遮挡、周围亮不亮、她在不在村庄这类结构里、附近一圈的活物（另一个玩家会带名字）、附近看得见、挖得动的方块（中文名与方块 id；埋在地下看不见的不列）、角色背包里有什么（物品名、id 与数量；最后一格是头饰栏，单独说）、以及主人在不在角色身边。主人问角色周围有什么，或者让角色挖某种方块但说不准是哪种时，先用它看一眼：返回的方块 id 可以直接当 maid_mine 的 target。不要凭印象编。距离只说近/中/远，活物不说方位。"
-parameters = '{ "type":"object", "properties":{} }'
+description = "看一眼角色身边现在有什么。返回角色正前方挡着的方块或生物、脚下踩着哪（坐在船或矿车里时改说载具）、头顶有没有遮挡、她在不在村庄这类结构里、附近一圈的活物（另一个玩家会带名字）、附近看得见、挖得动的方块（中文名与方块 id；埋在地下看不见的不列），最近一块带方位、层高、挡路与走过去的大概步数，同种方块相连成团的还会给出团的大小，以及角色背包里有什么（物品名、id 与数量；最后一格是头饰栏，单独说）、主人在不在角色身边。主人问角色周围有什么，或者让角色挖某种方块但说不准是哪种时，先用它看一眼：返回的方块 id 可以直接当 maid_mine 的 target。玩家问「怎么过去」「带我去」时把 detail 填 map，会多一张近细远粗的小图；平时用 brief，别每轮都要图。不要凭印象编。活物与正前方只说近/中/远。"
+parameters = '{ "type":"object", "properties":{ "detail":{ "type":"string", "enum":["brief","map"], "description":"brief = 只说关系（默认）；map = 另给一张近细远粗的小图，玩家问怎么过去时用" } } }'
 script = "tools/entry.py"
 timeout_ms = 15000
 

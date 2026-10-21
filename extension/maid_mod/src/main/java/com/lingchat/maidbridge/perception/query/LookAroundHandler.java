@@ -1,19 +1,25 @@
 package com.lingchat.maidbridge.perception.query;
 
 import com.github.tartaricacid.touhoulittlemaid.entity.passive.EntityMaid;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.lingchat.maidbridge.bridge.Envelope;
 import com.lingchat.maidbridge.bridge.MessageHandler;
 import com.lingchat.maidbridge.maid.MaidInventory;
 import com.lingchat.maidbridge.maid.MaidQueries;
+import com.lingchat.maidbridge.perception.EventFrames;
 import com.lingchat.maidbridge.perception.PerceptionProfiles;
 import com.lingchat.maidbridge.perception.nearby.Surroundings;
 import com.lingchat.maidbridge.perception.nearby.SurroundingsReader;
+import com.lingchat.maidbridge.perception.spatial.BlockSight;
+import com.lingchat.maidbridge.perception.spatial.LocalTerrain;
+import java.util.List;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
 
 /**
  * {@code maid_look_around}：按需取一份她身边的快照。
@@ -36,6 +42,8 @@ public class LookAroundHandler implements MessageHandler {
     private static final int BACKPACK_LIMIT = 12;
     /** 看玩家准星落点多远：与挖掘的区域锚点同一口径。 */
     private static final double GAZE_RAY = 32.0;
+    /** 小图自己的地形快照半径：远处两格合并要看到 ±13 格。 */
+    private static final int MAP_RADIUS = 14;
 
     private final MinecraftServer server;
 
@@ -49,7 +57,8 @@ public class LookAroundHandler implements MessageHandler {
         if (maid == null) {
             return Envelope.error(MaidQueries.missingReason(server));
         }
-        boolean auto = "auto".equalsIgnoreCase(Envelope.string(Envelope.data(request), "profile"));
+        JsonObject requestData = Envelope.data(request);
+        boolean auto = "auto".equalsIgnoreCase(Envelope.string(requestData, "profile"));
         Surroundings snapshot = SurroundingsReader.read(maid, auto ? PerceptionProfiles.auto() : PerceptionProfiles.query());
         if (auto) {
             // 自动感知只要近处那一份：不扫方块、不列背包，省掉每次开口的几千次方块读取
@@ -62,11 +71,24 @@ public class LookAroundHandler implements MessageHandler {
                 ? MaidQueries.gazeAt(owner, GAZE_RAY)
                 : null;
         BlockPos center = gaze != null ? gaze : maid.blockPosition();
-        JsonObject response = Surroundings.response(
-                snapshot,
-                SurroundingsReader.blocksNearby(maid, center, BLOCK_RADIUS, BLOCK_VERTICAL, BLOCK_LIMIT));
+        Level level = maid.level();
+        LocalTerrain terrain = LocalTerrain.read(level, center, BLOCK_RADIUS, 1, BLOCK_VERTICAL);
+        List<BlockSight> blocks =
+                SurroundingsReader.blocksNearby(maid, center, terrain, BLOCK_LIMIT);
+        boolean withMap = "map".equalsIgnoreCase(Envelope.string(requestData, "detail"));
+        BlockPos mapCenter = maid.blockPosition();
+        LocalTerrain mapTerrain = null;
+        if (withMap) {
+            // 小图总是以她为中心；玩家指着的远处那片由关系句交代，不画进图里
+            mapTerrain = mapCenter.equals(center)
+                    ? terrain
+                    : LocalTerrain.read(level, mapCenter, MAP_RADIUS, 1, BLOCK_VERTICAL);
+        }
+        BlockProjection projection = BlockProjector.project(maid, terrain, mapTerrain, blocks, withMap);
+        JsonObject response = Surroundings.response(snapshot, blocks);
         // 背包清单只给按需查询：模型要能看见她身上有什么，才谈得上「把那个给我」
         JsonObject body = Envelope.data(response);
+        addProjection(body, projection);
         body.add("backpack", MaidInventory.stacks(maid, BACKPACK_LIMIT));
         // 最后一格是头饰栏：顶在头上，不算背包存货，单独说
         ItemStack headwear = MaidInventory.headwear(maid);
@@ -77,5 +99,49 @@ public class LookAroundHandler implements MessageHandler {
             body.add("headwear", head);
         }
         return response;
+    }
+
+    private static void addProjection(JsonObject body, BlockProjection projection) {
+        JsonArray relations = new JsonArray();
+        for (BlockRelation one : projection.relations()) {
+            JsonObject item = new JsonObject();
+            item.addProperty("id", one.id());
+            item.addProperty("seen", one.seenNow() ? "now" : "before");
+            item.addProperty("dx", one.dx());
+            item.addProperty("dy", one.dy());
+            item.addProperty("dz", one.dz());
+            item.addProperty("facing", one.facing());
+            item.addProperty("same_layer", one.sameLayer());
+            item.addProperty("distance", EventFrames.round(one.distance()));
+            item.addProperty("blockers", one.blockers());
+            item.addProperty("blocker", one.blocker());
+            item.addProperty("walk_steps", one.walkSteps());
+            relations.add(item);
+        }
+        body.add("relations", relations);
+
+        JsonArray clusters = new JsonArray();
+        for (BlockCluster one : projection.clusters()) {
+            JsonObject item = new JsonObject();
+            item.addProperty("id", one.id());
+            item.addProperty("cells", one.cells());
+            item.addProperty("truncated", one.truncated());
+            item.addProperty("dx", one.dx());
+            item.addProperty("dy", one.dy());
+            item.addProperty("dz", one.dz());
+            item.addProperty("facing", one.facing());
+            item.addProperty("distance", EventFrames.round(one.distance()));
+            item.addProperty("blockers", one.blockers());
+            item.addProperty("blocker", one.blocker());
+            clusters.add(item);
+        }
+        body.add("clusters", clusters);
+
+        if (projection.map() != null) {
+            JsonObject map = new JsonObject();
+            map.addProperty("radius", projection.map().radius());
+            map.addProperty("text", projection.map().text());
+            body.add("map", map);
+        }
     }
 }

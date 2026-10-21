@@ -12,8 +12,8 @@ TARGET_DEFAULTS = {"go_to": "player", "lie_down": "bed"}
 # 受理了但还没做完时给模型的话：必须让它知道自己还没到位，否则它会当场宣布已经办到。
 # 只陈述此刻的状态，不承诺「之后会通知」——模型会照着这句对玩家说出口。
 PENDING_TEXT = {
-    "go_to": "{maid}动身往{player}那边去了，这会儿还在路上。",
-    "lie_down": "{maid}朝床边走去，还没躺下。",
+    "go_to": "{maid}开始动身往{player}那边去中",
+    "lie_down": "{maid}开始朝床边走去",
 }
 
 # 受理即完成的动作给模型的话。

@@ -5,6 +5,7 @@ import com.google.gson.JsonObject;
 import com.lingchat.maidbridge.bridge.Envelope;
 import com.lingchat.maidbridge.bridge.Protocol;
 import com.lingchat.maidbridge.perception.EventFrames;
+import com.lingchat.maidbridge.perception.spatial.BlockSight;
 import com.lingchat.maidbridge.perception.world.PerceptionSnapshot;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -160,8 +161,13 @@ public record Surroundings(
         return response(s, List.of());
     }
 
-    /** 同上，另带一份附近能挖的方块 id（只有按需查询要，周期采样不带）。 */
-    public static JsonObject response(Surroundings s, List<String> blocks) {
+    /**
+     * 同上，另带一份附近能挖的方块（只有按需查询要，周期采样不带）。
+     *
+     * <p>{@code blocks} 仍是 id 清单，老插件照读；{@code block_sight} 与它一一对应，
+     * 说清这一种是此刻看见的（{@code now}）还是刚才看见、现在不在视野里的（{@code before}）。
+     */
+    public static JsonObject response(Surroundings s, List<BlockSight> blocks) {
         JsonObject data = new JsonObject();
         data.addProperty("maid_id", s.entityId());
         data.addProperty("dimension", s.dimension());
@@ -206,8 +212,16 @@ public record Surroundings(
 
         // 附近能挖的方块：只给注册表 id，中文名与「拿它去挖」的判断留给插件和模型
         JsonArray blockList = new JsonArray();
-        blocks.forEach(blockList::add);
+        JsonArray blockSight = new JsonArray();
+        for (BlockSight one : blocks) {
+            blockList.add(one.id());
+            JsonObject sight = new JsonObject();
+            sight.addProperty("id", one.id());
+            sight.addProperty("seen", one.seenNow() ? "now" : "before");
+            blockSight.add(sight);
+        }
         data.add("blocks", blockList);
+        data.add("block_sight", blockSight);
         return Envelope.response(Protocol.MAID_LOOK_AROUND_RESULT, data);
     }
 }

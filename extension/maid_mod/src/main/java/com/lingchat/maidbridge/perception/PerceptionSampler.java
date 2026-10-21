@@ -15,6 +15,7 @@ import com.lingchat.maidbridge.maid.MonitoredMaidHandler;
 import com.lingchat.maidbridge.perception.nearby.Surroundings;
 import com.lingchat.maidbridge.perception.nearby.SurroundingsDiff;
 import com.lingchat.maidbridge.perception.nearby.SurroundingsReader;
+import com.lingchat.maidbridge.perception.spatial.TerrainMemory;
 import com.lingchat.maidbridge.perception.world.PerceptionDiff;
 import com.lingchat.maidbridge.perception.world.PerceptionReader;
 import com.lingchat.maidbridge.perception.world.PerceptionSnapshot;
@@ -130,6 +131,7 @@ public final class PerceptionSampler {
         ItemReporter.clear();
         BackpackWatcher.clear();
         CarryReporter.reset();
+        TerrainMemory.clear();
     }
 
     private static EntityMaid monitoredMaid(MinecraftServer server) {

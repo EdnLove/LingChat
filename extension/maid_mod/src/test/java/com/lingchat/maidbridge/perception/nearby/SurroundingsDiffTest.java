@@ -352,6 +352,30 @@ class SurroundingsDiffTest {
         return SurroundingsDiff.events(prev, next, state, nowTick);
     }
 
+    @Test
+    void lightBandFollowsThresholds() {
+        assertEquals("dark", SurroundingsDiff.lightBand(0));
+        assertEquals("dark", SurroundingsDiff.lightBand(3));
+        assertEquals("dim", SurroundingsDiff.lightBand(4));
+        assertEquals("dim", SurroundingsDiff.lightBand(7));
+        assertEquals("bright", SurroundingsDiff.lightBand(8));
+        assertEquals("bright", SurroundingsDiff.lightBand(15));
+    }
+
+    @Test
+    void lightChangeNeedsTwoAgreeingFrames() {
+        SurroundingsDiff.State state = new SurroundingsDiff.State();
+        Surroundings bright = withLight(plain(), 15);
+        SurroundingsDiff.events(null, bright, state, 100L);
+
+        Surroundings dark = withLight(bright, 1);
+        assertTrue(diff(bright, dark, state, 200L).isEmpty(), "跨档第一次只是待确认");
+
+        List<JsonObject> frames = diff(dark, dark, state, 300L);
+        assertEquals(List.of("light_change"), types(frames));
+        assertEquals("dark", frames.get(0).get("band").getAsString());
+    }
+
     private static List<String> types(List<JsonObject> frames) {
         List<String> out = new ArrayList<>();
         for (JsonObject frame : frames) {
@@ -417,6 +441,12 @@ class SurroundingsDiffTest {
         return new Surroundings(
                 s.entityId(), s.dimension(), s.gaze(), s.feetBlock(), s.footing(), s.skyAbove(), hasSky,
                 s.light(), s.owner(), s.nearby(), s.nearbyTruncated(), s.vehicle(), s.structure());
+    }
+
+    private static Surroundings withLight(Surroundings s, int light) {
+        return new Surroundings(
+                s.entityId(), s.dimension(), s.gaze(), s.feetBlock(), s.footing(), s.skyAbove(), s.hasSky(),
+                light, s.owner(), s.nearby(), s.nearbyTruncated(), s.vehicle(), s.structure());
     }
 
     private static Surroundings withVehicle(Surroundings s, String vehicle) {

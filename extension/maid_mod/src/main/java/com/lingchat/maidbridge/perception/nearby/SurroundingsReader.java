@@ -2,9 +2,13 @@ package com.lingchat.maidbridge.perception.nearby;
 
 import com.github.tartaricacid.touhoulittlemaid.entity.passive.EntityMaid;
 import com.lingchat.maidbridge.maid.MaidQueries;
+import com.lingchat.maidbridge.perception.spatial.BlockSight;
 import com.lingchat.maidbridge.perception.spatial.LocalTerrain;
+import com.lingchat.maidbridge.perception.spatial.SightLine;
+import com.lingchat.maidbridge.perception.spatial.TerrainMemory;
 import com.lingchat.maidbridge.perception.world.PerceptionReader;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -140,17 +144,21 @@ public final class SurroundingsReader {
      * <p>竖直只从她脚下那一层往上，且只列露在外面的方块：埋在地下、四面被石头包住的矿石
      * 她看不见（2026-10-20 真机：站在沙地上，清单里却列着十几格深的地下的煤矿）。
      *
-     * <p>世界只读一遍：范围交给 {@link LocalTerrain}，与挖矿找目标读的是同一种快照。
+     * <p>露出来只是候选：真正进清单的，要么此刻从她眼睛看得见，要么半分钟内看见过
+     * （{@link TerrainMemory}）。看不见又没记过的方块不说——玩家问「你周围有什么」，
+     * 答的应该是她知道的东西，不是一份透视扫描。
+     *
+     * <p>地形快照由调用方读好再传进来：这一处与挖矿找目标读的是同一种快照，不再自己扫世界。
      */
-    public static List<String> blocksNearby(
-            EntityMaid maid, BlockPos center, int radius, int vertical, int limit) {
-        if (!(maid.level() instanceof ServerLevel level)) {
+    public static List<BlockSight> blocksNearby(
+            EntityMaid maid, BlockPos center, LocalTerrain terrain, int limit) {
+        if (limit <= 0) {
             return List.of();
         }
-        Map<String, Double> nearest = new HashMap<>();
+        Level level = maid.level();
+        Map<String, Candidate> nearest = new HashMap<>();
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
         BlockPos.MutableBlockPos side = new BlockPos.MutableBlockPos();
-        LocalTerrain terrain = LocalTerrain.read(level, center, radius, 1, vertical);
         terrain.forEachLoaded((x, y, z, state) -> {
             if (state.isAir() || state.getBlock() instanceof LiquidBlock) {
                 return;
@@ -165,17 +173,45 @@ public final class SurroundingsReader {
             if (!exposed(level, pos, side)) {
                 return;
             }
-            nearest.merge(blockId(state), center.distSqr(pos), Math::min);
+            String id = blockId(state);
+            double distance = center.distSqr(pos);
+            Candidate old = nearest.get(id);
+            if (old == null || distance < old.distance()) {
+                nearest.put(id, new Candidate(pos.immutable(), distance));
+            }
         });
-        return nearest.entrySet().stream()
-                .sorted(Map.Entry.comparingByValue())
-                .limit(limit)
-                .map(Map.Entry::getKey)
-                .toList();
+
+        List<Map.Entry<String, Candidate>> ordered = new ArrayList<>(nearest.entrySet());
+        ordered.sort(Comparator.comparingDouble(entry -> entry.getValue().distance()));
+
+        long tick = level.getGameTime();
+        Vec3 eye = maid.getEyePosition();
+        List<BlockSight> found = new ArrayList<>();
+        for (Map.Entry<String, Candidate> entry : ordered) {
+            String id = entry.getKey();
+            Candidate candidate = entry.getValue();
+            if (SightLine.sees(level, eye, candidate.pos(), maid)) {
+                TerrainMemory.remember(maid, id, candidate.pos(), tick);
+                found.add(new BlockSight(id, true, candidate.pos()));
+            } else {
+                TerrainMemory.Remembered remembered = TerrainMemory.recall(maid, id, tick);
+                if (remembered != null) {
+                    found.add(new BlockSight(id, false, remembered.pos()));
+                }
+            }
+            if (found.size() >= limit) {
+                break;
+            }
+        }
+        return found;
+    }
+
+    /** 一种方块离扫描中心最近的那一格。 */
+    private record Candidate(BlockPos pos, double distance) {
     }
 
     /** 六面里有一面不是实心遮挡就算露出来了：空腔、草、液体后面的方块都算看得见。 */
-    private static boolean exposed(ServerLevel level, BlockPos pos, BlockPos.MutableBlockPos side) {
+    private static boolean exposed(Level level, BlockPos pos, BlockPos.MutableBlockPos side) {
         for (Direction direction : Direction.values()) {
             side.setWithOffset(pos, direction);
             if (!level.isLoaded(side)) {

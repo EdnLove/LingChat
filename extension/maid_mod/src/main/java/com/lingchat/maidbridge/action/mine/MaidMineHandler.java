@@ -9,6 +9,7 @@ import com.lingchat.maidbridge.bridge.Envelope;
 import com.lingchat.maidbridge.bridge.MessageHandler;
 import com.lingchat.maidbridge.bridge.Protocol;
 import com.lingchat.maidbridge.maid.MaidQueries;
+import com.lingchat.maidbridge.perception.nearby.Surroundings;
 import java.util.List;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -107,16 +108,22 @@ public class MaidMineHandler implements MessageHandler {
 
         BlockState state = maid.level().getBlockState(target);
         if (state.isAir() || state.getBlock() instanceof LiquidBlock) {
-            return rejected("not_mineable", "那不是能挖的方块（水、岩浆这类不算）", blockId, count);
+            return rejected(
+                    "not_mineable", "那不是能挖的方块（水、岩浆这类不算）",
+                    blockId, count, scene(maid, target));
         }
         if (!MineRules.mineable(state.getDestroySpeed(maid.level(), target))) {
-            return rejected("not_mineable", "这个方块挖不动", blockId, count);
+            return rejected(
+                    "not_mineable", "这个方块挖不动", blockId, count, scene(maid, target));
         }
         if (!maid.canDestroyBlock(target)) {
-            return rejected("protected", "这个方块不让她挖（受保护）", blockId, count);
+            return rejected(
+                    "protected", "这个方块不让她挖（受保护）", blockId, count, scene(maid, target));
         }
         if (!MineTargets.hasCorrectTool(maid, state)) {
-            return rejected("wrong_tool", MineTargets.missingToolReason(maid, state), blockId, count);
+            return rejected(
+                    "wrong_tool", MineTargets.missingToolReason(maid, state),
+                    blockId, count, scene(maid, target));
         }
         // 没有落脚点也受理：埋在墙里的矿、树干高处的木头，她会一路把挡路的方块挖穿过去。
         // 真正走不通时由控制器在挖的过程中收尾，理由比「走不到跟前」具体。
@@ -141,6 +148,27 @@ public class MaidMineHandler implements MessageHandler {
         data.addProperty("tool", handItemId(maid));
         data.addProperty("replaced_action", replaced);
         return Envelope.response(Protocol.MAID_MINE_RESULT, data);
+    }
+
+    /** 目标相对她的位置，以及周围站不站得下、上方压没压着东西。 */
+    private static JsonObject scene(EntityMaid maid, BlockPos target) {
+        JsonObject scene = new JsonObject();
+        BlockPos feet = maid.blockPosition();
+        scene.addProperty("dx", target.getX() - feet.getX());
+        scene.addProperty("dy", target.getY() - feet.getY());
+        scene.addProperty("dz", target.getZ() - feet.getZ());
+        scene.addProperty(
+                "facing",
+                Surroundings.direction(
+                        maid.getYRot(), target.getX() - maid.getX(), target.getZ() - maid.getZ()));
+        BlockPos above = target.above();
+        BlockState aboveState = maid.level().getBlockState(above);
+        scene.addProperty(
+                "blocked_above",
+                !aboveState.isAir() && !aboveState.canBeReplaced()
+                        && !aboveState.getCollisionShape(maid.level(), above).isEmpty());
+        scene.addProperty("stand_room", MineTargets.standRoom(maid, target));
+        return scene;
     }
 
     /**
@@ -190,6 +218,11 @@ public class MaidMineHandler implements MessageHandler {
     }
 
     private static JsonObject rejected(String reasonCode, String reason, String target, int count) {
+        return rejected(reasonCode, reason, target, count, null);
+    }
+
+    private static JsonObject rejected(
+            String reasonCode, String reason, String target, int count, JsonObject scene) {
         JsonObject data = base();
         data.addProperty("accepted", false);
         data.addProperty("async", false);
@@ -203,6 +236,9 @@ public class MaidMineHandler implements MessageHandler {
         data.addProperty("replaced_action", "");
         data.addProperty("reason_code", reasonCode);
         data.addProperty("reason", reason);
+        if (scene != null) {
+            data.add("scene", scene);
+        }
         return Envelope.response(Protocol.MAID_MINE_RESULT, data);
     }
 }

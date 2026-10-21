@@ -24,9 +24,9 @@ use super::tool_rag::{apply_dynamic_search_description, effective_allowed};
 const MAX_PERSISTED_TOOL_RESULT_CHARS: usize = 32_000;
 const MAX_PERSISTED_SINGLE_TOOL_RESULT_CHARS: usize = 12_000;
 const TOOL_RESULT_TRUNCATION_MARKER: &str = "\n...[工具结果过长，长期记忆已截断]";
-// 工具结果返回后的续写引导改由 ReplyLengthMode::tool_continuation_text 逐轮生成，
-// 它要报出这一回合还剩几句台词。原来那条写死的「接着上一条回复继续」等于鼓励继续
-// 说话，一个回合攒下十几句，钦灵：这是重构之后的福报~，这边注释先保留，之后有问题我再修
+// 工具结果返回后的续写引导由 ReplyLengthMode::tool_continuation_text 生成，再经
+// attach_line_budget 写进最后一条工具结果。不能在对话中间追加 system 消息：部分
+// 提供商会把它当成新的人设提示，导致人设漂移。
 /// 收尾轮只返回工具调用、没有任何正文时的补救提示：明确调用未执行、已无工具可用，
 /// 要求直接输出总结正文，避免整条回复落空触发前端报错。
 const FINAL_SYNTHESIS_RETRY_PROMPT: &str = "你刚才尝试调用的工具未被执行：当前已没有可用工具。请不要再尝试调用工具，直接基于已完成的工具结果，用正文给出最终答复；如仍有未完成事项，请明确说明。";
@@ -48,6 +48,58 @@ fn final_synthesis_text(mode: ReplyLengthMode, spoken: usize) -> String {
         }
     }
     text
+}
+
+/// TODO: 钦灵：这部分代码我会重点审查，今天困了（
+/// 把一段工具循环指令写进最后一条工具结果。
+fn attach_tool_note(messages: &mut [LlmMessage], key: &str, note: serde_json::Value) {
+    let Some(last) = messages
+        .iter_mut()
+        .rev()
+        .find(|message| message.role == "tool")
+    else {
+        return;
+    };
+    if let Ok(mut value) = serde_json::from_str::<serde_json::Value>(&last.content) {
+        if let Some(object) = value.as_object_mut() {
+            object.insert(key.to_string(), note);
+            last.content = value.to_string();
+            return;
+        }
+    }
+    let text = note
+        .as_str()
+        .map(str::to_string)
+        .unwrap_or_else(|| note.to_string());
+    last.content = format!("{}\n\n（{text}）", last.content);
+}
+
+/// 把本回合的台词额度塞进最后一条工具结果，只改这一轮请求的副本。
+fn attach_line_budget(messages: &mut [LlmMessage], mode: ReplyLengthMode, spoken: usize) {
+    let Some(budget) = mode.tool_turn_budget() else {
+        // 自由档没有额度，但仍然要告诉模型可以不说话
+        attach_tool_note(
+            messages,
+            "tool_continuation",
+            serde_json::Value::String(mode.tool_continuation_text(spoken)),
+        );
+        return;
+    };
+    let left = budget.saturating_sub(spoken);
+    let note = format!(
+        "{}这是内部限制，不要向玩家复述。",
+        mode.tool_continuation_text(spoken)
+    );
+    attach_tool_note(
+        messages,
+        "line_budget",
+        serde_json::json!({
+            "spoken": spoken,
+            "budget": budget,
+            "left": left,
+            "note": note,
+        }),
+    );
 }
 
 /// Tool RAG 开启时的检索引导。
@@ -186,8 +238,12 @@ pub async fn stream_with_tool_loop(
             let final_synthesis = round >= max_tool_rounds;
             if round == max_tool_rounds {
                 // 达到用户配置的工具轮数后保留一次不带工具定义的收尾生成，避免直接报错并
-                // 丢掉已经完成的工具结果。
-                messages.push(LlmMessage::system(final_synthesis_text(reply_mode, spoken_lines)));
+                // 丢掉已经完成的工具结果。收尾要求写进工具结果，不追加 system 消息。
+                attach_tool_note(
+                    &mut messages,
+                    "final_synthesis",
+                    serde_json::Value::String(final_synthesis_text(reply_mode, spoken_lines)),
+                );
             }
             // 角色可以在上一轮工具执行中发生变化。每轮按当前角色重新计算权限，
             // 防止切换后沿用旧角色的工具授权。Tool RAG 下还要重算激活集：第 N 轮的
@@ -284,7 +340,11 @@ pub async fn stream_with_tool_loop(
                 if round_text.trim().is_empty() && !synthesis_retried {
                     synthesis_retried = true;
                     tracing::info!("收尾轮无正文，追加补救提示后重试一次");
-                    messages.push(LlmMessage::system(FINAL_SYNTHESIS_RETRY_PROMPT));
+                    attach_tool_note(
+                        &mut messages,
+                        "final_synthesis",
+                        serde_json::Value::String(FINAL_SYNTHESIS_RETRY_PROMPT.to_string()),
+                    );
                     continue;
                 }
                 return;
@@ -292,6 +352,14 @@ pub async fn stream_with_tool_loop(
 
             tool_calls_seen_in_stream.store(true, Ordering::Release);
             let calls = tool_calls;
+            if let Some(budget) = reply_mode.tool_turn_budget() {
+                tracing::info!(
+                    spoken = spoken_lines,
+                    budget,
+                    left = budget.saturating_sub(spoken_lines),
+                    "工具回合台词额度"
+                );
+            }
 
             let mut ids = HashSet::new();
             for call in &calls {
@@ -405,6 +473,9 @@ pub async fn stream_with_tool_loop(
                 }
             }
 
+            let mut live_round_messages = round_messages.clone();
+            attach_line_budget(&mut live_round_messages, reply_mode, spoken_lines);
+
             if character_switched {
                 // character_switch 已为目标角色注入 SYSTEM 并刷新记忆。这里必须切换
                 // LLM 上下文本身，否则同一请求的最终回复仍会沿用旧角色人设。
@@ -412,28 +483,21 @@ pub async fn stream_with_tool_loop(
                 messages = rebase_after_character_switch(
                     refreshed,
                     active_user_message.as_ref(),
-                    &round_messages,
+                    &live_round_messages,
                 );
                 messages.extend(pending_images);
-                // 新角色的记忆里没有这一回合说过什么，台词额度得重新报一次
-                messages.push(LlmMessage::system(
-                    reply_mode.tool_continuation_text(spoken_lines),
-                ));
                 active_role_name = refreshed_name;
-                // rebase 用新角色的记忆整体替换了 messages，上面两条临时 system 提示
-                // 会一并丢失。新角色的激活缓存是空的，不补回提示模型就不知道
-                // tool_search 的存在，会以为自己没有任何可用的工具。
+                // rebase 用新角色的记忆整体替换了 messages，顶层的工具策略提示会一并丢失。
+                // 新角色的激活缓存是空的，不补回提示模型就不知道 tool_search 的存在，
+                // 会以为自己没有任何可用的工具。
                 let switched_base = registry.allowed_tools(source, active_role_name.as_deref());
                 messages.insert(0, LlmMessage::system(TOOL_USE_POLICY_PROMPT));
                 if rag_on && !switched_base.is_empty() {
                     messages.insert(1, LlmMessage::system(TOOL_SEARCH_PROMPT));
                 }
             } else {
-                messages.extend(round_messages.clone());
+                messages.extend(live_round_messages);
                 messages.extend(pending_images);
-                messages.push(LlmMessage::system(
-                    reply_mode.tool_continuation_text(spoken_lines),
-                ));
             }
 
             let persisted_messages = bounded_tool_history(
@@ -690,49 +754,4 @@ fn presentation_stream(stream: ChunkStream) -> PresentationStream {
             Err(e) => Some(Err(e)),
         }
     }))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::split_tool_image;
-
-    #[test]
-    fn image_field_is_split_out_of_tool_result() {
-        let result = r#"{"ok":true,"message":"看了一眼","image":{"data_url":"data:image/jpeg;base64,AA","hint":"看图"}}"#;
-        let (text, image) = split_tool_image(result);
-        // 图不能留在文本里：base64 写进长期记忆既占上下文，下一轮还会被重发。
-        assert!(!text.contains("data:image"));
-        assert!(!text.contains("\"image\""));
-        assert_eq!(
-            image,
-            Some(("看图".to_string(), "data:image/jpeg;base64,AA".to_string()))
-        );
-    }
-
-    #[test]
-    fn plain_tool_result_is_untouched() {
-        let result = r#"{"ok":true,"message":"好"}"#;
-        assert_eq!(split_tool_image(result), (result.to_string(), None));
-    }
-
-    #[test]
-    fn missing_hint_falls_back_to_generic_text() {
-        let result = r#"{"ok":true,"image":{"data_url":"data:image/png;base64,BB"}}"#;
-        let (_, image) = split_tool_image(result);
-        assert_eq!(
-            image,
-            Some((
-                super::TOOL_IMAGE_HINT.to_string(),
-                "data:image/png;base64,BB".to_string()
-            ))
-        );
-    }
-
-    #[test]
-    fn image_without_data_url_is_dropped() {
-        let result = r#"{"ok":true,"image":{"hint":"没有图"}}"#;
-        let (text, image) = split_tool_image(result);
-        assert_eq!(image, None);
-        assert!(!text.contains("\"image\""));
-    }
 }

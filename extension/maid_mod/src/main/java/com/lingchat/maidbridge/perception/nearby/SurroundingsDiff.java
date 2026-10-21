@@ -36,6 +36,11 @@ public final class SurroundingsDiff {
     public static final long GROUND_COOLDOWN_TICKS = 600L;
     /** 进出结构的最短重报间隔：在村子边上走来走去不该反复说。 */
     public static final long STRUCTURE_COOLDOWN_TICKS = 600L;
+    /** 光线跨档的最短重报间隔：在洞口、树荫边缘走动不该反复说。 */
+    public static final long LIGHT_COOLDOWN_TICKS = 200L;
+    /** 光照分档阈值：0-3 很黑，4-7 昏暗，8 以上明亮。 */
+    public static final int LIGHT_DARK_MAX = 3;
+    public static final int LIGHT_DIM_MAX = 7;
 
     /**
      * 敌对生物的最短重报间隔：两分钟。
@@ -106,6 +111,7 @@ public final class SurroundingsDiff {
         private final StableValue proximity = new StableValue();
         private final StableValue sight = new StableValue();
         private final StableValue shelter = new StableValue();
+        private final StableValue light = new StableValue();
         /** 已经报出去的威胁档；被冷静期压掉时不更新，好让下一次接着试。 */
         private String threatBand;
         private long lastThreatTick = Long.MIN_VALUE;
@@ -121,6 +127,7 @@ public final class SurroundingsDiff {
             proximity.reset();
             sight.reset();
             shelter.reset();
+            light.reset();
             threatBand = null;
             lastThreatTick = Long.MIN_VALUE;
             lastSurfaceTick = Long.MIN_VALUE;
@@ -139,6 +146,7 @@ public final class SurroundingsDiff {
             state.proximity.baseline(proximityBand(null, next));
             state.sight.baseline(sightValue(next));
             state.shelter.baseline(shelterValue(next));
+            state.light.baseline(lightBand(next.light()));
             state.threatBand = threatBand(nearestHostile(next));
             return frames;
         }
@@ -148,6 +156,7 @@ public final class SurroundingsDiff {
         addThreat(frames, next, state, nowTick);
         addLiving(frames, prev, next, state, nowTick);
         addShelter(frames, prev, next, state, nowTick);
+        addLight(frames, next, state, nowTick);
         addVehicle(frames, prev, next);
         addStructure(frames, prev, next, state, nowTick);
         addGround(frames, prev, next, state, nowTick);
@@ -266,6 +275,29 @@ public final class SurroundingsDiff {
         // tick 把同键的合成一条，只留最后那次（数值大的胜出）。
         frame.addProperty("tick", nowTick);
         frames.add(frame);
+    }
+
+    /**
+     * 光线跨了一档：很黑 / 昏暗 / 明亮。进洞、天黑、点起火把都会走到这里。
+     *
+     * <p>只报跨档，不报数值；和遮蔽一样要连续两次采样才认，洞口来回走不会反复说。
+     */
+    private static void addLight(List<JsonObject> frames, Surroundings next, State state, long nowTick) {
+        String band = lightBand(next.light());
+        if (!state.light.observe(band, nowTick, LIGHT_COOLDOWN_TICKS)) {
+            return;
+        }
+        JsonObject frame = EventFrames.base("light_change", next.entityId());
+        frame.addProperty("band", band);
+        frames.add(frame);
+    }
+
+    /** 光照等级 → 档位；阈值与插件的旁白说法一一对应。 */
+    public static String lightBand(int light) {
+        if (light <= LIGHT_DARK_MAX) {
+            return "dark";
+        }
+        return light <= LIGHT_DIM_MAX ? "dim" : "bright";
     }
 
     /** 上去或下来了：船、矿车这类载具。坐在里面的时候脚下没有「地」可说。 */

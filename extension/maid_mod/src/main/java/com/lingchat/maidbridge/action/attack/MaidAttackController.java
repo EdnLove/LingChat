@@ -77,6 +77,14 @@ public final class MaidAttackController {
         return run != null && maid != null && run.maidId.equals(maid.getStringUUID());
     }
 
+    /** 这只女仆正在追打这个目标吗；轻轻一下不算，那一下就收手。 */
+    public static boolean isFighting(EntityMaid maid, LivingEntity target) {
+        Run run = current;
+        return run != null && !run.singleHit && maid != null && target != null
+                && run.maidId.equals(maid.getStringUUID())
+                && run.targetId.equals(target.getUUID());
+    }
+
     /** 每个服务端 tick 推进一次（主线程）。 */
     public static void tick(MinecraftServer server) {
         Run run = current;

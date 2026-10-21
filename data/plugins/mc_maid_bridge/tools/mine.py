@@ -2,7 +2,7 @@
 
 from bridge import ask, ready
 from naming import names, narrate
-from wording import BLOCK_NAMES, mine_choices, mine_target, name_of
+from wording import BLOCK_NAMES, DIRECTION_NAMES, as_int, mine_choices, mine_target, name_of
 
 from tools.common import ACTION_TIMEOUT_MS
 
@@ -40,9 +40,44 @@ def _mine(ctx):
     if response.get("type") == "error":
         return {"ok": False, "error": narrate(frame.get("message")) or "游戏那边没能开始挖"}
     if not frame.get("accepted"):
-        return {"ok": False, "error": narrate(frame.get("reason")) or "游戏拒绝了这次挖掘"}
+        return {"ok": False, "error": _failure_text(frame)}
     maid_name, player = names()
     return {"ok": True, "message": _mine_text(frame, maid_name, player)}
+
+
+def _scene_where(scene):
+    """失败与受理回执里的目标方位：左前方三步、低一层。"""
+    facing = DIRECTION_NAMES.get((scene.get("facing") or "").strip(), "")
+    dx = as_int(scene.get("dx"), 0)
+    dz = as_int(scene.get("dz"), 0)
+    dy = as_int(scene.get("dy"), 0)
+    steps = max(0, int(round((dx * dx + dz * dz) ** 0.5)))
+    parts = []
+    if facing:
+        parts.append(facing)
+    if steps:
+        parts.append(f"{steps}步")
+    parts.append("同一层" if dy == 0 else (f"高{dy}层" if dy > 0 else f"低{-dy}层"))
+    return "、".join(parts)
+
+
+def _failure_text(frame):
+    """失败原因后面补一句现场：目标在哪、上方压没压着、周围站不站得下。"""
+    reason = narrate(frame.get("reason")) or "游戏拒绝了这次挖掘"
+    scene = frame.get("scene")
+    if not isinstance(scene, dict):
+        return reason
+    notes = []
+    where = _scene_where(scene)
+    if where:
+        notes.append(f"那块在{where}")
+    if scene.get("blocked_above"):
+        notes.append("上方压着方块，站不直")
+    if scene.get("stand_room") is False:
+        notes.append("周围没有能站的地方")
+    if not notes:
+        return reason
+    return f"{reason.rstrip('。')}；{'，'.join(notes)}。"
 
 
 def _mine_text(frame, maid, player):

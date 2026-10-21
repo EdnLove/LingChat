@@ -85,6 +85,11 @@ public class MaidAttackHandler implements MessageHandler {
         if (!withinReach(maid, target)) {
             return rejected("target_too_far", "那个目标在她居家活动范围之外，先走近一点再让她打", token);
         }
+        // 已经在追打同一个目标：只回执，不重启。模型常把「还在打」读成「需要再叫一次」，
+        // 重复调用会不断取消并重开这一仗；回执里明说不用再叫。
+        if (!singleHit && MaidAttackController.isFighting(maid, target)) {
+            return result(maid, target, isWeapon(maid.getMainHandItem()), false, true, distance);
+        }
 
         // 插件发起的动作每 tick 写寻路目标，与追打会互相顶
         MaidActionController.cancelCurrent(server);
@@ -94,10 +99,18 @@ public class MaidAttackHandler implements MessageHandler {
         boolean weapon = singleHit ? isWeapon(maid.getMainHandItem()) : equipWeapon(maid);
         MaidAttackController.start(maid, target, singleHit);
 
+        return result(maid, target, weapon, singleHit, false, distance);
+    }
+
+    /** 受理回执；{@code alreadyFighting} 表示这一仗已经在打，没有重启。 */
+    private static JsonObject result(
+            EntityMaid maid, LivingEntity target, boolean weapon, boolean singleHit,
+            boolean alreadyFighting, double distance) {
         JsonObject data = base();
         data.addProperty("accepted", true);
         data.addProperty("weapon", weapon);
         data.addProperty("style", singleHit ? "light" : "fight");
+        data.addProperty("already_fighting", alreadyFighting);
         JsonObject entry = new JsonObject();
         entry.addProperty("id", target.getStringUUID());
         entry.addProperty("type", BuiltInRegistries.ENTITY_TYPE.getKey(target.getType()).toString());
