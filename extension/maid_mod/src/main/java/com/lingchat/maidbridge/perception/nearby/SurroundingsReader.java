@@ -2,6 +2,7 @@ package com.lingchat.maidbridge.perception.nearby;
 
 import com.github.tartaricacid.touhoulittlemaid.entity.passive.EntityMaid;
 import com.lingchat.maidbridge.maid.MaidQueries;
+import com.lingchat.maidbridge.perception.spatial.LocalTerrain;
 import com.lingchat.maidbridge.perception.world.PerceptionReader;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -138,6 +139,8 @@ public final class SurroundingsReader {
      *
      * <p>竖直只从她脚下那一层往上，且只列露在外面的方块：埋在地下、四面被石头包住的矿石
      * 她看不见（2026-10-20 真机：站在沙地上，清单里却列着十几格深的地下的煤矿）。
+     *
+     * <p>世界只读一遍：范围交给 {@link LocalTerrain}，与挖矿找目标读的是同一种快照。
      */
     public static List<String> blocksNearby(
             EntityMaid maid, BlockPos center, int radius, int vertical, int limit) {
@@ -147,30 +150,23 @@ public final class SurroundingsReader {
         Map<String, Double> nearest = new HashMap<>();
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
         BlockPos.MutableBlockPos side = new BlockPos.MutableBlockPos();
-        for (int dx = -radius; dx <= radius; dx++) {
-            for (int dz = -radius; dz <= radius; dz++) {
-                for (int dy = -1; dy <= vertical; dy++) {
-                    pos.set(center.getX() + dx, center.getY() + dy, center.getZ() + dz);
-                    if (!level.isLoaded(pos)) {
-                        continue;
-                    }
-                    BlockState state = level.getBlockState(pos);
-                    if (state.isAir() || state.getBlock() instanceof LiquidBlock) {
-                        continue;
-                    }
-                    if (state.getCollisionShape(level, pos).isEmpty()) {
-                        continue;
-                    }
-                    if (state.getDestroySpeed(level, pos) < 0.0F) {
-                        continue;
-                    }
-                    if (!exposed(level, pos, side)) {
-                        continue;
-                    }
-                    nearest.merge(blockId(state), center.distSqr(pos), Math::min);
-                }
+        LocalTerrain terrain = LocalTerrain.read(level, center, radius, 1, vertical);
+        terrain.forEachLoaded((x, y, z, state) -> {
+            if (state.isAir() || state.getBlock() instanceof LiquidBlock) {
+                return;
             }
-        }
+            pos.set(x, y, z);
+            if (state.getCollisionShape(level, pos).isEmpty()) {
+                return;
+            }
+            if (state.getDestroySpeed(level, pos) < 0.0F) {
+                return;
+            }
+            if (!exposed(level, pos, side)) {
+                return;
+            }
+            nearest.merge(blockId(state), center.distSqr(pos), Math::min);
+        });
         return nearest.entrySet().stream()
                 .sorted(Map.Entry.comparingByValue())
                 .limit(limit)

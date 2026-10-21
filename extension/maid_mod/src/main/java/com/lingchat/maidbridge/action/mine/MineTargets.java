@@ -2,6 +2,7 @@ package com.lingchat.maidbridge.action.mine;
 
 import com.github.tartaricacid.touhoulittlemaid.entity.passive.EntityMaid;
 import com.lingchat.maidbridge.maid.MaidInventory;
+import com.lingchat.maidbridge.perception.spatial.LocalTerrain;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -95,6 +96,8 @@ public final class MineTargets {
      *
      * <p>只做粗筛（是不是这一族方块、能不能挖、在不在活动范围内），落脚点留给真正轮到的
      * 那几块再验：一圈几千个方块里逐个算路径是算不起的。
+     *
+     * <p>世界只读一遍：范围交给 {@link LocalTerrain}，之后所有判断都在这份快照上做。
      */
     public static List<BlockPos> nearest(
             EntityMaid maid, BlockPos center, String blockId, int radius, int limit) {
@@ -106,32 +109,25 @@ public final class MineTargets {
         // 竖直上下各 8 格：连挖时扫描中心是她刚挖掉的那块，窗口跟着树干一起往上走，
         // 所以不用把范围撑大——真正卡人的是落脚点，见 standFor。
         int vertical = Math.min(radius, 8);
+        LocalTerrain terrain = LocalTerrain.read(level, center, radius, vertical, vertical);
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
-        for (int dx = -radius; dx <= radius; dx++) {
-            for (int dz = -radius; dz <= radius; dz++) {
-                for (int dy = -vertical; dy <= vertical; dy++) {
-                    pos.set(center.getX() + dx, center.getY() + dy, center.getZ() + dz);
-                    if (!level.isLoaded(pos)) {
-                        continue;
-                    }
-                    BlockState state = level.getBlockState(pos);
-                    if (state.isAir() || !targets.contains(state.getBlock())) {
-                        continue;
-                    }
-                    // 水与岩浆不是「挖」出来的：让她们去舀是另一回事
-                    if (state.getBlock() instanceof LiquidBlock) {
-                        continue;
-                    }
-                    if (!MineRules.mineable(state.getDestroySpeed(level, pos))) {
-                        continue;
-                    }
-                    if (maid.hasRestriction() && !maid.isWithinRestriction(pos)) {
-                        continue;
-                    }
-                    found.add(pos.immutable());
-                }
+        terrain.forEachLoaded((x, y, z, state) -> {
+            if (state.isAir() || !targets.contains(state.getBlock())) {
+                return;
             }
-        }
+            // 水与岩浆不是「挖」出来的：让她们去舀是另一回事
+            if (state.getBlock() instanceof LiquidBlock) {
+                return;
+            }
+            pos.set(x, y, z);
+            if (!MineRules.mineable(state.getDestroySpeed(level, pos))) {
+                return;
+            }
+            if (maid.hasRestriction() && !maid.isWithinRestriction(pos)) {
+                return;
+            }
+            found.add(pos.immutable());
+        });
         found.sort(Comparator.comparingDouble(block -> center.distSqr(block)));
         return found.size() > limit ? new ArrayList<>(found.subList(0, limit)) : found;
     }
