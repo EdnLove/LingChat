@@ -76,6 +76,8 @@ pub struct ProactiveSystem {
 struct PendingPluginRequest {
     raw: String,
     queued_at: Instant,
+    /// 紧急请求（她死了、主人死了这类）不吃冷却与静默期，空闲就投。
+    urgent: bool,
 }
 
 /// 排队的插件请求最多等这么久；超时就丢掉，避免半小时后突然自己开口。
@@ -303,10 +305,12 @@ impl ProactiveSystem {
     /// 外部（插件）请求一次主动对话：先进队列，等这一轮台词播完、冷却也过了再投放。
     ///
     /// 同时最多攒一条——战斗里每挨一下来一次，逐个投放会把台词表与记忆搅在一起。
-    /// 事件本身已经记进台词表，合并掉多余的请求不会丢信息。
+    /// 事件本身已经记进台词表，合并掉多余的请求不会丢信息。`urgent` 的那些（她死了、
+    /// 主人死了）顶掉排队中的普通请求，投放时也不吃冷却与静默期。
     pub async fn request_deliver(
         system: Arc<Mutex<Self>>,
         raw: String,
+        urgent: bool,
     ) -> Result<(), &'static str> {
         {
             let Ok(mut this) = system.try_lock() else {
@@ -315,12 +319,17 @@ impl ProactiveSystem {
             if !this.config.enable_proactive_system {
                 return Err("proactive_disabled");
             }
-            if this.plugin_request.is_none() {
+            let replace = match &this.plugin_request {
+                None => true,
+                Some(pending) => urgent && !pending.urgent,
+            };
+            if replace {
                 this.plugin_request = Some(PendingPluginRequest {
                     raw,
                     queued_at: Instant::now(),
+                    urgent,
                 });
-                tracing::info!("[ProactiveSystem] 插件主动对话已排队");
+                tracing::info!(urgent, "[ProactiveSystem] 插件主动对话已排队");
             } else {
                 tracing::debug!("[ProactiveSystem] 插件主动对话已在队列中，合并本次请求");
             }
@@ -676,14 +685,18 @@ async fn flush_plugin_request(system: Arc<Mutex<ProactiveSystem>>) -> bool {
             tracing::info!("[ProactiveSystem] 排队的插件主动对话已过期，丢弃");
             return false;
         }
-        let cooling = this
-            .plugin_last_delivery
-            .is_some_and(|last| last.elapsed() < PLUGIN_COOLDOWN);
+        let cooling = !request.urgent
+            && this
+                .plugin_last_delivery
+                .is_some_and(|last| last.elapsed() < PLUGIN_COOLDOWN);
         // 上一轮刚播完还要再静一会儿：光等它播完，她上一句刚收尾下一句就顶上
-        let quiet_left = this
-            .plugin_playback_end
-            .filter(|end| end.elapsed() < PLUGIN_QUIET_GAP)
-            .map(|end| PLUGIN_QUIET_GAP.saturating_sub(end.elapsed()));
+        let quiet_left = if request.urgent {
+            None
+        } else {
+            this.plugin_playback_end
+                .filter(|end| end.elapsed() < PLUGIN_QUIET_GAP)
+                .map(|end| PLUGIN_QUIET_GAP.saturating_sub(end.elapsed()))
+        };
         let busy = this.generation_lock.try_lock().is_err();
         if !this.can_deliver || cooling || quiet_left.is_some() || busy {
             // 还没到投放时机：放回去，等下一次前端空闲通知或 30 秒轮询

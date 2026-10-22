@@ -394,6 +394,7 @@ JSON 文本帧，信封固定是 `{"type": ..., "request_id": ..., "data": {...}
 | `maid_hurt` | 女仆挨打（一小段连续挨打合成一条，两次上报至少隔 5 秒） | `damage` `count` `attacker` `damage_type` `health` `max_health`（后两项是这一波最后一下之后的血量） |
 | `creature_death` | 附近（`noticeRadius` 内）有生物死亡（10 秒内只报第一条） | `type` `category` `distance` `attacker` `attacker_type` `damage_type` `victim_owner` `attacker_owner` `attacker_maid` |
 | `maid_death` | **她自己死了**：不吃死亡静默期，也不受距离限制 | `attacker` `attacker_type` `damage_type` `attacker_owner` `attacker_maid` |
+| `owner_death` | **她主人死了**：不看距离与维度，主人复活后她会跟过去 | `attacker` `attacker_type` `damage_type` `attacker_maid` `home_mode`（居家模式下她不跟过去） |
 | `maid_revive` | **她通过胶片复活了**：监控目标改到新 uuid 的那只 | — |
 | `player_advancement` | 主人拿到了成就（原版「进度」；配方解锁这类没有展示信息的跳过） | `advancement` `title` `frame` = `task` / `goal` / `challenge` |
 | `maid_carried` | 她被 Carry On 抱了起来（没装那个模组就不会出现） | — |
@@ -415,8 +416,10 @@ JSON 文本帧，信封固定是 `{"type": ..., "request_id": ..., "data": {...}
 
 身边这一层 `threat_near` 与踩进岩浆 / 火里的 `ground_change` 算紧急，插件会当场请角色开口；
 其余（含 `shelter_change`、普通地面变化）走「攒够几条」那套。
-`creature_death` 里死的是她主人时也当场开口；`maid_death` 与 `maid_revive` 一律当场开口——
-她倒下之后所有指令都只会回「找不到女仆」，这两条是插件唯一的信息来源。
+`creature_death` 里死的是她主人时也当场开口；`maid_death`、`owner_death` 与 `maid_revive`
+一律当场开口——她倒下之后所有指令都只会回「找不到女仆」，这几条是插件唯一的信息来源。
+主人死掉走单独的 `owner_death`：`creature_death` 有距离限制，而她可能被留在家里或另一个
+维度，主人复活后她照样会跟过去。
 `maid_death` 会先清掉挨打那条还没推出去的累计：致命那一下也是 `LivingDamageEvent`，
 不丢就会「先报死、十 tick 后再报伤」，模型会以为自己还活着。
 物品那几条另有一套：收到玩家给的东西、被喂饭当场开口，玩家丢下的东西被她捡起来也当场

@@ -647,7 +647,7 @@ const form = reactive<ToolSettings>({
   access_mode: "manual",
   max_tool_rounds: DEFAULT_TOOL_ROUND_LIMIT,
   tool_rag: true,
-  tool_recommend_mode: "off",
+  tool_recommend_mode: "rag",
 });
 
 const status = reactive({ message: "", color: "#4ade80" });
@@ -795,7 +795,7 @@ onMounted(async () => {
     form.access_mode = settings.access_mode ?? "manual";
     form.max_tool_rounds = settings.max_tool_rounds ?? DEFAULT_TOOL_ROUND_LIMIT;
     form.tool_rag = settings.tool_rag ?? true;
-    form.tool_recommend_mode = settings.tool_recommend_mode ?? "off";
+    form.tool_recommend_mode = settings.tool_recommend_mode ?? "rag";
     normalizeToolRoundLimit();
     normalizeMediaSettings();
     await loadRuntimeInfo();

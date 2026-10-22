@@ -96,8 +96,10 @@ public final class MaidQueries {
         if (server == null || maidId == null || maidId.isEmpty()) {
             return null;
         }
+        // 复活出来的是新实体，而插件配置里还是倒下那一只：所有请求统一在这里换成现在这只
+        String resolved = MonitoredMaidHandler.resolve(maidId);
         try {
-            UUID uuid = UUID.fromString(maidId);
+            UUID uuid = UUID.fromString(resolved);
             for (ServerLevel level : server.getAllLevels()) {
                 if (level.getEntity(uuid) instanceof EntityMaid maid) {
                     return maid;
@@ -107,7 +109,7 @@ public final class MaidQueries {
             // 插件也可能传来名字之类的东西，退回下面的遍历匹配
         }
         for (EntityMaid maid : getAllMaids(server)) {
-            if (maid.getStringUUID().equals(maidId)) {
+            if (maid.getStringUUID().equals(resolved)) {
                 return maid;
             }
         }

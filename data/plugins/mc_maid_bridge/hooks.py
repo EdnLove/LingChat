@@ -30,6 +30,7 @@ from plugin_host import (
     read_data_file,
     send_user_message,
     set_auto_mode,
+    set_game_voice_available,
     set_reply_length_mode,
     trigger_proactive,
 )
@@ -113,6 +114,7 @@ def on_ws(ctx):
     event = payload.get("event")
     if event == "connect":
         _bind_maid(ctx)
+        _sync_game_voice()
         # 玩家这会儿在游戏里，腾不出手点对话框推进；不切自动模式的话，角色说完
         # 一句就停住，游戏里也就一直不冒下一句，看起来跟桥断了没两样。
         # 只负责开：断开时不还回去（用户要的就是这个语义）。
@@ -296,6 +298,9 @@ def _handle_event(ctx, data):
     text, urgent = format_event(data)
     if not text:
         return
+    if kind in ("maid_death", "maid_revive"):
+        # 她倒下之后模组找不到实体，游戏里那句语音播不出来：改由本机放，复活后再交回去。
+        set_game_voice_available(kind == "maid_revive")
     if urgent and needs_snapshot(kind):
         # 出事这一刻正好是「再感知一次周围」的时机：怪物那条有 2 分钟防抖管着，
         # 这期间新来的谁都不会各记一条，所以她身边站着什么就跟着这条一起交代。
@@ -303,7 +308,9 @@ def _handle_event(ctx, data):
     pending = _append_event(text, kind, data)
     if pending is None:
         return
-    if urgent or _quiet_event_run(pending, bridge.proactive_after(ctx)):
+    if urgent:
+        _nudge(urgent=True)
+    elif _quiet_event_run(pending, bridge.proactive_after(ctx)):
         _nudge()
 
 
@@ -375,6 +382,16 @@ def _dead_now():
     return _life_state() == "dead"
 
 
+def _sync_game_voice():
+    """连上时对一次账：她若还倒在上一局里，语音就该由本机放。
+
+    宿主不知道自己那边有没有女仆，只会按「开关开着 + 连接在」把本机静音；
+    死了的她在游戏里没有实体，语音会变成谁都不出声。之后她死、复活时再各报一次
+    （见 _handle_event）。
+    """
+    set_game_voice_available(not _dead_now())
+
+
 def _life_state():
     """台词表末尾最后一条死亡/复活旁白说的是什么：dead / alive / unknown。"""
     head = read_context(start=1, end=1)
@@ -405,17 +422,20 @@ def _quiet_event_run(pending, count):
     return count > 0 and pending == count
 
 
-def _nudge():
+def _nudge(urgent=False):
     """请宿主让角色主动开一次口。
 
     空提示语：该说的东西已经作为旁白记在台词表里了，再补一句「你注意到身边有变化、
     主动说一句」既替角色决定了该看什么，也容易把语气带成复述报告。宿主收到空提示
     就直接接着上下文生成一轮，不往台词表写任何行。
 
+    `urgent` 只给死亡这类事：宿主会顶掉排队中的普通请求，投放时也不吃冷却与
+    上一轮的静默期。
+
     可能被拒（主动对话没开、用户正在输入、上一轮还没说完），那就下次再说：
     事件已经排在宿主队列里，有效期之内下一次开口仍会带上。
     """
-    result = trigger_proactive("")
+    result = trigger_proactive("", urgent=urgent)
     if result.get("ok") and not result.get("triggered"):
         print(f"[mc_maid_bridge] 角色没能主动开口：{result.get('reason')}")
 

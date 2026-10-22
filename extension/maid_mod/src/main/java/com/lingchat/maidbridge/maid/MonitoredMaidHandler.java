@@ -50,6 +50,22 @@ public class MonitoredMaidHandler implements MessageHandler {
         return monitoredMaidId;
     }
 
+    /**
+     * 插件请求里点的女仆 id 换成现在这只。
+     *
+     * <p>胶片不保存 uuid，复活出来的是新实体，而插件配置里存的还是倒下的那一只。
+     * 请求一律经过这里，免得复活之后所有指令都「找不到女仆」。
+     */
+    public static String resolve(String maidId) {
+        if (maidId == null) {
+            return "";
+        }
+        if (!retiredMaidId.isEmpty() && retiredMaidId.equals(maidId)) {
+            return monitoredMaidId;
+        }
+        return maidId;
+    }
+
     public static boolean isDead() {
         return dead;
     }
@@ -118,9 +134,7 @@ public class MonitoredMaidHandler implements MessageHandler {
     public JsonObject handle(JsonObject request) {
         String next = Envelope.string(Envelope.data(request), "maid_id");
         // 插件设置里可能还留着复活前的 uuid：那一只已经不存在了，别把目标改回去
-        if (!retiredMaidId.isEmpty() && retiredMaidId.equals(next)) {
-            next = monitoredMaidId;
-        }
+        next = resolve(next);
         // 插件会在每次台词上屏时重申一次（它没有定时器，只能借这个时机补发刚连上时
         // 可能丢掉的那一次），所以只在真的换了目标时记一笔，免得日志被刷满。
         if (!next.equals(monitoredMaidId)) {

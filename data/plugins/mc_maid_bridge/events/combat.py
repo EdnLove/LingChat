@@ -63,16 +63,41 @@ def creature_death(data):
     return f"{nearness_place(data.get('distance'))}的{who}{_death_cause(data)}。"
 
 
+def owner_death(data):
+    """主人死了。她自己没死，会跟着复活的主人回到复活点。
+
+    这条不看距离与维度：她可能被留在家里，但主人复活后她还是会跟过去，模型得知道
+    自己现在该往哪儿去。居家模式的她哪也不去，那不跟过去这一点要说清楚。
+    """
+    maid, player = names()
+    cause = _death_cause(data)
+    if data.get("home_mode"):
+        return (
+            f"{player}{cause}。"
+            f"{player}会在复活点复活，{maid}留在原地（居家模式），不会跟过去。"
+        )
+    return (
+        f"{player}{cause}。"
+        f"{player}会在复活点复活，{maid}也会跟着回到{player}身边。"
+    )
+
+
 def maid_death(data):
-    """她自己死了。只说她是怎么死的，不替游戏下「能不能复活」的结论。
+    """她自己死了：怎么死的、遗物在哪儿、玩家要怎么把她换回来。
 
     她倒下之后模组查不到她，所有指令都只会回「找不到女仆」——这一条是插件唯一知道
     发生了什么的地方，所以插件会当场请角色开口。旁白里带上死亡状态标记：之后每一轮
     都靠它判断她还在不在死亡状态（见 hooks._remind_dead）。
+
+    复活办法也写在这里：玩家要知道该去哪儿、拿什么换。墓碑里有她的遗物和胶片，
+    胶片放进神龛后空手点神龛，会拿玩家的命换她回来（生命值不到一半时复活不了）。
     """
-    maid, _ = names()
+    maid, player = names()
     return (
         f"{maid}{_death_cause(data)}。"
+        f"她的遗物和胶片留在墓碑里；把胶片放进神龛，再空手点神龛，"
+        f"{player}会掉到只剩一口气，{maid}就能在神龛旁复活"
+        f"（{player}的生命值不到一半时复活不了）。"
         f"{maid}{DEAD_STATE_MARK}，在复活之前没法行动，进入灵魂状态。"
     )
 
@@ -173,8 +198,11 @@ SPECS = {
         snapshot=True,
         urgent_when=lambda data: bool(data.get("victim_owner")),
     ),
-    # 她自己的死没有可合并的同键，也不该被静默：当场开口
-    "maid_death": EventSpec(maid_death, urgent=True, ttl=120),
+    # 她自己的死没有可合并的同键，也不该被静默：当场开口。死亡是持久状态，复活办法
+    # 也在这条里——主动开口被拒时，这条得一直等玩家下一次说话，别几分钟就过期了。
+    "maid_death": EventSpec(maid_death, urgent=True, ttl=3600),
+    # 主人死了同样当场开口：她得知道接下来要跟着主人回复活点
+    "owner_death": EventSpec(owner_death, urgent=True, ttl=120),
     # 复活同样重要：她得知道自己又能动了，才不会继续按「已经死了」说话
     "maid_revive": EventSpec(maid_revive, urgent=True, ttl=120),
     "threat_near": EventSpec(threat_near, urgent=True, ttl=60, snapshot=True),

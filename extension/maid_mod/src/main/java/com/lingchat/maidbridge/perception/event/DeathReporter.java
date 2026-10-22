@@ -34,6 +34,9 @@ import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
  * <p>被监控的那只女仆自己死了走单独的 {@code maid_death}：这条比「附近死了谁」重要得多，
  * 不吃死亡静默期，也不受距离限制（她就在原地倒下）。她倒下之后所有指令都只会回
  * 「找不到女仆」，插件只能靠这一条知道发生了什么。
+ *
+ * <p>她主人死了走 {@code owner_death}：同样不吃静默期、不看距离与维度——她可能被留在
+ * 家里，但主人复活后她会跟过去（居家模式除外），插件要说的正是这件事。
  */
 public final class DeathReporter {
     /** 报了一条之后安静多久（tick）。连着死一片时不至于刷屏。 */
@@ -60,7 +63,7 @@ public final class DeathReporter {
             return;
         }
         EntityMaid maid = MaidQueries.findMaidById(server, MonitoredMaidHandler.get());
-        if (maid == null || maid.level() != dead.level()) {
+        if (maid == null) {
             return;
         }
         Entity attacker = Attackers.actor(event.getSource());
@@ -79,6 +82,22 @@ public final class DeathReporter {
             frame.addProperty("attacker_owner", attacker == owner);
             frame.addProperty("attacker_maid", attacker == maid);
             bridge.broadcastEvent(frame);
+            return;
+        }
+        // 主人死了与距离、维度都无关：她可能被留在家里或另一个世界，也一样会跟着
+        // 复活的主人过去。旁边死了只生物没法讲这件事，走单独一条。
+        if (dead == owner) {
+            JsonObject frame = EventFrames.base("owner_death", maid.getStringUUID());
+            frame.addProperty("attacker", Attackers.name(event.getSource()));
+            frame.addProperty("attacker_type", Attackers.typeId(event.getSource()));
+            frame.addProperty("damage_type", event.getSource().getMsgId());
+            frame.addProperty("attacker_maid", attacker == maid);
+            // 居家模式的她不会跟过去，插件要说的「会跟着回出生点」就不成立了
+            frame.addProperty("home_mode", maid.isHomeModeEnable());
+            bridge.broadcastEvent(frame);
+            return;
+        }
+        if (maid.level() != dead.level()) {
             return;
         }
         if (cooldown > 0) {

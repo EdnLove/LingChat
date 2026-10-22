@@ -175,11 +175,11 @@ impl MediaFileSettings {
 #[serde(rename_all = "snake_case")]
 pub enum ToolRecommendMode {
     /// 不推荐，模型自己决定要不要检索或调用工具。
-    #[default]
     Off,
     /// 上帝 Agent 看一遍最近的对话再挑（每轮多一次小模型调用）。
     Agent,
     /// 拿玩家这句话静默检索一次工具，过阈值的才推荐（不额外调用模型）。
+    #[default]
     Rag,
 }
 
